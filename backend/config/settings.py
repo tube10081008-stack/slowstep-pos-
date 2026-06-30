@@ -108,6 +108,33 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+# ── WhiteNoise: 정적파일 + 웹 클라이언트(web/) 동일 도메인 서빙 ──
+# 설치돼 있을 때만 활성화(로컬 개발은 불필요). 배포 시 web/의 POS·멤버십·
+# 대시보드 HTML을 같은 주소(/pos/, /member/, /dashboard/)로 서빙한다.
+# 같은 오리진이 되므로 프론트의 API_BASE가 자동으로 같은 도메인을 가리킨다.
+try:
+    import whitenoise  # noqa: F401
+
+    _HAS_WHITENOISE = True
+except ImportError:
+    _HAS_WHITENOISE = False
+
+if _HAS_WHITENOISE:
+    # SecurityMiddleware 바로 다음에 WhiteNoise 삽입.
+    _sec = "django.middleware.security.SecurityMiddleware"
+    MIDDLEWARE.insert(
+        MIDDLEWARE.index(_sec) + 1,
+        "whitenoise.middleware.WhiteNoiseMiddleware",
+    )
+    STORAGES = {
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+        },
+    }
+    # web/ 폴더를 사이트 루트로 서빙. /pos/ → web/pos/index.html
+    WHITENOISE_ROOT = BASE_DIR.parent / "web"
+    WHITENOISE_INDEX_FILE = True
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ── DRF ─────────────────────────────────────────────────────────

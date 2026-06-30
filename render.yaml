@@ -1,0 +1,36 @@
+# Render.com 배포 청사진 (Blueprint) — 슬로우스텝 멤버십 POS
+#
+# Django 하나가 API(/api/v1) + 웹페이지(/pos /member /dashboard)를
+# 같은 주소로 함께 서빙한다. 무료 플랜·SQLite로 동작(데모용).
+#
+# ── 사용법 (둘 중 하나) ─────────────────────────────────────────
+# A) 수동 생성(권장, 비개발자):  DEPLOY.md의 단계별 안내를 따른다.
+# B) Blueprint 자동 생성(고급):  이 파일을 저장소 "루트"로 복사한 뒤
+#    Render → New → Blueprint → 저장소 연결 → Apply.
+#    (루트에는 이미 다른 프로젝트용 render.yaml이 있으니 주의)
+#
+# 데이터는 무료 플랜에서 재시작 시 초기화된다. 시작할 때마다 데모
+# 데이터를 다시 시드하므로 대시보드는 항상 채워진 상태로 보인다.
+# 영구 보관이 필요하면 PostgreSQL을 붙이고 DATABASE_URL을 주입한다.
+services:
+  - type: web
+    name: slowstep-pos
+    runtime: python
+    plan: free
+    rootDir: slowstep-pos/backend
+    branch: claude/new-project-setup-hz2qo8
+    buildCommand: "pip install -r requirements-prod.txt && python manage.py collectstatic --noinput"
+    startCommand: "python manage.py migrate && python manage.py seed_demo && python manage.py seed_marketing && gunicorn config.wsgi:application"
+    healthCheckPath: /api/v1/store
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true          # Render가 랜덤 키 자동 생성
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: ".onrender.com,localhost,127.0.0.1"
+      # Render 엣지에서 HTTPS 종단 → 앱 레벨 강제 리다이렉트는 끔(헬스체크 안정)
+      - key: DJANGO_SECURE_SSL_REDIRECT
+        value: "False"
