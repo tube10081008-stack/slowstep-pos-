@@ -84,6 +84,76 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 
 ---
 
+## 점주 대시보드 (Dashboard)
+
+### `GET /api/v1/dashboard/stats`
+점주 대시보드 핵심 지표 집계.
+```json
+200 {
+  "members": { "total": 15, "opt_in": 12, "opt_in_rate": 80.0,
+               "new_30d": 15, "active_30d": 7,
+               "tier_breakdown": { "BRONZE": 7, "SILVER": 8 } },
+  "revenue": { "total": 1174000, "tx_count": 131, "avg_basket": 8961, "revenue_30d": 286500 },
+  "points_outstanding": 58700,
+  "trend_14d": [ { "date": "06-17", "revenue": 18500 }, ... ],
+  "top_members": [ { "id":1, "name":"한가람", "tier":"SILVER", "total_spent":176500, ... } ],
+  "recent_transactions": [ { "id":1, "member__name":"한가람", "net_amount":4500, ... } ]
+}
+```
+
+---
+
+## 마케팅 세그먼트 (Segment)
+
+내가 모은 회원 데이터로 **결제사 동의 없이** 직접 타깃을 정의한다.
+
+### `POST /api/v1/segments/preview`
+저장 없이 필터로 대상 수·샘플 미리보기.
+```json
+요청 { "tier": "", "min_visits": 0, "min_spent": 0,
+       "inactive_days": 30, "require_opt_in": true }
+200  { "count": 6, "sample": [ { "id":7, "name":"최여유", "tier":"SILVER", ... } ] }
+```
+| 필터 | 의미 |
+| --- | --- |
+| `tier` | 등급(비우면 전체) |
+| `min_visits` / `min_spent` | 최소 방문/누적결제 |
+| `inactive_days` | N일 이상 미방문(휴면) — 윈백 대상 |
+| `require_opt_in` | 마케팅 수신 동의자만(광고성 필수) |
+
+### `GET/POST /api/v1/segments`  ·  `GET /api/v1/segments/{id}`
+세그먼트 CRUD(저장).
+
+### `GET /api/v1/segments/{id}/members`
+세그먼트에 속한 회원 목록.
+
+---
+
+## 마케팅 캠페인 (Campaign)
+
+### `GET/POST /api/v1/campaigns`
+캠페인 생성/목록.
+```json
+요청 {
+  "name": "휴면 컴백 쿠폰", "segment": 1, "is_ad": true,
+  "message_template": "{이름}님, 보유 {포인트}P로 한 잔 어떠세요?"
+}
+```
+> 메시지 치환 변수: `{이름}` `{포인트}` `{등급}` `{스탬프}` `{방문}`.
+
+### `POST /api/v1/campaigns/{id}/send`
+대상 회원에게 **알림톡 발송**. 광고성인데 수신 미동의면 자동 제외(skipped).
+키 미설정 시 Mock 발송.
+```json
+200 { "id":1, "status":"sent", "recipient_count":6,
+      "sent_count":6, "failed_count":0, "skipped_count":0, "sent_at":"..." }
+```
+
+### `GET /api/v1/campaigns/{id}/logs`
+회원별 발송 로그(렌더된 본문·상태·사유).
+
+---
+
 ## Toss 웹훅  *(P1, 설계만)*
 
 ### `POST /api/v1/payments/toss/webhook`

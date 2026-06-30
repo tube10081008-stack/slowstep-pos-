@@ -30,6 +30,8 @@
 | 4 | **포인트 적립/사용** | 결제 금액 기반 자동 적립, 다음 결제에서 차감 사용 |
 | 5 | **게이미피케이션 멤버십** | 방문 스탬프·등급(브론즈~골드)·미션/챌린지로 재방문 유도 |
 | 6 | **우리 소유의 고객 DB** | 마케팅 발송·세그먼트의 기반. 결제사 동의 불필요 |
+| 7 | **마케팅 세그먼트·알림톡** | 등급·휴면·방문 기준으로 타깃 추출 → 알림톡 발송(수신동의·수신거부 자동) |
+| 8 | **점주 대시보드** | 매출·회원·등급·포인트부채 지표 + 캠페인 발송을 한 화면에서 |
 
 ---
 
@@ -58,10 +60,12 @@ slowstep-pos/
 │  ├─ manage.py
 │  ├─ requirements.txt
 │  ├─ config/               ← settings/urls/wsgi
-│  └─ membership/           ← 회원·거래·포인트·미션 도메인
+│  ├─ membership/           ← 회원·거래·포인트·미션 도메인
+│  └─ marketing/            ← 세그먼트·캠페인(알림톡)·대시보드 집계
 └─ web/
    ├─ pos/index.html        ← 직원용 모바일 POS
-   └─ member/index.html     ← 고객용 QR 멤버십 페이지
+   ├─ member/index.html     ← 고객용 QR 멤버십 페이지
+   └─ dashboard/index.html  ← 점주 대시보드 + 마케팅 발송
 ```
 
 ---
@@ -73,7 +77,8 @@ cd slowstep-pos/backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python manage.py migrate
-python manage.py seed_demo      # 데모 회원/미션 시드
+python manage.py seed_demo       # 매장/미션/기본 회원 시드
+python manage.py seed_marketing  # 대시보드용 다양한 회원·거래·세그먼트 시드
 python manage.py runserver
 ```
 
@@ -85,8 +90,9 @@ python manage.py runserver
 ```bash
 cd slowstep-pos/web
 python -m http.server 5500
-# 직원 POS : http://localhost:5500/pos/
-# 고객 QR : http://localhost:5500/member/?phone=01012345678
+# 직원 POS   : http://localhost:5500/pos/
+# 고객 QR    : http://localhost:5500/member/?phone=01012345678
+# 점주 대시보드 : http://localhost:5500/dashboard/
 ```
 > POS/멤버 페이지는 백엔드 `API_BASE`를 가리킵니다. 다른 호스트면 각 HTML 상단의 `API_BASE` 값을 수정하세요.
 
@@ -94,9 +100,10 @@ python -m http.server 5500
 
 ## 🗺️ 로드맵 (요약)
 
-- **P0 (현재 · 스캐폴드)** — 데이터 모델, 회원/적립/거래 API, Toss 연동 설계, 동작하는 웹 POS·QR 페이지 골격
-- **P1** — Toss 실결제 승인·웹훅 연동, 단말 페어링, 정산 리포트
-- **P2** — 게이미피케이션 고도화(미션 엔진·푸시), 마케팅 세그먼트·발송
-- **P3** — 멀티 매장, 정산/회계 연동, 데이터 분석 대시보드
+- **P0 (완료)** — 데이터 모델, 회원/적립/거래 API, Toss 연동 설계, 동작하는 웹 POS·QR 페이지
+- **P2 마케팅 (완료)** — 세그먼트 빌더, 알림톡 캠페인 발송(수신동의·수신거부·치환), 점주 대시보드(매출·회원·등급·포인트부채 지표)
+- **P1** — Toss 실결제 승인·웹훅 연동, 단말 페어링, 거래 취소/환불, 정산 리포트
+- **P2+** — 알림톡 실 대행사 연동·템플릿 검수, 미션 엔진·푸시, 예약 발송, A/B
+- **P3** — 멀티 매장, 정산/회계 연동, 심화 분석 대시보드
 
 자세한 내용은 [`docs/PRD.md`](./docs/PRD.md) 참조.

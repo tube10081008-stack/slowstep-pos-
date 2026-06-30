@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "corsheaders",
     # 로컬 앱
     "membership",
+    "marketing",
 ]
 
 MIDDLEWARE = [
@@ -135,6 +136,15 @@ TOSS_CLIENT_KEY = os.environ.get(
 )
 TOSS_API_BASE = os.environ.get("TOSS_API_BASE", "https://api.tosspayments.com")
 TOSS_WEBHOOK_SECRET = os.environ.get("TOSS_WEBHOOK_SECRET", "")
+
+# ── 알림톡(카카오) ──────────────────────────────────────────────
+# 미주입 시 alimtalk.py가 Mock 발송으로 폴백(스캐폴드/데모).
+# 실연동은 NHN Cloud / Solapi / Aligo 등 발송 대행사 키를 주입.
+ALIMTALK_API_KEY = os.environ.get("ALIMTALK_API_KEY", "")
+ALIMTALK_SENDER_KEY = os.environ.get("ALIMTALK_SENDER_KEY", "")  # 발신 프로필 키
+ALIMTALK_API_BASE = os.environ.get("ALIMTALK_API_BASE", "")
+# 발신번호(매장 대표번호) — 알림톡 실패 시 문자(LMS) 대체발송에 사용
+ALIMTALK_SENDER_PHONE = os.environ.get("ALIMTALK_SENDER_PHONE", "")
 
 # ── 운영 보안 헤더 (DEBUG=False일 때) ───────────────────────────
 if not DEBUG:
