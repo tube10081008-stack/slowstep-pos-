@@ -1,0 +1,8 @@
+# Vercel(서버리스) 빌드용 의존성. Vercel은 루트 디렉터리(slowstep-pos)의
+# 이 파일을 설치한다. 로컬 개발은 backend/requirements.txt 만으로 충분.
+-r backend/requirements.txt
+
+# 서버리스/운영 추가 (gunicorn은 서버리스에 불필요)
+dj-database-url>=2.2     # DATABASE_URL(Neon 등) 파싱
+psycopg[binary]>=3.2     # PostgreSQL 드라이버
+whitenoise>=6.7          # 정적파일 + web/ 페이지 서빙

@@ -110,11 +110,15 @@ python -m http.server 5500
 
 ---
 
-## 🌐 공개 URL로 배포
+## 🌐 공개 URL로 배포 (Vercel)
 
-설치 없이 인터넷 주소로 대시보드·POS를 열려면 무료 호스팅(Render)에 올린다.
+설치 없이 인터넷 주소로 열려면 **Vercel**(git 푸시 자동 배포)에 올린다.
 Django 하나가 API와 웹페이지를 같은 주소로 함께 서빙하도록 구성돼 있어
-**서비스 하나만** 만들면 된다. 단계별 안내: [`DEPLOY.md`](./DEPLOY.md).
+**서버리스 함수 하나로** 전부 동작한다. 단계별 안내: [`DEPLOY.md`](./DEPLOY.md).
 
-- 루트(`/`) → 점주 대시보드로 이동
-- `/pos/` 직원 POS · `/member/?phone=...` 고객 멤버십 · `/admin/` 관리자
+- **그냥 배포** → 즉시 동작(임시 저장 + 데모 데이터 자동 시드)
+- **무료 DB(Neon) 연결** → 데이터 영구 저장·여러 기기 공유로 승격
+- 루트(`/`) → 대시보드 · `/pos/` 직원 POS · `/member/?phone=...` 고객 · `/admin/` 관리자
+
+> Vercel 핵심 파일: [`vercel.json`](./vercel.json) · [`api/index.py`](./api/index.py) · [`requirements.txt`](./requirements.txt)
+> (Render 등 상시 서버 배포용 [`render.yaml`](./render.yaml) 도 함께 제공)

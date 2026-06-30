@@ -89,10 +89,17 @@ if DATABASE_URL:
             "requirements-prod.txt를 설치하세요."
         )
 else:
+    # 서버리스(Vercel)는 앱 디렉터리가 읽기 전용 → 쓰기 가능한 /tmp 사용.
+    # 임시 저장소라 콜드스타트마다 초기화되며, 시작 시 데모 데이터를 자동 시드한다.
+    # 영구 보관이 필요하면 DATABASE_URL(Neon 등)을 주입하면 자동 승격된다.
+    if os.environ.get("VERCEL"):
+        _sqlite_path = "/tmp/db.sqlite3"
+    else:
+        _sqlite_path = BASE_DIR / "db.sqlite3"
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
+            "NAME": _sqlite_path,
         }
     }
 
@@ -126,11 +133,8 @@ if _HAS_WHITENOISE:
         MIDDLEWARE.index(_sec) + 1,
         "whitenoise.middleware.WhiteNoiseMiddleware",
     )
-    STORAGES = {
-        "staticfiles": {
-            "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
-        },
-    }
+    # collectstatic 없이도 admin/DRF 정적파일을 finder로 직접 서빙(서버리스 친화).
+    WHITENOISE_USE_FINDERS = True
     # web/ 폴더를 사이트 루트로 서빙. /pos/ → web/pos/index.html
     WHITENOISE_ROOT = BASE_DIR.parent / "web"
     WHITENOISE_INDEX_FILE = True
