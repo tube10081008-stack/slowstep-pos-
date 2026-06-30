@@ -1,0 +1,7 @@
+# 운영 배포용 추가 의존성 (로컬 개발은 requirements.txt만으로 충분)
+-r requirements.txt
+
+gunicorn>=22.0          # WSGI 프로덕션 서버
+psycopg[binary]>=3.2    # PostgreSQL 드라이버
+dj-database-url>=2.2    # DATABASE_URL 파싱
+whitenoise>=6.7         # 정적파일 서빙

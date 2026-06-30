@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>슬로우스텝 멤버십</title>
+<style>
+  :root {
+    --bg:#0f1115; --card:#1a1e26; --line:#2a303c; --txt:#e8ecf2;
+    --muted:#8b93a3; --accent:#3b82f6; --gold:#f5c542;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif; }
+  .wrap { max-width:440px; margin:0 auto; padding:20px 16px 56px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:18px; margin-bottom:14px; }
+  .hero { text-align:center; padding:26px 18px;
+    background:linear-gradient(160deg,#1e2533,#161b24); }
+  .hero .name { font-size:20px; font-weight:800; }
+  .badge { display:inline-block; font-size:12px; padding:4px 12px; border-radius:999px;
+    font-weight:700; margin-top:8px; }
+  .b-BRONZE{background:#7c4a2188;} .b-SILVER{background:#5b6b7d88;} .b-GOLD{background:#a87b14aa; color:#fff;}
+  .points { font-size:40px; font-weight:900; margin-top:14px; color:var(--gold); }
+  .points span { font-size:16px; color:var(--muted); font-weight:600; }
+  .stats { display:flex; justify-content:space-around; margin-top:14px; }
+  .stats div { font-size:12px; color:var(--muted); }
+  .stats b { display:block; font-size:18px; color:var(--txt); margin-top:2px; }
+  h3 { font-size:14px; margin:0 0 12px; }
+  .stamps { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
+  .stamp { aspect-ratio:1; border-radius:50%; border:1.5px dashed var(--line);
+    display:flex; align-items:center; justify-content:center; font-size:18px; color:var(--muted); }
+  .stamp.on { background:#2a2113; border:1.5px solid var(--gold); color:var(--gold); }
+  .mission { border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:10px; }
+  .mission.done { border-color:#1f5d3a; background:#11251a; }
+  .mission .top { display:flex; justify-content:space-between; font-size:14px; font-weight:600; }
+  .mission .rw { color:var(--gold); font-size:12px; }
+  .bar { height:7px; background:#11151c; border-radius:99px; margin-top:9px; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:var(--accent); }
+  .muted { color:var(--muted); font-size:12px; }
+  .center { text-align:center; }
+  input { width:100%; background:#11151c; border:1px solid var(--line); color:var(--txt);
+    border-radius:10px; padding:13px; font-size:16px; margin-top:8px; }
+  button { width:100%; border:0; border-radius:10px; padding:13px; font-weight:600;
+    color:#fff; background:var(--accent); margin-top:10px; cursor:pointer; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- 조회 폼 (phone 미지정 시) -->
+  <div class="card" id="loginCard">
+    <h3>☕ 슬로우스텝 멤버십</h3>
+    <p class="muted">QR을 스캔하거나 연락처로 내 멤버십을 확인하세요.</p>
+    <input id="phone" inputmode="numeric" placeholder="01012345678" />
+    <button onclick="go()">내 멤버십 보기</button>
+    <p class="muted center" style="margin-top:10px;" id="err"></p>
+  </div>
+
+  <!-- 멤버십 카드 -->
+  <div id="memberView" class="hidden">
+    <div class="card hero">
+      <div class="name" id="name">—</div>
+      <span class="badge" id="tier">—</span>
+      <div class="points" id="points">0<span>P</span></div>
+      <div class="stats">
+        <div>등급<b id="tier2">—</b></div>
+        <div>방문<b id="visits">0</b></div>
+        <div>누적결제<b id="spent">0</b></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>🎟️ 스탬프 적립 <span class="muted" id="stampLabel"></span></h3>
+      <div class="stamps" id="stamps"></div>
+      <p class="muted" style="margin-top:10px;" id="stampHint"></p>
+    </div>
+
+    <div class="card">
+      <h3>🎯 진행 중인 미션</h3>
+      <div id="missions"></div>
+    </div>
+
+    <p class="muted center">결제 시 QR(연락처)을 제시하면 자동으로 적립됩니다.</p>
+  </div>
+</div>
+
+<script>
+  const API_BASE = location.origin.includes(":5500") ? "http://localhost:8000" : location.origin;
+  const $ = (id) => document.getElementById(id);
+  const won = (n) => (n||0).toLocaleString("ko-KR");
+
+  async function api(path) {
+    const r = await fetch(API_BASE + path);
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(b.detail || ("오류 " + r.status));
+    return b;
+  }
+
+  function go() {
+    const p = $("phone").value.trim();
+    if (!p) return;
+    location.search = "?phone=" + encodeURIComponent(p);
+  }
+
+  async function load(phone) {
+    try {
+      const m = await api("/api/v1/members/lookup?phone=" + encodeURIComponent(phone));
+      render(m);
+      const missions = await api("/api/v1/members/" + m.id + "/missions");
+      renderMissions(missions);
+    } catch(e) {
+      $("err").textContent = "❌ " + e.message;
+    }
+  }
+
+  function render(m) {
+    $("loginCard").classList.add("hidden");
+    $("memberView").classList.remove("hidden");
+    $("name").textContent = m.name + " 님";
+    $("points").innerHTML = won(m.points) + "<span>P</span>";
+    $("visits").textContent = m.visit_count;
+    $("spent").textContent = won(m.total_spent);
+    const label = m.tier_display || m.tier;
+    $("tier").textContent = label; $("tier").className = "badge b-" + m.tier;
+    $("tier2").textContent = label;
+
+    // 스탬프
+    const goal = m.stamp_goal || 10;
+    $("stampLabel").textContent = m.stamps + " / " + goal;
+    let html = "";
+    for (let i = 0; i < goal; i++)
+      html += `<div class="stamp ${i < m.stamps ? "on" : ""}">${i < m.stamps ? "☕" : i+1}</div>`;
+    $("stamps").innerHTML = html;
+    $("stampHint").textContent = goal - m.stamps > 0
+      ? `${goal - m.stamps}잔 더 모으면 보상 포인트!` : "보상 적립 완료 🎉";
+  }
+
+  function renderMissions(list) {
+    if (!list.length) { $("missions").innerHTML = '<p class="muted">진행 중인 미션이 없습니다.</p>'; return; }
+    $("missions").innerHTML = list.map(x => {
+      const pct = Math.min(100, Math.round((x.progress / x.target) * 100));
+      return `<div class="mission ${x.is_completed ? "done":""}">
+        <div class="top"><span>${x.is_completed ? "✅ ":""}${x.title}</span>
+          <span class="rw">+${x.reward_points}P</span></div>
+        <div class="muted">${x.description||""}</div>
+        <div class="bar"><i style="width:${pct}%"></i></div>
+        <div class="muted" style="margin-top:5px;">${won(x.progress)} / ${won(x.target)}</div>
+      </div>`;
+    }).join("");
+  }
+
+  const phone = new URLSearchParams(location.search).get("phone");
+  if (phone) load(phone);
+</script>
+</body>
+</html>

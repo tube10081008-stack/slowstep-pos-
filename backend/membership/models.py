@@ -1,0 +1,227 @@
+"""
+슬로우스텝 멤버십 POS 데이터 모델.
+
+설계 상세는 docs/DATA-MODEL.md 참조. 모든 금액은 원(KRW) 정수.
+"""
+from django.db import models
+from django.utils import timezone
+
+
+class Store(models.Model):
+    """매장. (단일 매장 가정, 다매장은 P3)"""
+
+    name = models.CharField("매장명", max_length=100)
+    # 적립률 (0.05 = 5%)
+    point_earn_rate = models.DecimalField(
+        "적립률", max_digits=4, decimal_places=3, default=0.05
+    )
+    stamp_goal = models.PositiveSmallIntegerField("스탬프 목표", default=10)
+    stamp_reward_points = models.PositiveIntegerField(
+        "스탬프 달성 보상 포인트", default=3000
+    )
+    created_at = models.DateTimeField("생성 시각", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "매장"
+        verbose_name_plural = "매장"
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Member(models.Model):
+    """회원. 회원번호 = 연락처(phone)."""
+
+    class Tier(models.TextChoices):
+        BRONZE = "BRONZE", "브론즈"
+        SILVER = "SILVER", "실버"
+        GOLD = "GOLD", "골드"
+
+    # 누적 결제액 기반 등급 임계값 (원)
+    TIER_THRESHOLDS = (
+        (200_000, Tier.GOLD),
+        (50_000, Tier.SILVER),
+        (0, Tier.BRONZE),
+    )
+
+    store = models.ForeignKey(
+        Store, on_delete=models.CASCADE, related_name="members", verbose_name="매장"
+    )
+    phone = models.CharField("연락처(회원번호)", max_length=20, unique=True)
+    name = models.CharField("이름", max_length=50)
+    points = models.IntegerField("보유 포인트", default=0)
+    total_spent = models.IntegerField("누적 결제액", default=0)
+    visit_count = models.IntegerField("방문 횟수", default=0)
+    tier = models.CharField(
+        "등급", max_length=10, choices=Tier.choices, default=Tier.BRONZE
+    )
+    stamps = models.IntegerField("스탬프", default=0)
+    marketing_opt_in = models.BooleanField("마케팅 수신 동의", default=False)
+    joined_at = models.DateTimeField("가입 시각", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "회원"
+        verbose_name_plural = "회원"
+        ordering = ["-joined_at"]
+
+    def __str__(self) -> str:
+        return f"{self.name}({self.phone})"
+
+    def compute_tier(self) -> str:
+        """누적 결제액으로 등급 계산."""
+        for threshold, tier in self.TIER_THRESHOLDS:
+            if self.total_spent >= threshold:
+                return tier
+        return self.Tier.BRONZE
+
+
+class Transaction(models.Model):
+    """거래(결제) 1건."""
+
+    class Method(models.TextChoices):
+        TOSS_CARD = "TOSS_CARD", "토스-카드"
+        TOSS_EASY = "TOSS_EASY", "토스-간편결제"
+        CASH = "CASH", "현금"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "승인 전"
+        PAID = "paid", "결제완료"
+        CANCELED = "canceled", "취소"
+
+    store = models.ForeignKey(
+        Store, on_delete=models.PROTECT, related_name="transactions"
+    )
+    member = models.ForeignKey(
+        Member,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="transactions",
+        verbose_name="회원",
+    )
+    gross_amount = models.IntegerField("주문 총액")
+    points_used = models.IntegerField("사용 포인트", default=0)
+    net_amount = models.IntegerField("실결제액")
+    points_earned = models.IntegerField("적립 포인트", default=0)
+    payment_method = models.CharField(
+        "결제수단", max_length=20, choices=Method.choices
+    )
+    status = models.CharField(
+        "상태", max_length=10, choices=Status.choices, default=Status.PENDING
+    )
+    toss_payment_key = models.CharField(
+        "토스 결제키", max_length=200, blank=True, default=""
+    )
+    toss_order_id = models.CharField(
+        "주문 ID(멱등키)", max_length=100, blank=True, default="", db_index=True
+    )
+    created_at = models.DateTimeField("생성 시각", auto_now_add=True)
+    paid_at = models.DateTimeField("승인 시각", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "거래"
+        verbose_name_plural = "거래"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"거래#{self.pk} {self.net_amount}원 [{self.status}]"
+
+
+class PointEntry(models.Model):
+    """포인트 원장(적립/사용/조정). 잔액의 진실 원천."""
+
+    class Reason(models.TextChoices):
+        EARN = "earn", "적립"
+        REDEEM = "redeem", "사용"
+        ADJUST = "adjust", "조정"
+        MISSION = "mission", "미션 보상"
+        STAMP = "stamp", "스탬프 보상"
+        CANCEL = "cancel", "취소 원복"
+
+    member = models.ForeignKey(
+        Member, on_delete=models.CASCADE, related_name="point_entries"
+    )
+    transaction = models.ForeignKey(
+        Transaction,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="point_entries",
+    )
+    delta = models.IntegerField("증감")
+    reason = models.CharField("사유", max_length=10, choices=Reason.choices)
+    balance_after = models.IntegerField("반영 후 잔액")
+    created_at = models.DateTimeField("시각", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "포인트 내역"
+        verbose_name_plural = "포인트 내역"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        sign = "+" if self.delta >= 0 else ""
+        return f"{self.member.name} {sign}{self.delta}P ({self.get_reason_display()})"
+
+
+class Mission(models.Model):
+    """미션 정의."""
+
+    class Condition(models.TextChoices):
+        VISIT_COUNT = "visit_count", "방문 횟수"
+        TOTAL_SPENT = "total_spent", "누적 결제액"
+
+    store = models.ForeignKey(
+        Store, on_delete=models.CASCADE, related_name="missions"
+    )
+    title = models.CharField("제목", max_length=100)
+    description = models.TextField("설명", blank=True, default="")
+    condition_type = models.CharField(
+        "조건 유형", max_length=20, choices=Condition.choices
+    )
+    target_value = models.IntegerField("목표값")
+    reward_points = models.IntegerField("보상 포인트")
+    is_active = models.BooleanField("활성", default=True)
+    created_at = models.DateTimeField("생성 시각", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "미션"
+        verbose_name_plural = "미션"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return self.title
+
+    def member_value(self, member: Member) -> int:
+        """회원의 현재 조건 진행값."""
+        if self.condition_type == self.Condition.VISIT_COUNT:
+            return member.visit_count
+        if self.condition_type == self.Condition.TOTAL_SPENT:
+            return member.total_spent
+        return 0
+
+
+class MemberMission(models.Model):
+    """회원별 미션 진행 상태."""
+
+    member = models.ForeignKey(
+        Member, on_delete=models.CASCADE, related_name="member_missions"
+    )
+    mission = models.ForeignKey(
+        Mission, on_delete=models.CASCADE, related_name="member_missions"
+    )
+    progress = models.IntegerField("진행값", default=0)
+    is_completed = models.BooleanField("달성", default=False)
+    completed_at = models.DateTimeField("달성 시각", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "회원 미션"
+        verbose_name_plural = "회원 미션"
+        unique_together = ("member", "mission")
+
+    def __str__(self) -> str:
+        state = "완료" if self.is_completed else f"{self.progress}/{self.mission.target_value}"
+        return f"{self.member.name} · {self.mission.title} ({state})"
+
+    def mark_completed(self) -> None:
+        self.is_completed = True
+        self.completed_at = timezone.now()

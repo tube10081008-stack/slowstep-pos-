@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>슬로우스텝 · 모바일 POS</title>
+<style>
+  :root {
+    --bg:#0f1115; --card:#1a1e26; --line:#2a303c; --txt:#e8ecf2;
+    --muted:#8b93a3; --accent:#3b82f6; --accent2:#22c55e; --warn:#f59e0b;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif; }
+  .wrap { max-width:480px; margin:0 auto; padding:16px 16px 48px; }
+  header { display:flex; align-items:center; gap:8px; padding:8px 0 16px; }
+  header h1 { font-size:18px; margin:0; }
+  header .tag { font-size:11px; color:var(--muted); border:1px solid var(--line);
+    padding:2px 8px; border-radius:999px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:16px; margin-bottom:14px; }
+  label { display:block; font-size:12px; color:var(--muted); margin-bottom:6px; }
+  input, select { width:100%; background:#11151c; border:1px solid var(--line);
+    color:var(--txt); border-radius:10px; padding:13px; font-size:16px; }
+  .row { display:flex; gap:8px; }
+  .row > * { flex:1; }
+  button { border:0; border-radius:10px; padding:13px; font-size:15px; font-weight:600;
+    cursor:pointer; color:#fff; background:var(--accent); }
+  button.ghost { background:#222836; color:var(--txt); border:1px solid var(--line); }
+  button.pay { background:var(--accent2); font-size:17px; padding:16px; width:100%; }
+  button:disabled { opacity:.5; }
+  .member { display:flex; justify-content:space-between; align-items:center; }
+  .member .name { font-size:17px; font-weight:700; }
+  .badge { font-size:11px; padding:3px 9px; border-radius:999px; font-weight:700; }
+  .b-BRONZE{background:#7c4a2188;} .b-SILVER{background:#5b6b7d88;} .b-GOLD{background:#a87b1488;}
+  .stat { display:flex; gap:14px; margin-top:10px; }
+  .stat div { font-size:12px; color:var(--muted); }
+  .stat b { display:block; font-size:18px; color:var(--txt); }
+  .keypad { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .keypad button { background:#222836; font-size:20px; padding:18px; color:var(--txt); }
+  .amount { font-size:34px; font-weight:800; text-align:right; padding:6px 4px 10px; }
+  .summary { font-size:13px; color:var(--muted); line-height:1.9; }
+  .summary .big { color:var(--txt); font-weight:700; font-size:16px; }
+  .hint { font-size:12px; color:var(--muted); margin-top:6px; }
+  .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+    background:#1f2937; border:1px solid var(--line); padding:12px 18px; border-radius:12px;
+    font-size:14px; max-width:90%; display:none; z-index:9; }
+  .reward { background:#14301f; border:1px solid #1f5d3a; border-radius:10px;
+    padding:10px 12px; margin-top:8px; font-size:13px; }
+  .pill-row { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .pill { font-size:13px; padding:9px 12px; border-radius:999px; background:#222836;
+    border:1px solid var(--line); cursor:pointer; }
+  .pill.on { background:var(--accent); border-color:var(--accent); }
+  .muted { color:var(--muted); font-size:12px; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>☕ 슬로우스텝 POS</h1>
+    <span class="tag" id="storeTag">매장 로딩…</span>
+  </header>
+
+  <!-- 1. 회원 조회 -->
+  <div class="card">
+    <label>회원번호(연락처) · QR 스캔 결과</label>
+    <div class="row">
+      <input id="phone" inputmode="numeric" placeholder="01012345678" />
+      <button class="ghost" style="flex:0 0 84px" onclick="lookup()">조회</button>
+    </div>
+    <div id="memberBox" class="hidden" style="margin-top:14px;">
+      <div class="member">
+        <div>
+          <div class="name" id="mName">—</div>
+          <div class="muted" id="mPhone">—</div>
+        </div>
+        <span class="badge" id="mTier">—</span>
+      </div>
+      <div class="stat">
+        <div>보유 포인트<b id="mPoints">0</b></div>
+        <div>방문<b id="mVisits">0</b></div>
+        <div>스탬프<b id="mStamps">0</b></div>
+      </div>
+    </div>
+    <div id="noMember" class="hint hidden">
+      미등록 번호입니다. <a href="#" style="color:var(--accent)" onclick="quickJoin();return false;">바로 가입</a> 하거나 비회원으로 결제하세요.
+    </div>
+  </div>
+
+  <!-- 2. 금액 입력 -->
+  <div class="card">
+    <label>주문 금액</label>
+    <div class="amount" id="amountView">0<span class="muted" style="font-size:18px">원</span></div>
+    <div class="keypad" id="keypad"></div>
+  </div>
+
+  <!-- 3. 포인트 사용 + 결제수단 -->
+  <div class="card">
+    <label>포인트 사용</label>
+    <div class="row">
+      <input id="usePoints" inputmode="numeric" placeholder="0" value="0" oninput="recalc()" />
+      <button class="ghost" style="flex:0 0 96px" onclick="useAllPoints()">전액사용</button>
+    </div>
+    <label style="margin-top:14px;">결제수단</label>
+    <div class="pill-row" id="methods">
+      <span class="pill on" data-m="TOSS_CARD">💳 토스-카드</span>
+      <span class="pill" data-m="TOSS_EASY">📱 토스-간편</span>
+      <span class="pill" data-m="CASH">💵 현금</span>
+    </div>
+  </div>
+
+  <!-- 4. 요약 + 결제 -->
+  <div class="card">
+    <div class="summary">
+      주문 총액 <span class="big" id="sGross">0원</span><br/>
+      포인트 사용 <span id="sUse">0원</span> · 적립 예상 <span id="sEarn">0P</span><br/>
+      실결제액 <span class="big" id="sNet">0원</span>
+    </div>
+    <button class="pay" id="payBtn" style="margin-top:14px;" onclick="pay()">결제하기</button>
+    <div id="result"></div>
+  </div>
+
+  <p class="muted" style="text-align:center">Toss 키 미설정 시 Mock 승인으로 동작 — 전체 적립·미션 로직 검증 가능</p>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // 백엔드 주소 — 다른 호스트면 수정
+  const API_BASE = location.origin.includes(":5500") ? "http://localhost:8000" : location.origin;
+  let store = null, member = null, amount = 0, method = "TOSS_CARD";
+
+  const $ = (id) => document.getElementById(id);
+  const won = (n) => (n||0).toLocaleString("ko-KR") + "원";
+
+  function toast(msg) {
+    const t = $("toast"); t.textContent = msg; t.style.display = "block";
+    clearTimeout(t._t); t._t = setTimeout(() => t.style.display = "none", 2600);
+  }
+
+  async function api(path, opts) {
+    const r = await fetch(API_BASE + path, {
+      headers: { "Content-Type": "application/json" }, ...opts,
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.detail || ("오류 " + r.status));
+    return body;
+  }
+
+  // 키패드
+  const keys = ["1","2","3","4","5","6","7","8","9","00","0","←"];
+  $("keypad").innerHTML = keys.map(k => `<button onclick="press('${k}')">${k}</button>`).join("");
+  function press(k) {
+    if (k === "←") amount = Math.floor(amount / 10);
+    else amount = Math.min(amount * (k === "00" ? 100 : 10) + Number(k.replace("00","0")) , 99999999);
+    if (k === "00") amount = Math.min(amount, 99999999);
+    renderAmount(); recalc();
+  }
+  function renderAmount() {
+    $("amountView").innerHTML = (amount).toLocaleString("ko-KR") + '<span class="muted" style="font-size:18px">원</span>';
+  }
+
+  async function init() {
+    try {
+      store = await api("/api/v1/store");
+      $("storeTag").textContent = store.name + " · 적립 " + Math.round(store.point_earn_rate*100) + "%";
+    } catch(e) { $("storeTag").textContent = "백엔드 연결 안됨"; }
+  }
+
+  async function lookup() {
+    const phone = $("phone").value.trim();
+    if (!phone) return toast("연락처를 입력하세요");
+    try {
+      member = await api("/api/v1/members/lookup?phone=" + encodeURIComponent(phone));
+      renderMember(); recalc();
+    } catch(e) {
+      member = null; $("memberBox").classList.add("hidden");
+      $("noMember").classList.remove("hidden"); recalc();
+    }
+  }
+
+  async function quickJoin() {
+    const phone = $("phone").value.trim();
+    const name = prompt("회원 이름을 입력하세요");
+    if (!name) return;
+    try {
+      member = await api("/api/v1/members", { method:"POST",
+        body: JSON.stringify({ phone, name, marketing_opt_in:true }) });
+      toast("가입 완료 🎉"); renderMember(); recalc();
+    } catch(e) { toast(e.message); }
+  }
+
+  function renderMember() {
+    $("noMember").classList.add("hidden");
+    $("memberBox").classList.remove("hidden");
+    $("mName").textContent = member.name;
+    $("mPhone").textContent = member.phone;
+    $("mPoints").textContent = (member.points).toLocaleString("ko-KR");
+    $("mVisits").textContent = member.visit_count;
+    $("mStamps").textContent = member.stamps + " / " + member.stamp_goal;
+    const t = $("mTier"); t.textContent = member.tier_display || member.tier;
+    t.className = "badge b-" + member.tier;
+  }
+
+  function useAllPoints() {
+    if (!member) return;
+    $("usePoints").value = Math.min(member.points, amount);
+    recalc();
+  }
+
+  function recalc() {
+    const rate = store ? Number(store.point_earn_rate) : 0;
+    let use = Math.max(0, parseInt($("usePoints").value || "0", 10));
+    if (member) use = Math.min(use, member.points, amount);
+    else use = 0;
+    const net = Math.max(0, amount - use);
+    const earn = member ? Math.round(net * rate) : 0;
+    $("sGross").textContent = won(amount);
+    $("sUse").textContent = won(use);
+    $("sEarn").textContent = earn.toLocaleString("ko-KR") + "P";
+    $("sNet").textContent = won(net);
+    $("payBtn").disabled = amount <= 0;
+  }
+
+  // 결제수단 선택
+  $("methods").addEventListener("click", (e) => {
+    const p = e.target.closest(".pill"); if (!p) return;
+    [...$("methods").children].forEach(x => x.classList.remove("on"));
+    p.classList.add("on"); method = p.dataset.m;
+  });
+
+  async function pay() {
+    if (amount <= 0) return;
+    const use = member ? Math.max(0, parseInt($("usePoints").value||"0",10)) : 0;
+    const order = "slowstep-" + Date.now();
+    $("payBtn").disabled = true; $("payBtn").textContent = "승인 중…";
+    try {
+      const res = await api("/api/v1/transactions", { method:"POST", body: JSON.stringify({
+        member_id: member ? member.id : null,
+        gross_amount: amount, points_to_use: use,
+        payment_method: method, toss_order_id: order,
+      })});
+      showResult(res);
+      if (res.member) { member = res.member; renderMember(); }
+    } catch(e) {
+      toast("❌ " + e.message);
+    } finally {
+      $("payBtn").disabled = false; $("payBtn").textContent = "결제하기";
+    }
+  }
+
+  function showResult(res) {
+    let html = `<div class="reward">✅ 결제 완료 · 실결제 <b>${won(res.net_amount)}</b><br/>`;
+    if (res.member) html += `적립 <b>+${res.points_earned}P</b> · 보유 ${res.member.points.toLocaleString("ko-KR")}P`;
+    else html += "비회원 결제 (적립 없음)";
+    html += "</div>";
+    (res.rewards||[]).forEach(r => {
+      html += `<div class="reward">🎁 ${r.title} · +${r.points}P</div>`;
+    });
+    $("result").innerHTML = html;
+    // 초기화
+    amount = 0; renderAmount(); $("usePoints").value = "0"; recalc();
+    toast("결제 완료 ✅");
+  }
+
+  init(); renderAmount(); recalc();
+</script>
+</body>
+</html>

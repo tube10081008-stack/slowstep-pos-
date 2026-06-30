@@ -1,0 +1,102 @@
+# ☕ 슬로우스텝 멤버십 POS
+
+> **결제사 종속에서 벗어난 자체 모바일 POS · 단말결제 · 게이미피케이션 멤버십 시스템**
+> 카페 *슬로우스텝* 이 직접 모은 멤버십 고객(약 220명)을 **온전히 우리 자산으로** 운영하기 위한 프로젝트.
+
+이 폴더는 기존 레포(`Urge-surfing`)와 독립적인 **새 프로젝트**입니다.
+
+---
+
+## 🎯 왜 만드나 (병목)
+
+현재 슬로우스텝은 국내 결제사 **payhere** 프로그램을 사용 중입니다.
+
+- 멤버십 고객을 **220명 가까이** 직접 모았으나,
+- 이들에게 마케팅을 하려면 결제사의 **고객관리 프리미엄 기능을 별도 구매**해야 합니다.
+- 즉, **내가 모은 고객인데도 결제사 동의 없이는 마케팅을 실행할 수 없는** 종속 상태입니다.
+
+**해결:** 결제 단말기 + **Toss페이먼츠**를 결합해 **자체 모바일 POS / 단말결제 시스템**을 구축합니다.
+고객 데이터의 소유권을 우리가 갖고, 적립·등급·미션 등 **게이미피케이션 멤버십**을 자유롭게 운영합니다.
+
+---
+
+## 🧩 핵심 기능
+
+| # | 기능 | 한 줄 설명 |
+| --- | --- | --- |
+| 1 | **모바일 POS** | 스마트폰/태블릿이 곧 단말. 직원이 결제·적립을 한 화면에서 처리 |
+| 2 | **단말 결제 (Toss)** | Toss페이먼츠로 카드/간편결제 승인. payhere 종속 탈피 |
+| 3 | **회원번호(연락처) 조회** | QR코드 스캔 → 본인 회원번호로 즉시 식별·적립 |
+| 4 | **포인트 적립/사용** | 결제 금액 기반 자동 적립, 다음 결제에서 차감 사용 |
+| 5 | **게이미피케이션 멤버십** | 방문 스탬프·등급(브론즈~골드)·미션/챌린지로 재방문 유도 |
+| 6 | **우리 소유의 고객 DB** | 마케팅 발송·세그먼트의 기반. 결제사 동의 불필요 |
+
+---
+
+## 🏗️ 기술 스택
+
+| 영역 | 선택 | 비고 |
+| --- | --- | --- |
+| 백엔드 | **Django 5 + DRF** | 기존 레포와 동일 컨벤션, 이 환경에 즉시 실행 가능 |
+| 데이터 | SQLite(개발) → PostgreSQL(운영) | 환경변수 주입 시 운영 승격 |
+| 결제 | **Toss Payments** | 단말/온라인 결제 승인·웹훅 |
+| 클라이언트 | **웹앱(반응형)** | 직원용 POS + 고객용 QR 멤버십 페이지. 설치 없이 즉시 사용 |
+
+---
+
+## 📂 폴더 구조
+
+```
+slowstep-pos/
+├─ README.md                ← (이 문서)
+├─ docs/
+│  ├─ PRD.md                ← 제품 기획 (문제·목표·기능·로드맵)
+│  ├─ DATA-MODEL.md         ← 데이터 모델 설계
+│  ├─ API-CONTRACT.md       ← REST API 계약 (/api/v1)
+│  └─ TOSS-INTEGRATION.md   ← Toss페이먼츠 연동 설계
+├─ backend/                 ← Django + DRF
+│  ├─ manage.py
+│  ├─ requirements.txt
+│  ├─ config/               ← settings/urls/wsgi
+│  └─ membership/           ← 회원·거래·포인트·미션 도메인
+└─ web/
+   ├─ pos/index.html        ← 직원용 모바일 POS
+   └─ member/index.html     ← 고객용 QR 멤버십 페이지
+```
+
+---
+
+## 🚀 빠른 시작 (백엔드)
+
+```bash
+cd slowstep-pos/backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py seed_demo      # 데모 회원/미션 시드
+python manage.py runserver
+```
+
+- API 베이스: `http://localhost:8000/api/v1/`
+- 관리자: `http://localhost:8000/admin/` (`createsuperuser` 후)
+
+## 🖥️ 웹 클라이언트 (정적)
+
+```bash
+cd slowstep-pos/web
+python -m http.server 5500
+# 직원 POS : http://localhost:5500/pos/
+# 고객 QR : http://localhost:5500/member/?phone=01012345678
+```
+> POS/멤버 페이지는 백엔드 `API_BASE`를 가리킵니다. 다른 호스트면 각 HTML 상단의 `API_BASE` 값을 수정하세요.
+
+---
+
+## 🗺️ 로드맵 (요약)
+
+- **P0 (현재 · 스캐폴드)** — 데이터 모델, 회원/적립/거래 API, Toss 연동 설계, 동작하는 웹 POS·QR 페이지 골격
+- **P1** — Toss 실결제 승인·웹훅 연동, 단말 페어링, 정산 리포트
+- **P2** — 게이미피케이션 고도화(미션 엔진·푸시), 마케팅 세그먼트·발송
+- **P3** — 멀티 매장, 정산/회계 연동, 데이터 분석 대시보드
+
+자세한 내용은 [`docs/PRD.md`](./docs/PRD.md) 참조.
