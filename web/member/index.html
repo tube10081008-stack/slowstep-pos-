@@ -5,115 +5,133 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>슬로우스텝 멤버십</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600&display=swap');
   :root {
-    --bg:#0e0c0a; --card:#1a1712; --card2:#1c1813; --line:#332c22; --txt:#f0ebe3;
-    --muted:#9a8f7e; --gold:#f5c542; --gold2:#c8922f; --coffee:#c8925a; --accent:#e0a852;
-    --green:#5fbf7e;
+    --bg:#0a0908; --card:#121110; --card2:#151312; --line:#2a251f; --hair:rgba(203,171,109,.20);
+    --txt:#ece6da; --muted:#8b8274; --gold:#cbab6d; --gold-hi:#e7d5a6; --gold2:#a5854c;
+    --coffee:#b7966a; --accent:#cbab6d; --green:#a3b89c;
+    --serif:"Noto Serif KR", Georgia, serif;
+    --sans:"Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  body { margin:0; background:radial-gradient(120% 60% at 50% 0%, #1c160f 0%, var(--bg) 60%);
-    color:var(--txt); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif; }
-  .wrap { max-width:460px; margin:0 auto; padding:18px 16px 60px; }
-  .card { background:var(--card2); border:1px solid var(--line); border-radius:18px; padding:18px; margin-bottom:14px; }
-  h3 { font-size:14px; margin:0 0 14px; display:flex; align-items:center; gap:7px; }
+  body { margin:0; background:
+      radial-gradient(140% 55% at 50% -8%, #171310 0%, var(--bg) 55%),
+      var(--bg);
+    color:var(--txt); font-family:var(--sans); font-weight:400;
+    letter-spacing:.01em; }
+  .wrap { max-width:460px; margin:0 auto; padding:22px 16px 64px; }
+  .card { background:var(--card2); border:1px solid var(--line); border-radius:16px;
+    padding:20px; margin-bottom:14px; box-shadow:0 1px 0 rgba(255,255,255,.02) inset; }
+  h3 { font-family:var(--serif); font-size:15px; font-weight:600; margin:0 0 16px;
+    letter-spacing:.01em; color:#e4dccd; }
+  .eyebrow { font-size:10px; letter-spacing:.34em; text-transform:uppercase;
+    color:var(--gold); font-weight:500; }
   .muted { color:var(--muted); font-size:12px; }
   .hidden { display:none; }
 
   /* 로그인 */
-  input { width:100%; background:#120f0b; border:1px solid var(--line); color:var(--txt);
-    border-radius:12px; padding:14px; font-size:16px; margin-top:8px; }
-  button.go { width:100%; border:0; border-radius:12px; padding:14px; font-weight:700; margin-top:10px;
-    color:#1a1206; background:linear-gradient(135deg,var(--gold),var(--gold2)); cursor:pointer; font-size:15px; }
+  input { width:100%; background:#0f0d0b; border:1px solid var(--line); color:var(--txt);
+    border-radius:11px; padding:15px; font-size:16px; margin-top:8px; font-family:var(--sans); }
+  button.go { width:100%; border:0; border-radius:11px; padding:15px; font-weight:600; margin-top:12px;
+    color:#211703; background:linear-gradient(135deg,var(--gold-hi),var(--gold)); cursor:pointer;
+    font-size:14px; letter-spacing:.08em; }
 
   /* 히어로 */
-  .hero { text-align:center; padding:26px 18px 22px;
-    background:linear-gradient(165deg,#241c12,#17120c); border:1px solid var(--line); border-radius:20px; margin-bottom:14px; }
-  .hero .name { font-size:19px; font-weight:800; }
-  .tier-badge { display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:4px 12px;
-    border-radius:999px; font-weight:800; margin-top:8px; }
-  .t-BRONZE{ background:#6b45248c; color:#e6b98a; } .t-SILVER{ background:#5f6b7d8c; color:#dbe6f2; }
-  .t-GOLD{ background:linear-gradient(135deg,#f5c542,#b9832a); color:#3a2606; }
-  .points { font-size:44px; font-weight:900; margin-top:14px; color:var(--gold);
-    text-shadow:0 2px 20px rgba(245,197,66,.25); letter-spacing:-1px; }
-  .points span { font-size:16px; color:var(--muted); font-weight:700; }
-  .hstats { display:flex; justify-content:space-around; margin-top:16px; padding-top:16px; border-top:1px solid var(--line); }
-  .hstats div { font-size:11px; color:var(--muted); }
-  .hstats b { display:block; font-size:17px; color:var(--txt); margin-top:3px; }
+  .hero { text-align:center; padding:32px 20px 24px; position:relative; overflow:hidden;
+    background:linear-gradient(170deg,#1b1712 0%,#100d0b 100%);
+    border:1px solid var(--line); border-radius:18px; margin-bottom:14px; }
+  .hero::after { content:""; position:absolute; inset:0 0 auto 0; height:1px;
+    background:linear-gradient(90deg,transparent,var(--hair),transparent); }
+  .hero .name { font-family:var(--serif); font-size:24px; font-weight:600; margin-top:6px; letter-spacing:.02em; }
+  .tier-badge { display:inline-flex; align-items:center; gap:5px; font-size:10px; padding:5px 14px;
+    border-radius:999px; font-weight:600; margin-top:12px; letter-spacing:.22em; text-transform:uppercase; }
+  .t-BRONZE{ background:#221a12; color:#c8a575; border:1px solid #4a3a24; }
+  .t-SILVER{ background:#1b1f24; color:#c9d3de; border:1px solid #445162; }
+  .t-GOLD{ background:linear-gradient(135deg,#e7d5a6,#a5854c); color:#241a0c; }
+  .points { font-family:var(--serif); font-size:46px; font-weight:600; margin-top:20px; color:var(--gold-hi);
+    text-shadow:0 2px 30px rgba(203,171,109,.22); letter-spacing:0; line-height:1; }
+  .points span { font-size:15px; color:var(--muted); font-weight:400; font-family:var(--sans); margin-left:2px; }
+  .hstats { display:flex; justify-content:space-around; margin-top:22px; padding-top:18px;
+    border-top:1px solid var(--line); }
+  .hstats div { font-size:10px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase; }
+  .hstats b { display:block; font-family:var(--serif); font-size:19px; font-weight:500; color:var(--txt); margin-top:6px; }
 
   /* 등급 진행 링 */
-  .ring-wrap { display:flex; align-items:center; gap:16px; }
-  .ring { position:relative; width:92px; height:92px; flex:0 0 92px; }
+  .ring-wrap { display:flex; align-items:center; gap:18px; }
+  .ring { position:relative; width:96px; height:96px; flex:0 0 96px; }
   .ring svg { transform:rotate(-90deg); }
   .ring .pct { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-  .ring .pct b { font-size:22px; font-weight:900; color:var(--gold); }
-  .ring .pct span { font-size:9px; color:var(--muted); }
-  .ring-info .big { font-size:15px; font-weight:700; }
-  .ring-info .sub { font-size:12px; color:var(--muted); margin-top:4px; line-height:1.5; }
+  .ring .pct b { font-family:var(--serif); font-size:23px; font-weight:600; color:var(--gold-hi); }
+  .ring .pct span { font-size:8px; color:var(--muted); letter-spacing:.2em; text-transform:uppercase; margin-top:2px; }
+  .ring-info .big { font-family:var(--serif); font-size:16px; font-weight:500; }
+  .ring-info .sub { font-size:12px; color:var(--muted); margin-top:5px; line-height:1.6; }
 
   /* 랭킹 */
-  .myrank { display:flex; align-items:baseline; gap:8px; margin-bottom:12px; }
-  .myrank .r { font-size:30px; font-weight:900; color:var(--gold); }
-  .myrank .pctl { font-size:12px; color:var(--coffee); font-weight:700;
-    background:#2a2013; border:1px solid var(--line); padding:3px 9px; border-radius:999px; }
-  .lb-row { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:10px; font-size:14px; }
-  .lb-row.me { background:linear-gradient(90deg,#2a2013,#1c1813); border:1px solid var(--gold2); }
-  .lb-rank { width:24px; text-align:center; font-weight:800; color:var(--muted); }
-  .lb-name { flex:1; }
+  .myrank { display:flex; align-items:baseline; gap:10px; margin-bottom:14px; }
+  .myrank .r { font-family:var(--serif); font-size:32px; font-weight:600; color:var(--gold-hi); }
+  .myrank .pctl { font-size:11px; color:var(--gold); font-weight:500; letter-spacing:.1em;
+    background:#181410; border:1px solid var(--line); padding:4px 10px; border-radius:999px; }
+  .lb-row { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px; font-size:14px; }
+  .lb-row.me { background:linear-gradient(90deg,#1d1811,#151312); border:1px solid var(--gold2); }
+  .lb-rank { width:24px; text-align:center; font-weight:600; color:var(--muted); font-family:var(--serif); }
+  .lb-name { flex:1; letter-spacing:.02em; }
   .lb-val { color:var(--muted); font-size:12px; }
-  .lb-row.me .lb-name { color:var(--gold); font-weight:700; }
+  .lb-row.me .lb-name { color:var(--gold-hi); font-weight:500; }
 
   /* 배지 */
   .badges { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
-  .badge { text-align:center; padding:12px 4px; border-radius:14px; background:#161209; border:1px solid var(--line); }
-  .badge .ic { font-size:26px; filter:grayscale(1) opacity(.35); }
-  .badge.on { background:linear-gradient(160deg,#2a2013,#191307); border-color:#4a3a1e; }
-  .badge.on .ic { filter:none; }
-  .badge .bt { font-size:10px; margin-top:5px; color:var(--muted); font-weight:600; }
-  .badge.on .bt { color:var(--txt); }
+  .badge { text-align:center; padding:14px 4px; border-radius:12px; background:#100e0c; border:1px solid var(--line); }
+  .badge .ic { font-family:var(--serif); font-size:22px; color:#3b352b; line-height:1; }
+  .badge.on { background:linear-gradient(165deg,#1d1811,#141110); border-color:var(--gold2); }
+  .badge.on .ic { color:var(--gold-hi); }
+  .badge .bt { font-size:10px; margin-top:6px; color:var(--muted); font-weight:500; letter-spacing:.02em; }
+  .badge.on .bt { color:#e4dccd; }
   .badge .bd { font-size:8px; color:var(--muted); margin-top:2px; }
 
   /* 스탬프 */
-  .stamps { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
-  .stamp { aspect-ratio:1; border-radius:50%; border:1.5px dashed var(--line); display:flex; align-items:center;
-    justify-content:center; font-size:17px; color:var(--muted); }
-  .stamp.on { background:#2a2013; border:1.5px solid var(--gold); color:var(--gold); }
+  .stamps { display:grid; grid-template-columns:repeat(5,1fr); gap:9px; }
+  .stamp { aspect-ratio:1; border-radius:50%; border:1px solid var(--line); display:flex; align-items:center;
+    justify-content:center; font-size:15px; color:var(--muted); font-family:var(--serif); }
+  .stamp.on { background:linear-gradient(160deg,#1d1811,#141110); border:1px solid var(--gold); color:var(--gold-hi); }
 
   /* 타임라인 */
   .tl { position:relative; padding-left:22px; }
-  .tl::before { content:""; position:absolute; left:6px; top:4px; bottom:4px; width:2px; background:var(--line); }
+  .tl::before { content:""; position:absolute; left:5px; top:4px; bottom:4px; width:1px; background:var(--line); }
   .tl-item { position:relative; padding:0 0 16px; }
-  .tl-item::before { content:""; position:absolute; left:-19px; top:3px; width:9px; height:9px; border-radius:50%;
-    background:var(--gold); box-shadow:0 0 0 3px #1c1813; }
+  .tl-item::before { content:""; position:absolute; left:-19px; top:4px; width:7px; height:7px; border-radius:50%;
+    background:var(--gold); box-shadow:0 0 0 3px var(--card2); }
   .tl-item:last-child { padding-bottom:0; }
-  .tl-top { display:flex; justify-content:space-between; font-size:14px; font-weight:600; }
-  .tl-sub { font-size:12px; color:var(--muted); margin-top:2px; }
-  .tl-earn { color:var(--green); font-size:12px; font-weight:700; }
+  .tl-top { display:flex; justify-content:space-between; font-size:14px; font-weight:500; }
+  .tl-sub { font-size:11px; color:var(--muted); margin-top:3px; letter-spacing:.04em; }
+  .tl-earn { color:var(--gold); font-size:12px; font-weight:500; }
 
   /* 미션 */
-  .mission { border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:10px; }
-  .mission.done { border-color:#3a5d2f; background:#141f11; }
-  .mission .top { display:flex; justify-content:space-between; font-size:14px; font-weight:600; }
+  .mission { border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:10px; }
+  .mission.done { border-color:var(--gold2); background:#141110; }
+  .mission .top { display:flex; justify-content:space-between; font-size:14px; font-weight:500; }
   .mission .rw { color:var(--gold); font-size:12px; }
-  .bar { height:7px; background:#120f0b; border-radius:99px; margin-top:9px; overflow:hidden; }
-  .bar > i { display:block; height:100%; background:linear-gradient(90deg,var(--coffee),var(--gold)); }
+  .bar { height:5px; background:#0f0d0b; border-radius:99px; margin-top:10px; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:linear-gradient(90deg,var(--gold2),var(--gold-hi)); }
   .center { text-align:center; }
-  #err { color:#e88; }
+  #err { color:#d68b6b; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <!-- 조회 폼 -->
   <div class="card" id="loginCard">
-    <h3>☕ 슬로우스텝 멤버십</h3>
-    <p class="muted">QR을 스캔하거나 연락처로 내 멤버십을 확인하세요.</p>
+    <div class="eyebrow">SLOWSTEP MAISON</div>
+    <h3 style="margin-top:8px;">멤버십</h3>
+    <p class="muted">QR을 스캔하거나 연락처로 멤버십을 확인하세요.</p>
     <input id="phone" inputmode="numeric" placeholder="01012345678" />
-    <button class="go" onclick="submitPhone()">내 멤버십 보기</button>
+    <button class="go" onclick="submitPhone()">멤버십 확인</button>
     <p class="muted center" style="margin-top:10px;" id="err"></p>
   </div>
 
   <div id="view" class="hidden">
     <!-- 히어로 -->
     <div class="hero">
+      <div class="eyebrow">SLOWSTEP MEMBERSHIP</div>
       <div class="name" id="name">—</div>
       <span class="tier-badge" id="tier">—</span>
       <div class="points" id="points">0<span>P</span></div>
@@ -126,7 +144,7 @@
 
     <!-- 다음 등급 진행 링 -->
     <div class="card">
-      <h3>🎖️ 등급 여정</h3>
+      <h3>등급 여정</h3>
       <div class="ring-wrap">
         <div class="ring">
           <svg width="92" height="92" viewBox="0 0 92 92">
@@ -134,7 +152,7 @@
             <circle id="ringFg" cx="46" cy="46" r="40" fill="none" stroke="url(#gg)" stroke-width="9"
               stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="251.2"/>
             <defs><linearGradient id="gg" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stop-color="#c8925a"/><stop offset="1" stop-color="#f5c542"/>
+              <stop offset="0" stop-color="#a5854c"/><stop offset="1" stop-color="#e7d5a6"/>
             </linearGradient></defs>
           </svg>
           <div class="pct"><b id="ringPct">0%</b><span>진행</span></div>
@@ -148,7 +166,7 @@
 
     <!-- 단골 랭킹 -->
     <div class="card">
-      <h3>🔥 단골 랭킹 <span class="muted" style="font-weight:400">· 누적 방문</span></h3>
+      <h3>단골 랭킹 <span class="muted" style="font-weight:400">· 누적 방문</span></h3>
       <div class="myrank">
         <span class="muted">내 순위</span>
         <span class="r" id="myRank">#-</span>
@@ -159,26 +177,26 @@
 
     <!-- 성취 배지 -->
     <div class="card">
-      <h3>🏅 성취 배지 <span class="muted" style="font-weight:400" id="badgeCount"></span></h3>
+      <h3>성취 배지 <span class="muted" style="font-weight:400" id="badgeCount"></span></h3>
       <div class="badges" id="badges"></div>
     </div>
 
     <!-- 스탬프 -->
     <div class="card">
-      <h3>🎟️ 스탬프 적립 <span class="muted" style="font-weight:400" id="stampLabel"></span></h3>
+      <h3>스탬프 적립 <span class="muted" style="font-weight:400" id="stampLabel"></span></h3>
       <div class="stamps" id="stamps"></div>
       <p class="muted" style="margin-top:10px;" id="stampHint"></p>
     </div>
 
     <!-- 방문 기록 타임라인 -->
     <div class="card">
-      <h3>📍 방문 기록</h3>
+      <h3>방문 기록</h3>
       <div class="tl" id="timeline"></div>
     </div>
 
     <!-- 미션 -->
     <div class="card">
-      <h3>🎯 진행 중인 미션</h3>
+      <h3>진행 중인 미션</h3>
       <div id="missions"></div>
     </div>
 
@@ -190,8 +208,7 @@
   const API_BASE = location.origin.includes(":5500") ? "http://localhost:8000" : location.origin;
   const $ = (id) => document.getElementById(id);
   const won = (n) => (n||0).toLocaleString("ko-KR");
-  const TIER_ICON = { BRONZE:"🥉", SILVER:"🥈", GOLD:"👑" };
-  const METHOD = { TOSS_CARD:"💳", TOSS_EASY:"📱", CASH:"💵" };
+  const METHOD = { TOSS_CARD:"카드", TOSS_EASY:"간편결제", CASH:"현금" };
 
   async function api(path){
     const r = await fetch(API_BASE + path);
@@ -226,7 +243,7 @@
     $("spent").textContent = won(m.total_spent);
     $("stampCount").textContent = m.stamps + "/" + m.stamp_goal;
     const tb = $("tier");
-    tb.textContent = (TIER_ICON[m.tier]||"") + " " + (m.tier_display||m.tier);
+    tb.textContent = m.tier_display || m.tier;
     tb.className = "tier-badge t-" + m.tier;
 
     // 등급 링
@@ -234,8 +251,8 @@
     $("ringFg").style.strokeDashoffset = C * (1 - nt.progress_pct/100);
     $("ringPct").textContent = nt.progress_pct + "%";
     if(nt.is_max){
-      $("ringTitle").textContent = "최고 등급 달성 🎉";
-      $("ringSub").textContent = "골드 회원님, 최고의 단골이세요!";
+      $("ringTitle").textContent = "최고 등급 달성";
+      $("ringSub").textContent = "골드 회원님, 최고의 단골이세요.";
     } else {
       $("ringTitle").textContent = nt.next + " 등급까지";
       $("ringSub").innerHTML = "앞으로 <b style='color:var(--gold)'>" + won(nt.remaining) + "원</b> 더 쓰면<br>" + nt.next + " 등급으로 올라가요";
@@ -267,9 +284,9 @@
     const goal = m.stamp_goal || 10;
     $("stampLabel").textContent = m.stamps + " / " + goal;
     let sh = "";
-    for(let i=0;i<goal;i++) sh += `<div class="stamp ${i<m.stamps?"on":""}">${i<m.stamps?"☕":i+1}</div>`;
+    for(let i=0;i<goal;i++) sh += `<div class="stamp ${i<m.stamps?"on":""}">${i<m.stamps?"◆":i+1}</div>`;
     $("stamps").innerHTML = sh;
-    $("stampHint").textContent = goal-m.stamps>0 ? `${goal-m.stamps}잔 더 모으면 보상 포인트!` : "보상 적립 완료 🎉";
+    $("stampHint").textContent = goal-m.stamps>0 ? `${goal-m.stamps}잔 더 모으면 보상 포인트가 적립됩니다.` : "보상 적립이 완료되었습니다.";
 
     // 타임라인
     if(!d.timeline.length){
@@ -279,7 +296,7 @@
         const dt = t.paid_at ? new Date(t.paid_at) : null;
         const label = dt ? `${dt.getMonth()+1}월 ${dt.getDate()}일` : "";
         return `<div class="tl-item">
-          <div class="tl-top"><span>${METHOD[t.payment_method]||""} ${won(t.net_amount)}원 결제</span>
+          <div class="tl-top"><span>${won(t.net_amount)}원 · ${METHOD[t.payment_method]||""}</span>
             <span class="tl-earn">+${t.points_earned}P</span></div>
           <div class="tl-sub">${label}</div>
         </div>`;
@@ -291,7 +308,7 @@
     else $("missions").innerHTML = d.missions.map(x=>{
       const pct = Math.min(100, Math.round(x.progress/x.target*100));
       return `<div class="mission ${x.is_completed?"done":""}">
-        <div class="top"><span>${x.is_completed?"✅ ":""}${x.title}</span><span class="rw">+${x.reward_points}P</span></div>
+        <div class="top"><span>${x.is_completed?"◆ ":""}${x.title}</span><span class="rw">+${x.reward_points}P</span></div>
         <div class="muted">${x.description||""}</div>
         <div class="bar"><i style="width:${pct}%"></i></div>
         <div class="muted" style="margin-top:5px;">${won(x.progress)} / ${won(x.target)}</div>

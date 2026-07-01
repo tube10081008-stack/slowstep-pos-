@@ -5,14 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>슬로우스텝 · 주문 POS</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600&display=swap');
   :root {
-    --bg:#0e0c0a; --card:#1c1813; --card2:#211b14; --line:#332c22; --txt:#f0ebe3;
-    --muted:#9a8f7e; --gold:#f5c542; --gold2:#c8922f; --coffee:#c8925a;
-    --accent:#e0a852; --green:#5fbf7e;
+    --bg:#0a0908; --card:#121110; --card2:#151312; --line:#2a251f; --hair:rgba(203,171,109,.20);
+    --txt:#ece6da; --muted:#8b8274; --gold:#cbab6d; --gold-hi:#e7d5a6; --gold2:#a5854c;
+    --coffee:#b7966a; --accent:#cbab6d; --green:#a3b89c;
+    --serif:"Noto Serif KR", Georgia, serif;
+    --sans:"Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  body { margin:0; background:radial-gradient(120% 50% at 50% 0%, #1c160f 0%, var(--bg) 55%);
-    color:var(--txt); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif; }
+  body { margin:0; background:radial-gradient(140% 50% at 50% -8%, #171310 0%, var(--bg) 55%), var(--bg);
+    color:var(--txt); font-family:var(--sans); letter-spacing:.01em; }
+  h1, h2, .term-amt .amt, .amt, .total b, .mcard .nm, .cart h3, .mi .pr, .ctot, .cartTotal {
+    font-family:var(--serif); font-weight:600; }
+  header h1 { font-weight:600; letter-spacing:.02em; }
   .wrap { max-width:1000px; margin:0 auto; padding:14px 14px 40px; }
   header { display:flex; align-items:center; gap:10px; padding:6px 2px 14px; }
   header h1 { font-size:18px; margin:0; }
@@ -37,7 +43,7 @@
     cursor:pointer; text-align:center; transition:transform .05s, border-color .1s; position:relative; }
   .mi:active { transform:scale(.96); }
   .mi.sel { border-color:var(--gold); box-shadow:0 0 0 1px var(--gold) inset; }
-  .mi .emo { font-size:30px; }
+  .mi .emo { font-size:28px; filter:saturate(.7) brightness(.95); }
   .mi .nm { font-size:13px; font-weight:600; margin-top:6px; line-height:1.3; }
   .mi .pr { font-size:12px; color:var(--gold); margin-top:4px; font-weight:700; }
   .mi .qty { position:absolute; top:-8px; right:-8px; background:var(--gold); color:#1a1206;
@@ -103,7 +109,7 @@
 
   /* ── 완료 화면 ── */
   .done { max-width:440px; margin:0 auto; text-align:center; }
-  .done .ok { font-size:56px; }
+  .done .ok { font-size:52px; color:var(--gold-hi); font-family:var(--serif); }
   .done h2 { margin:8px 0 2px; }
   .receipt { text-align:left; margin:16px 0; }
   .receipt .r { display:flex; justify-content:space-between; font-size:14px; padding:6px 0; border-bottom:1px dashed var(--line); }
@@ -116,7 +122,7 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>☕ 슬로우스텝 주문</h1>
+    <h1>슬로우스텝 주문</h1>
     <span class="tag" id="storeTag">로딩…</span>
     <nav><a href="../dashboard/">대시보드 ↗</a><a href="../member/">멤버십 ↗</a></nav>
   </header>
@@ -129,7 +135,7 @@
         <div class="menu" id="menu"></div>
       </div>
       <div class="card cart">
-        <h3>🧺 주문 내역 <span class="clear" onclick="clearCart()">비우기</span></h3>
+        <h3>주문 내역 <span class="clear" onclick="clearCart()">비우기</span></h3>
         <div id="cartList"><div class="empty">메뉴를 담아주세요</div></div>
         <div class="total"><span class="muted">합계</span><b id="cartTotal">0원</b></div>
         <button class="pay" id="payBtn" disabled onclick="goPay()">결제하기</button>
@@ -144,7 +150,7 @@
 
       <!-- 2-1. 고객번호 입력 (단말기 시뮬레이션) -->
       <div id="phoneStep">
-        <div class="term-msg">📟 고객님, 단말기에 <b>고객번호(연락처)</b>를 입력해 주세요</div>
+        <div class="term-msg">고객님, 단말기에 <b>고객번호(연락처)</b>를 입력해 주세요</div>
         <div class="phone-disp" id="phoneDisp"><span class="ph">01000000000</span></div>
         <div class="keypad" id="keypad"></div>
         <div class="row">
@@ -166,9 +172,9 @@
         </div>
         <label>결제수단</label>
         <div class="pill-row" id="methods">
-          <span class="pill on" data-m="TOSS_CARD">💳 카드</span>
-          <span class="pill" data-m="TOSS_EASY">📱 간편</span>
-          <span class="pill" data-m="CASH">💵 현금</span>
+          <span class="pill on" data-m="TOSS_CARD">카드</span>
+          <span class="pill" data-m="TOSS_EASY">간편결제</span>
+          <span class="pill" data-m="CASH">현금</span>
         </div>
         <div class="total"><span class="muted">실결제액</span><b id="payNet">0원</b></div>
         <button class="approve" id="approveBtn" onclick="approve()">결제 승인</button>
@@ -180,7 +186,7 @@
   <!-- ③ 완료 화면 -->
   <div id="doneView" class="hidden">
     <div class="card done">
-      <div class="ok">✅</div>
+      <div class="ok">✓</div>
       <h2>결제 완료</h2>
       <p class="muted" id="doneSub">감사합니다</p>
       <div class="receipt" id="receipt"></div>
@@ -358,8 +364,8 @@
       `<div class="r"><b>실결제액</b><b style="color:var(--gold)">${won(res.net_amount)}</b></div>`;
     if(res.member){
       $("doneSub").textContent = `${res.member.name} 님 · +${res.points_earned}P 적립 (보유 ${res.member.points.toLocaleString("ko-KR")}P)`;
-      let rw = (res.rewards||[]).map(r=>`<div class="reward">🎁 ${r.title} · +${r.points}P</div>`).join("");
-      if(res.member.stamps!==undefined) rw += `<div class="reward">🎟️ 스탬프 ${res.member.stamps}/${res.member.stamp_goal}</div>`;
+      let rw = (res.rewards||[]).map(r=>`<div class="reward">◆ ${r.title} · +${r.points}P</div>`).join("");
+      if(res.member.stamps!==undefined) rw += `<div class="reward">스탬프 ${res.member.stamps}/${res.member.stamp_goal}</div>`;
       $("doneRewards").innerHTML = rw;
     } else { $("doneSub").textContent = "비회원 결제 완료"; $("doneRewards").innerHTML=""; }
   }

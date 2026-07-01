@@ -5,14 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>슬로우스텝 · 점주 대시보드</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600&display=swap');
   :root {
-    --bg:#0e0c0a; --card:#1c1813; --line:#332c22; --txt:#f0ebe3;
-    --muted:#9a8f7e; --accent:#e0a852; --green:#5fbf7e; --gold:#f5c542;
-    --gold2:#c8922f; --coffee:#c8925a; --red:#e06a5a;
+    --bg:#0a0908; --card:#151312; --line:#2a251f; --hair:rgba(203,171,109,.20); --txt:#ece6da;
+    --muted:#8b8274; --accent:#cbab6d; --green:#a3b89c; --gold:#cbab6d; --gold-hi:#e7d5a6;
+    --gold2:#a5854c; --coffee:#b7966a; --red:#d68b6b;
+    --serif:"Noto Serif KR", Georgia, serif;
+    --sans:"Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
   * { box-sizing:border-box; }
-  body { margin:0; background:radial-gradient(90% 40% at 50% 0%, #1c160f 0%, var(--bg) 55%);
-    color:var(--txt); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif; }
+  body { margin:0; background:radial-gradient(110% 45% at 50% -6%, #171310 0%, var(--bg) 55%), var(--bg);
+    color:var(--txt); font-family:var(--sans); letter-spacing:.01em; }
+  h1, h3, .kpi .val, .bars, .b-GOLD { font-family:inherit; }
+  header h1, h3 { font-family:var(--serif); font-weight:600; letter-spacing:.02em; }
+  .kpi .val { font-family:var(--serif); font-weight:600; }
   .wrap { max-width:1080px; margin:0 auto; padding:20px 18px 60px; }
   header { display:flex; align-items:baseline; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
   header h1 { font-size:20px; margin:0; }
@@ -71,7 +77,7 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>📊 슬로우스텝 점주 대시보드</h1>
+    <h1>슬로우스텝 대시보드</h1>
     <span class="sub" id="sub">고객 데이터는 우리 것 — payhere 동의 없이 직접 마케팅</span>
     <nav style="margin-left:auto">
       <a href="../pos/">POS ↗</a><a href="../member/">멤버십 ↗</a>
@@ -84,13 +90,13 @@
   <div class="grid cols" style="margin-top:14px;">
     <!-- 매출 추세 -->
     <div class="card">
-      <h3>📈 최근 14일 매출</h3>
+      <h3>최근 14일 매출</h3>
       <div class="bars" id="trend"></div>
       <div style="height:22px"></div>
     </div>
     <!-- 등급 분포 -->
     <div class="card">
-      <h3>🏅 등급 분포</h3>
+      <h3>등급 분포</h3>
       <div class="tier-bar" id="tierBar"></div>
       <div class="legend" id="tierLegend"></div>
     </div>
@@ -99,13 +105,13 @@
   <div class="grid cols" style="margin-top:14px;">
     <!-- 상위 고객 -->
     <div class="card">
-      <h3>👑 우수 고객 TOP 5</h3>
+      <h3>우수 고객 TOP 5</h3>
       <table><thead><tr><th>이름</th><th>등급</th><th>누적결제</th><th>방문</th><th>포인트</th></tr></thead>
       <tbody id="topMembers"></tbody></table>
     </div>
     <!-- 최근 결제 -->
     <div class="card">
-      <h3>🧾 최근 결제</h3>
+      <h3>최근 결제</h3>
       <table><thead><tr><th>고객</th><th>결제</th><th>적립</th><th>수단</th></tr></thead>
       <tbody id="recentTx"></tbody></table>
     </div>
@@ -113,7 +119,7 @@
 
   <!-- 마케팅 발송 -->
   <div class="card" style="margin-top:14px;">
-    <h3>📨 마케팅 알림톡 발송</h3>
+    <h3>마케팅 알림톡 발송</h3>
     <div class="grid cols">
       <!-- 세그먼트 빌더 -->
       <div>
@@ -162,7 +168,7 @@
         </label>
         <div class="muted" style="margin-top:8px;">미리보기 (첫 대상 기준)</div>
         <div class="kakao" id="kakaoPreview">—</div>
-        <button class="send" id="sendBtn" onclick="sendCampaign()">📨 발송하기</button>
+        <button class="send" id="sendBtn" onclick="sendCampaign()">발송하기</button>
         <div class="result" id="sendResult"></div>
       </div>
     </div>
@@ -228,7 +234,7 @@
     ).join("");
 
     // 최근 결제
-    const METHOD = {TOSS_CARD:"💳카드",TOSS_EASY:"📱간편",CASH:"💵현금"};
+    const METHOD = {TOSS_CARD:"카드",TOSS_EASY:"간편결제",CASH:"현금"};
     $("recentTx").innerHTML = d.recent_transactions.map(t=>
       `<tr><td>${t.member__name||"비회원"}</td><td>${won(t.net_amount)}</td>
        <td>+${t.points_earned}P</td><td>${METHOD[t.payment_method]||t.payment_method}</td></tr>`
@@ -271,7 +277,7 @@
       const r = await api("/api/v1/segments/preview", { method:"POST", body: JSON.stringify(filters()) });
       firstSample = r.sample[0] || null;
       const names = r.sample.slice(0,5).map(m=>m.name).join(", ");
-      $("previewBox").innerHTML = `🎯 대상 <b style="font-size:16px">${r.count}명</b>` +
+      $("previewBox").innerHTML = `대상 <b style="font-size:16px">${r.count}명</b>` +
         (r.count? `<div class="muted" style="margin-top:6px;">${names}${r.count>5?" 외 "+(r.count-5)+"명":""}</div>`:"");
       renderPreview();
     } catch(e){ $("previewBox").textContent = "오류: "+e.message; }
@@ -308,13 +314,13 @@
       const res = await api(`/api/v1/campaigns/${camp.id}/send`, { method:"POST" });
       $("sendResult").innerHTML =
         `<span class="pill">대상 ${res.recipient_count}</span>` +
-        `<span class="pill ok">✅ 성공 ${res.sent_count}</span>` +
-        `<span class="pill skip">⏭ 제외 ${res.skipped_count}</span>` +
-        `<span class="pill fail">❌ 실패 ${res.failed_count}</span>`;
-      toast("발송 완료 ✅");
+        `<span class="pill ok">성공 ${res.sent_count}</span>` +
+        `<span class="pill skip">제외 ${res.skipped_count}</span>` +
+        `<span class="pill fail">실패 ${res.failed_count}</span>`;
+      toast("발송 완료");
       loadDashboard(); loadSegments();
     } catch(e){ toast("❌ "+e.message); }
-    finally { $("sendBtn").disabled=false; $("sendBtn").textContent="📨 발송하기"; }
+    finally { $("sendBtn").disabled=false; $("sendBtn").textContent="발송하기"; }
   }
 
   (async ()=>{

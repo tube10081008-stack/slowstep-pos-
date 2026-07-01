@@ -25,14 +25,14 @@ def _badges(member: Member, completed_missions: int) -> list[dict]:
     v = member.visit_count
     spent = member.total_spent
     defs = [
-        ("first", "🌱", "첫 걸음", "첫 방문 완료", v >= 1),
-        ("regular", "☕", "단골", "5회 방문", v >= 5),
-        ("club10", "🔟", "10잔 클럽", "10회 방문", v >= 10),
-        ("club20", "🏆", "20잔 마스터", "20회 방문", v >= 20),
-        ("silver", "🥈", "실버 등급", "누적 5만원", member.tier in (Member.Tier.SILVER, Member.Tier.GOLD)),
-        ("gold", "🥇", "골드 등급", "누적 20만원", member.tier == Member.Tier.GOLD),
-        ("bigspender", "💎", "큰손", "누적 10만원", spent >= 100_000),
-        ("mission", "🎯", "미션 클리어", "미션 1개 달성", completed_missions >= 1),
+        ("first", "✦", "첫 걸음", "첫 방문 완료", v >= 1),
+        ("regular", "❖", "단골", "5회 방문", v >= 5),
+        ("club10", "X", "10잔 클럽", "10회 방문", v >= 10),
+        ("club20", "XX", "20잔 마스터", "20회 방문", v >= 20),
+        ("silver", "◆", "실버 등급", "누적 5만원", member.tier in (Member.Tier.SILVER, Member.Tier.GOLD)),
+        ("gold", "♛", "골드 등급", "누적 20만원", member.tier == Member.Tier.GOLD),
+        ("bigspender", "◈", "큰손", "누적 10만원", spent >= 100_000),
+        ("mission", "✧", "미션 클리어", "미션 1개 달성", completed_missions >= 1),
     ]
     return [
         {"key": k, "icon": icon, "title": t, "desc": d, "earned": bool(e)}
