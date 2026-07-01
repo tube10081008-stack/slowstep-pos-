@@ -5,6 +5,7 @@ from django.urls import path
 
 from .views import (
     MemberViewSet,
+    MenuView,
     MissionViewSet,
     StoreView,
     TransactionViewSet,
@@ -17,5 +18,6 @@ router.register("transactions", TransactionViewSet, basename="transaction")
 
 urlpatterns = [
     path("store", StoreView.as_view(), name="store"),
+    path("menu", MenuView.as_view(), name="menu"),
 ]
 urlpatterns += router.urls

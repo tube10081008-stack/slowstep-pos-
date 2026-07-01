@@ -4,11 +4,21 @@ from django.contrib import admin
 from .models import (
     Member,
     MemberMission,
+    MenuItem,
     Mission,
+    OrderItem,
     PointEntry,
     Store,
     Transaction,
 )
+
+
+@admin.register(MenuItem)
+class MenuItemAdmin(admin.ModelAdmin):
+    list_display = ["name", "category", "price", "is_available", "sort_order"]
+    list_filter = ["category", "is_available"]
+    list_editable = ["price", "is_available", "sort_order"]
+    search_fields = ["name"]
 
 
 @admin.register(Store)
@@ -23,11 +33,17 @@ class MemberAdmin(admin.ModelAdmin):
     search_fields = ["name", "phone"]
 
 
+class OrderItemInline(admin.TabularInline):
+    model = OrderItem
+    extra = 0
+
+
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
     list_display = ["id", "member", "gross_amount", "points_used", "net_amount", "points_earned", "payment_method", "status", "created_at"]
     list_filter = ["status", "payment_method"]
     search_fields = ["member__name", "member__phone", "toss_order_id"]
+    inlines = [OrderItemInline]
 
 
 @admin.register(PointEntry)

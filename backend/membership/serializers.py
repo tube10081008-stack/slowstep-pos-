@@ -4,11 +4,31 @@ from rest_framework import serializers
 from .models import (
     Member,
     MemberMission,
+    MenuItem,
     Mission,
+    OrderItem,
     PointEntry,
     Store,
     Transaction,
 )
+
+
+class MenuItemSerializer(serializers.ModelSerializer):
+    category_display = serializers.CharField(
+        source="get_category_display", read_only=True
+    )
+
+    class Meta:
+        model = MenuItem
+        fields = ["id", "name", "price", "category", "category_display", "emoji"]
+
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    line_total = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = OrderItem
+        fields = ["name", "unit_price", "quantity", "line_total"]
 
 
 class StoreSerializer(serializers.ModelSerializer):
@@ -74,11 +94,14 @@ class MemberMissionSerializer(serializers.ModelSerializer):
 
 
 class TransactionSerializer(serializers.ModelSerializer):
+    items = OrderItemSerializer(many=True, read_only=True)
+
     class Meta:
         model = Transaction
         fields = [
             "id", "gross_amount", "points_used", "net_amount", "points_earned",
             "payment_method", "status", "toss_order_id", "created_at", "paid_at",
+            "items",
         ]
 
 
@@ -88,10 +111,22 @@ class QuoteRequestSerializer(serializers.Serializer):
     points_to_use = serializers.IntegerField(min_value=0, default=0)
 
 
+class OrderLineSerializer(serializers.Serializer):
+    menu_item_id = serializers.IntegerField()
+    quantity = serializers.IntegerField(min_value=1)
+
+
 class CheckoutRequestSerializer(serializers.Serializer):
     member_id = serializers.IntegerField(required=False, allow_null=True)
-    gross_amount = serializers.IntegerField(min_value=1)
+    # 메뉴 항목이 오면 총액은 서버가 계산. 없으면 gross_amount 필수.
+    items = OrderLineSerializer(many=True, required=False)
+    gross_amount = serializers.IntegerField(min_value=1, required=False)
     points_to_use = serializers.IntegerField(min_value=0, default=0)
     payment_method = serializers.ChoiceField(choices=Transaction.Method.choices)
     toss_payment_key = serializers.CharField(required=False, allow_blank=True, default="")
     toss_order_id = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        if not attrs.get("items") and not attrs.get("gross_amount"):
+            raise serializers.ValidationError("items 또는 gross_amount가 필요합니다.")
+        return attrs

@@ -75,6 +75,36 @@ class Member(models.Model):
         return self.Tier.BRONZE
 
 
+class MenuItem(models.Model):
+    """매장 메뉴(POS 주문 화면용). 사장님이 관리자에서 관리."""
+
+    class Category(models.TextChoices):
+        COFFEE = "coffee", "커피"
+        NONCOFFEE = "noncoffee", "논커피"
+        ADE = "ade", "티·에이드"
+        DESSERT = "dessert", "디저트"
+
+    store = models.ForeignKey(
+        Store, on_delete=models.CASCADE, related_name="menu_items"
+    )
+    name = models.CharField("메뉴명", max_length=100)
+    price = models.IntegerField("가격")
+    category = models.CharField(
+        "카테고리", max_length=20, choices=Category.choices, default=Category.COFFEE
+    )
+    emoji = models.CharField("이모지", max_length=8, blank=True, default="")
+    is_available = models.BooleanField("판매중", default=True)
+    sort_order = models.IntegerField("정렬", default=0)
+
+    class Meta:
+        verbose_name = "메뉴"
+        verbose_name_plural = "메뉴"
+        ordering = ["category", "sort_order", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.price:,}원)"
+
+
 class Transaction(models.Model):
     """거래(결제) 1건."""
 
@@ -125,6 +155,31 @@ class Transaction(models.Model):
 
     def __str__(self) -> str:
         return f"거래#{self.pk} {self.net_amount}원 [{self.status}]"
+
+
+class OrderItem(models.Model):
+    """거래에 포함된 주문 항목(메뉴·수량 스냅샷)."""
+
+    transaction = models.ForeignKey(
+        Transaction, on_delete=models.CASCADE, related_name="items"
+    )
+    menu_item = models.ForeignKey(
+        MenuItem, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    name = models.CharField("메뉴명(스냅샷)", max_length=100)
+    unit_price = models.IntegerField("단가")
+    quantity = models.PositiveIntegerField("수량", default=1)
+
+    class Meta:
+        verbose_name = "주문 항목"
+        verbose_name_plural = "주문 항목"
+
+    @property
+    def line_total(self) -> int:
+        return self.unit_price * self.quantity
+
+    def __str__(self) -> str:
+        return f"{self.name} x{self.quantity}"
 
 
 class PointEntry(models.Model):

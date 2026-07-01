@@ -7,13 +7,14 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Member, Mission, Store, Transaction
+from .models import Member, MenuItem, Mission, Store, Transaction
 from .payments import TossError
 from .serializers import (
     CheckoutRequestSerializer,
     MemberCreateSerializer,
     MemberMissionSerializer,
     MemberSerializer,
+    MenuItemSerializer,
     MissionSerializer,
     PointEntrySerializer,
     QuoteRequestSerializer,
@@ -38,6 +39,14 @@ class StoreView(APIView):
         if store is None:
             return Response({"detail": "매장 설정이 없습니다."}, status=404)
         return Response(StoreSerializer(store).data)
+
+
+class MenuView(APIView):
+    """판매 중인 메뉴 목록(POS 주문 화면용)."""
+
+    def get(self, request):
+        qs = MenuItem.objects.filter(is_available=True)
+        return Response(MenuItemSerializer(qs, many=True).data)
 
 
 class MemberViewSet(viewsets.ModelViewSet):
@@ -130,9 +139,10 @@ class TransactionViewSet(viewsets.ModelViewSet):
         try:
             result = checkout(
                 member=member,
-                gross_amount=data["gross_amount"],
+                gross_amount=data.get("gross_amount") or 0,
                 points_to_use=data["points_to_use"],
                 payment_method=data["payment_method"],
+                items=data.get("items"),
                 toss_payment_key=data.get("toss_payment_key", ""),
                 toss_order_id=data.get("toss_order_id", ""),
             )

@@ -38,7 +38,22 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 
 ---
 
+## 메뉴 (Menu)
+
+### `GET /api/v1/menu`
+판매 중인 메뉴 목록(POS 주문 화면용).
+```json
+200 [ { "id":1, "name":"아메리카노", "price":4500,
+        "category":"coffee", "category_display":"커피", "emoji":"☕" }, ... ]
+```
+
+---
+
 ## 거래 / 결제 (Transaction)
+
+> **주문 기반 결제:** POS 키오스크는 `items`(메뉴+수량)를 보내고, **서버가 메뉴
+> 가격으로 총액을 계산**한다(금액 위변조 방지). 회원 식별은 결제 시점에
+> 고객이 단말기에 입력한 연락처로 조회한다.
 
 ### `POST /api/v1/transactions/quote`
 결제 전 **견적**: 사용 가능 포인트·적립 예상치를 미리 계산(승인 X).
@@ -49,12 +64,22 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 ```
 
 ### `POST /api/v1/transactions`
-거래 생성 + 결제 확정(현금/Toss). Toss는 클라이언트 승인 후 `toss_payment_key` 전달.
+거래 생성 + 결제 확정(현금/Toss). `items` 또는 `gross_amount` 중 하나 필수.
+`items`가 있으면 서버가 총액을 계산하고 주문 항목을 기록한다. `member_id`가
+없으면 비회원 결제(적립·게이미피케이션 없음).
 ```json
 요청 {
-  "member_id": 1, "gross_amount": 6500, "points_to_use": 1000,
+  "member_id": 1,
+  "items": [ { "menu_item_id": 1, "quantity": 2 }, { "menu_item_id": 4, "quantity": 1 } ],
+  "points_to_use": 1000,
   "payment_method": "TOSS_CARD",
-  "toss_payment_key": "tviva20250101...", "toss_order_id": "slowstep-...."
+  "toss_payment_key": "tviva20250101...", "toss_order_id": "kiosk-...."
+}
+응답에는 주문 항목(items[])이 포함된다.
+--- (직접 금액 방식도 지원) ---
+요청 {
+  "member_id": 1, "gross_amount": 6500, "points_to_use": 1000,
+  "payment_method": "TOSS_CARD"
 }
 201 {
   "id": 42, "status": "paid", "gross_amount": 6500,

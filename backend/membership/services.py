@@ -14,7 +14,9 @@ from django.utils import timezone
 from .models import (
     Member,
     MemberMission,
+    MenuItem,
     Mission,
+    OrderItem,
     PointEntry,
     Store,
     Transaction,
@@ -123,6 +125,31 @@ def _apply_stamp_and_tier(member: Member, txn: Transaction, rewards: list[dict])
     member.tier = member.compute_tier()
 
 
+def _resolve_items(items: list | None) -> tuple[int, list]:
+    """
+    주문 항목([{menu_item_id, quantity}])을 검증하고
+    (총액, [(MenuItem, 수량)]) 반환. 총액은 서버가 메뉴 가격으로 계산(위변조 방지).
+    """
+    if not items:
+        return 0, []
+    resolved = []
+    total = 0
+    for line in items:
+        mid = line.get("menu_item_id")
+        qty = int(line.get("quantity", 0))
+        if qty <= 0:
+            continue
+        try:
+            mi = MenuItem.objects.get(pk=mid, is_available=True)
+        except MenuItem.DoesNotExist:
+            raise CheckoutError(f"판매 중이 아닌 메뉴가 포함됐습니다(id={mid}).")
+        total += mi.price * qty
+        resolved.append((mi, qty))
+    if not resolved:
+        raise CheckoutError("주문 항목이 비어 있습니다.")
+    return total, resolved
+
+
 @db_transaction.atomic
 def checkout(
     *,
@@ -130,13 +157,19 @@ def checkout(
     gross_amount: int,
     points_to_use: int,
     payment_method: str,
+    items: list | None = None,
     toss_payment_key: str = "",
     toss_order_id: str = "",
 ) -> CheckoutResult:
     """
     결제 확정 전체 플로우(원자적):
-    견적 → Toss 승인 → 포인트 사용/적립 → 스탬프·등급·미션 → 회원 동기화.
+    (메뉴 항목→총액) → 견적 → Toss 승인 → 포인트 사용/적립 → 스탬프·등급·미션.
+    items가 주어지면 서버가 메뉴 가격으로 총액을 계산한다(gross_amount 대체).
     """
+    order_total, resolved_items = _resolve_items(items)
+    if resolved_items:
+        gross_amount = order_total
+
     quote = build_quote(member, gross_amount, points_to_use)
     store = member.store if member else Store.objects.first()
     if store is None:
@@ -176,6 +209,13 @@ def checkout(
     txn.status = Transaction.Status.PAID
     txn.paid_at = timezone.now()
     txn.save()
+
+    # ── 주문 항목 기록(메뉴 스냅샷) ──
+    for mi, qty in resolved_items:
+        OrderItem.objects.create(
+            transaction=txn, menu_item=mi, name=mi.name,
+            unit_price=mi.price, quantity=qty,
+        )
 
     rewards: list[dict] = []
 

@@ -6,7 +6,29 @@
 """
 from django.core.management.base import BaseCommand
 
-from membership.models import Member, Mission, Store
+from membership.models import Member, MenuItem, Mission, Store
+
+MENU = [
+    # (이름, 가격, 카테고리, 이모지, 정렬)
+    ("아메리카노", 4500, "coffee", "☕", 1),
+    ("카페라떼", 5000, "coffee", "🥛", 2),
+    ("카푸치노", 5000, "coffee", "☕", 3),
+    ("바닐라라떼", 5500, "coffee", "🍦", 4),
+    ("카페모카", 5500, "coffee", "🍫", 5),
+    ("콜드브루", 5500, "coffee", "🧊", 6),
+    ("디카페인 아메리카노", 5000, "coffee", "🌙", 7),
+    ("초코라떼", 5500, "noncoffee", "🍫", 1),
+    ("녹차라떼", 5500, "noncoffee", "🍵", 2),
+    ("고구마라떼", 5500, "noncoffee", "🍠", 3),
+    ("밀크티", 5500, "ade", "🧋", 1),
+    ("자몽에이드", 6000, "ade", "🍊", 2),
+    ("청귤에이드", 6000, "ade", "🍋", 3),
+    ("딸기라떼", 6000, "ade", "🍓", 4),
+    ("크로플", 6500, "dessert", "🧇", 1),
+    ("치즈케이크", 6800, "dessert", "🍰", 2),
+    ("초코쿠키", 3500, "dessert", "🍪", 3),
+    ("휘낭시에", 4000, "dessert", "🧁", 4),
+]
 
 
 class Command(BaseCommand):
@@ -63,5 +85,18 @@ class Command(BaseCommand):
                 defaults={**mem, "store": store},
             )
             self.stdout.write(("생성: " if created else "존재: ") + str(obj))
+
+        # 메뉴 시드
+        menu_n = 0
+        for name, price, cat, emoji, order in MENU:
+            _, created = MenuItem.objects.update_or_create(
+                store=store, name=name,
+                defaults={
+                    "price": price, "category": cat,
+                    "emoji": emoji, "sort_order": order, "is_available": True,
+                },
+            )
+            menu_n += 1
+        self.stdout.write(f"메뉴 {menu_n}종 시드")
 
         self.stdout.write(self.style.SUCCESS("시드 완료 ✅"))
