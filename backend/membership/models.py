@@ -19,6 +19,10 @@ class Store(models.Model):
     stamp_reward_points = models.PositiveIntegerField(
         "스탬프 달성 보상 포인트", default=3000
     )
+    # 커피+디저트 세트 시 디저트 1건당 할인액
+    set_discount_amount = models.IntegerField("세트 할인액", default=500)
+    # 디카페인·오트밀크 등 옵션 추가금
+    option_price = models.IntegerField("옵션 추가금", default=500)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
 
     class Meta:
@@ -80,9 +84,16 @@ class MenuItem(models.Model):
 
     class Category(models.TextChoices):
         COFFEE = "coffee", "커피"
+        COLDBREW = "coldbrew", "콜드브루"
+        ADE = "ade", "스무디·에이드"
         NONCOFFEE = "noncoffee", "논커피"
-        ADE = "ade", "티·에이드"
+        TEA = "tea", "티"
         DESSERT = "dessert", "디저트"
+
+    class Temp(models.TextChoices):
+        NONE = "none", "선택없음"
+        ICE = "ice", "아이스만"
+        HOTICE = "hotice", "핫/아이스"
 
     store = models.ForeignKey(
         Store, on_delete=models.CASCADE, related_name="menu_items"
@@ -92,6 +103,13 @@ class MenuItem(models.Model):
     category = models.CharField(
         "카테고리", max_length=20, choices=Category.choices, default=Category.COFFEE
     )
+    # 온도 선택: 없음(디저트) / 아이스만 / 핫·아이스
+    temp_option = models.CharField(
+        "온도 옵션", max_length=10, choices=Temp.choices, default=Temp.HOTICE
+    )
+    # 디카페인 변경 가능(커피류) · 오트밀크 변경 가능(라떼류) — 각 +옵션추가금
+    decaf_available = models.BooleanField("디카페인 선택", default=False)
+    oatmilk_available = models.BooleanField("오트밀크 선택", default=False)
     emoji = models.CharField("이모지", max_length=8, blank=True, default="")
     is_available = models.BooleanField("판매중", default=True)
     sort_order = models.IntegerField("정렬", default=0)
@@ -130,6 +148,7 @@ class Transaction(models.Model):
         verbose_name="회원",
     )
     gross_amount = models.IntegerField("주문 총액")
+    discount = models.IntegerField("세트 할인", default=0)
     points_used = models.IntegerField("사용 포인트", default=0)
     net_amount = models.IntegerField("실결제액")
     points_earned = models.IntegerField("적립 포인트", default=0)
@@ -167,8 +186,12 @@ class OrderItem(models.Model):
         MenuItem, on_delete=models.SET_NULL, null=True, blank=True
     )
     name = models.CharField("메뉴명(스냅샷)", max_length=100)
-    unit_price = models.IntegerField("단가")
+    unit_price = models.IntegerField("단가(옵션 포함)")
     quantity = models.PositiveIntegerField("수량", default=1)
+    # 옵션 스냅샷
+    temperature = models.CharField("온도", max_length=4, blank=True, default="")  # "", "ice", "hot"
+    decaf = models.BooleanField("디카페인", default=False)
+    oatmilk = models.BooleanField("오트밀크", default=False)
 
     class Meta:
         verbose_name = "주문 항목"
@@ -177,6 +200,19 @@ class OrderItem(models.Model):
     @property
     def line_total(self) -> int:
         return self.unit_price * self.quantity
+
+    @property
+    def option_label(self) -> str:
+        parts = []
+        if self.temperature == "hot":
+            parts.append("HOT")
+        elif self.temperature == "ice":
+            parts.append("ICE")
+        if self.decaf:
+            parts.append("디카페인")
+        if self.oatmilk:
+            parts.append("오트밀크")
+        return " · ".join(parts)
 
     def __str__(self) -> str:
         return f"{self.name} x{self.quantity}"

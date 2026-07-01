@@ -43,9 +43,13 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 ### `GET /api/v1/menu`
 판매 중인 메뉴 목록(POS 주문 화면용).
 ```json
-200 [ { "id":1, "name":"아메리카노", "price":4500,
-        "category":"coffee", "category_display":"커피", "emoji":"☕" }, ... ]
+200 [ { "id":1, "name":"아메리카노", "price":4000,
+        "category":"coffee", "category_display":"커피", "emoji":"☕",
+        "temp_option":"hotice", "decaf_available":true, "oatmilk_available":false }, ... ]
 ```
+- `temp_option`: `hotice`(핫/아이스 선택) · `ice`(아이스만) · `none`(디저트)
+- `decaf_available`(커피류)·`oatmilk_available`(라떼류): 옵션 추가 시 각 +`option_price`(기본 500원)
+- 세트 할인: 커피(음료)+디저트 동시 주문 시 `min(음료수, 디저트수) × set_discount_amount`(기본 500원)
 
 ---
 
@@ -70,12 +74,16 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 ```json
 요청 {
   "member_id": 1,
-  "items": [ { "menu_item_id": 1, "quantity": 2 }, { "menu_item_id": 4, "quantity": 1 } ],
+  "items": [
+    { "menu_item_id": 2, "quantity": 1, "temperature": "hot", "decaf": true, "oatmilk": true },
+    { "menu_item_id": 30, "quantity": 2 }
+  ],
   "points_to_use": 1000,
   "payment_method": "TOSS_CARD",
   "toss_payment_key": "tviva20250101...", "toss_order_id": "kiosk-...."
 }
-응답에는 주문 항목(items[])이 포함된다.
+- 라인별 옵션: `temperature`(`hot`/`ice`), `decaf`, `oatmilk`. 서버가 단가(옵션 포함)와
+  세트 할인을 계산한다. 응답에 `discount`, 주문 항목(`items[]`, `option_label` 포함)이 담긴다.
 --- (직접 금액 방식도 지원) ---
 요청 {
   "member_id": 1, "gross_amount": 6500, "points_to_use": 1000,

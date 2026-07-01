@@ -118,6 +118,23 @@
   .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#241d13;
     border:1px solid var(--line); padding:12px 18px; border-radius:12px; font-size:14px; display:none; z-index:9; }
 
+  /* ── 옵션 선택 모달 ── */
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.66); backdrop-filter:blur(2px);
+    display:flex; align-items:center; justify-content:center; z-index:20; padding:20px; }
+  .modal-bg.hidden { display:none; }
+  .modal { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:22px;
+    width:100%; max-width:360px; animation:rise .25s ease both; }
+  .mtitle { font-family:var(--serif); font-size:19px; font-weight:600; }
+  .mtitle small { display:block; font-family:var(--sans); font-size:12px; color:var(--muted); margin-top:4px; font-weight:400; }
+  .opt-sec { margin-top:16px; }
+  .opt-sec .lbl { font-size:10px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase; margin-bottom:8px; }
+  .opt-row { display:flex; gap:8px; }
+  .opt { flex:1; text-align:center; padding:13px 8px; border-radius:11px; background:#241d13;
+    border:1px solid var(--line); cursor:pointer; font-size:14px; transition:all .16s ease; }
+  .opt.on { background:linear-gradient(135deg,var(--gold-hi),var(--gold)); color:#211703;
+    border-color:var(--gold2); font-weight:700; }
+  .opt small { display:block; font-size:10px; opacity:.75; margin-top:2px; }
+
   /* ── 로고 · 포일 · 인터랙션 ── */
   .brand { display:flex; align-items:center; gap:11px; }
   .mono { width:34px; height:34px; flex:0 0 auto; filter:drop-shadow(0 0 7px rgba(203,171,109,.30)); }
@@ -175,6 +192,9 @@
       <div class="card cart">
         <h3>주문 내역 <span class="clear" onclick="clearCart()">비우기</span></h3>
         <div id="cartList"><div class="empty">메뉴를 담아주세요</div></div>
+        <div id="discountRow" class="total hidden" style="margin:6px 0 0;">
+          <span class="muted" style="color:var(--gold)">세트 할인</span><b id="cartDiscount" style="color:var(--gold);font-size:15px;">-0원</b>
+        </div>
         <div class="total"><span class="muted">합계</span><b id="cartTotal">0원</b></div>
         <button class="pay" id="payBtn" disabled onclick="goPay()">결제하기</button>
       </div>
@@ -232,6 +252,29 @@
       <button class="pay" style="margin-top:16px;" onclick="newOrder()">새 주문 받기</button>
     </div>
   </div>
+
+  <!-- 옵션 선택 모달 -->
+  <div class="modal-bg hidden" id="optModal">
+    <div class="modal">
+      <div class="mtitle" id="optTitle">—</div>
+      <div class="opt-sec hidden" id="optTempSec">
+        <div class="lbl">온도</div>
+        <div class="opt-row">
+          <div class="opt on" data-temp="ice" onclick="pickTemp('ice')">ICE 아이스</div>
+          <div class="opt" data-temp="hot" onclick="pickTemp('hot')">HOT 따뜻하게</div>
+        </div>
+      </div>
+      <div class="opt-sec hidden" id="optExtraSec">
+        <div class="lbl">옵션 추가</div>
+        <div class="opt-row" id="optExtraRow"></div>
+      </div>
+      <div class="total" style="margin-top:18px;"><span class="muted">금액</span><b id="optPrice">0원</b></div>
+      <div class="row" style="margin-top:6px;">
+        <button class="ghost" onclick="closeOpt()">취소</button>
+        <button class="confirm" onclick="addFromOpt()">담기</button>
+      </div>
+    </div>
+  </div>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -239,9 +282,10 @@
   const API_BASE = location.origin.includes(":5500") ? "http://localhost:8000" : location.origin;
   const $ = (id) => document.getElementById(id);
   const won = (n) => (n||0).toLocaleString("ko-KR") + "원";
-  const CAT_ORDER = [["all","전체"],["coffee","커피"],["noncoffee","논커피"],["ade","티·에이드"],["dessert","디저트"]];
+  const CAT_ORDER = [["all","전체"],["coffee","커피"],["coldbrew","콜드브루"],["ade","스무디·에이드"],["noncoffee","논커피"],["tea","티"],["dessert","디저트"]];
 
   let store=null, menu=[], cat="all", cart={}, member=null, method="TOSS_CARD", earnRate=0.05;
+  let optPrice=500, setDiscount=500;
 
   function toast(m){ const t=$("toast"); t.textContent=m; t.style.display="block";
     clearTimeout(t._t); t._t=setTimeout(()=>t.style.display="none",2400); }
@@ -256,6 +300,8 @@
     try {
       store = await api("/api/v1/store");
       earnRate = Number(store.point_earn_rate);
+      optPrice = Number(store.option_price) || 500;
+      setDiscount = Number(store.set_discount_amount) || 500;
       $("storeTag").textContent = store.name + " · 적립 " + Math.round(earnRate*100) + "%";
       menu = await api("/api/v1/menu");
       renderCats(); renderMenu();
@@ -268,47 +314,93 @@
   }
   function setCat(k){ cat=k; renderCats(); renderMenu(); }
 
+  const tempLabel = (t)=> t==="hot"?"HOT":(t==="ice"?"ICE":"");
+  const optLabel = (e)=>{ const p=[]; const t=tempLabel(e.temp); if(t)p.push(t);
+    if(e.decaf)p.push("디카페인"); if(e.oatmilk)p.push("오트밀크"); return p.join(" · "); };
+  const itemQty = (id)=> Object.values(cart).filter(c=>c.item.id===id).reduce((s,c)=>s+c.qty,0);
+  const needsOptions = (m)=> m.temp_option==="hotice" || m.decaf_available || m.oatmilk_available;
+
   function renderMenu(){
     const items = menu.filter(m => cat==="all" || m.category===cat);
     $("menu").innerHTML = items.map(m=>{
-      const q = cart[m.id] ? cart[m.id].qty : 0;
-      return `<div class="mi ${q?"sel":""}" onclick="addItem(${m.id})">
+      const q = itemQty(m.id);
+      return `<div class="mi ${q?"sel":""}" onclick="tapItem(${m.id})">
         ${q?`<span class="qty">${q}</span>`:""}
-        <div class="emo">${m.emoji||"🍽️"}</div>
+        <div class="emo">${m.emoji||"◆"}</div>
         <div class="nm">${m.name}</div>
         <div class="pr">${won(m.price)}</div>
       </div>`;
     }).join("");
   }
 
-  function addItem(id){
+  function tapItem(id){
     const m = menu.find(x=>x.id===id);
-    if(!cart[id]) cart[id] = { item:m, qty:0 };
-    cart[id].qty++;
+    if(needsOptions(m)) openOpt(m);
+    else addLine(m, m.temp_option==="ice"?"ice":"", false, false);
+  }
+
+  // ── 옵션 모달 ──
+  let optItem=null, optTemp="ice", optDecaf=false, optOat=false;
+  function openOpt(m){
+    optItem=m; optTemp = m.temp_option==="hotice"?"ice":(m.temp_option==="ice"?"ice":""); optDecaf=false; optOat=false;
+    $("optTitle").innerHTML = m.name + `<small>기본 ${won(m.price)}</small>`;
+    if(m.temp_option==="hotice"){ $("optTempSec").classList.remove("hidden"); setTempUI(); }
+    else $("optTempSec").classList.add("hidden");
+    let ex="";
+    if(m.decaf_available) ex += `<div class="opt" id="optDecaf" onclick="toggleExtra('decaf')">디카페인<small>+${won(optPrice)}</small></div>`;
+    if(m.oatmilk_available) ex += `<div class="opt" id="optOat" onclick="toggleExtra('oat')">오트밀크<small>+${won(optPrice)}</small></div>`;
+    if(ex){ $("optExtraSec").classList.remove("hidden"); $("optExtraRow").innerHTML=ex; }
+    else $("optExtraSec").classList.add("hidden");
+    updateOptPrice();
+    $("optModal").classList.remove("hidden");
+  }
+  function pickTemp(t){ optTemp=t; setTempUI(); }
+  function setTempUI(){ document.querySelectorAll("#optTempSec .opt").forEach(o=>o.classList.toggle("on", o.dataset.temp===optTemp)); }
+  function toggleExtra(k){
+    if(k==="decaf"){ optDecaf=!optDecaf; $("optDecaf").classList.toggle("on",optDecaf); }
+    else { optOat=!optOat; $("optOat").classList.toggle("on",optOat); }
+    updateOptPrice();
+  }
+  function updateOptPrice(){ $("optPrice").textContent = won(optItem.price + (optDecaf?optPrice:0) + (optOat?optPrice:0)); }
+  function closeOpt(){ $("optModal").classList.add("hidden"); }
+  function addFromOpt(){ addLine(optItem, optTemp, optDecaf, optOat); closeOpt(); }
+
+  const sig = (id,t,d,o)=> id+"|"+t+"|"+(d?1:0)+"|"+(o?1:0);
+  function addLine(m, temp, decaf, oat){
+    const s = sig(m.id,temp,decaf,oat);
+    const unit = m.price + (decaf?optPrice:0) + (oat?optPrice:0);
+    if(!cart[s]) cart[s] = { item:m, temp, decaf, oat, qty:0, unit };
+    cart[s].qty++;
     renderMenu(); renderCart();
   }
-  function chgQty(id, d){
-    if(!cart[id]) return;
-    cart[id].qty += d;
-    if(cart[id].qty<=0) delete cart[id];
-    renderMenu(); renderCart();
-  }
+  function chgQty(s, d){ if(!cart[s]) return; cart[s].qty += d; if(cart[s].qty<=0) delete cart[s]; renderMenu(); renderCart(); }
   function clearCart(){ cart={}; renderMenu(); renderCart(); }
 
-  function cartTotal(){ return Object.values(cart).reduce((s,c)=>s+c.item.price*c.qty,0); }
+  const grossTotal = ()=> Object.values(cart).reduce((s,c)=>s+c.unit*c.qty,0);
+  function discountTotal(){
+    let dr=0, de=0;
+    Object.values(cart).forEach(c=>{ if(c.item.category==="dessert") de+=c.qty; else dr+=c.qty; });
+    return Math.min(dr,de) * setDiscount;
+  }
+  const finalTotal = ()=> grossTotal() - discountTotal();
 
   function renderCart(){
     const entries = Object.entries(cart);
     if(!entries.length){ $("cartList").innerHTML = '<div class="empty">메뉴를 담아주세요</div>'; }
-    else $("cartList").innerHTML = entries.map(([id,c])=>
-      `<div class="ci">
-        <div class="cn">${c.item.emoji||""} ${c.item.name}<small>${won(c.item.price)}</small></div>
+    else $("cartList").innerHTML = entries.map(([s,c])=>{
+      const ol = optLabel(c);
+      return `<div class="ci">
+        <div class="cn">${c.item.name}<small>${ol?ol+" · ":""}${won(c.unit)}</small></div>
         <div class="stepper">
-          <button onclick="chgQty(${id},-1)">−</button><b>${c.qty}</b><button onclick="chgQty(${id},1)">+</button>
+          <button onclick="chgQty('${s}',-1)">−</button><b>${c.qty}</b><button onclick="chgQty('${s}',1)">+</button>
         </div>
-        <div class="ctot">${won(c.item.price*c.qty)}</div>
-      </div>`).join("");
-    $("cartTotal").textContent = won(cartTotal());
+        <div class="ctot">${won(c.unit*c.qty)}</div>
+      </div>`;
+    }).join("");
+    const disc = discountTotal();
+    $("discountRow").classList.toggle("hidden", disc<=0);
+    $("cartDiscount").textContent = "-" + won(disc);
+    $("cartTotal").textContent = won(finalTotal());
     $("payBtn").disabled = entries.length===0;
   }
 
@@ -328,7 +420,7 @@
   function goPay(){
     if(!Object.keys(cart).length) return;
     member=null; phone=""; renderPhone();
-    $("termAmt").textContent = won(cartTotal());
+    $("termAmt").textContent = won(finalTotal());
     $("orderView").classList.add("hidden"); $("doneView").classList.add("hidden");
     $("payView").classList.remove("hidden");
     $("phoneStep").classList.remove("hidden"); $("confirmStep").classList.add("hidden");
@@ -369,10 +461,10 @@
     recalcPay();
   }
 
-  function useAll(){ if(member){ $("usePoints").value = Math.min(member.points, cartTotal()); recalcPay(); } }
+  function useAll(){ if(member){ $("usePoints").value = Math.min(member.points, finalTotal()); recalcPay(); } }
   function recalcPay(){
-    let use = member ? Math.max(0, Math.min(parseInt($("usePoints").value||"0",10), member.points, cartTotal())) : 0;
-    $("payNet").textContent = won(cartTotal() - use);
+    let use = member ? Math.max(0, Math.min(parseInt($("usePoints").value||"0",10), member.points, finalTotal())) : 0;
+    $("payNet").textContent = won(finalTotal() - use);
   }
   $("methods").addEventListener("click", e=>{
     const p=e.target.closest(".pill"); if(!p) return;
@@ -382,7 +474,8 @@
 
   async function approve(){
     const use = member ? Math.max(0, parseInt($("usePoints").value||"0",10)) : 0;
-    const items = Object.values(cart).map(c=>({ menu_item_id:c.item.id, quantity:c.qty }));
+    const items = Object.values(cart).map(c=>({ menu_item_id:c.item.id, quantity:c.qty,
+      temperature:c.temp, decaf:c.decaf, oatmilk:c.oat }));
     $("approveBtn").disabled=true; $("approveBtn").textContent="승인 중…";
     try {
       const res = await api("/api/v1/transactions", { method:"POST", body: JSON.stringify({
@@ -396,9 +489,13 @@
 
   function showDone(res){
     $("payView").classList.add("hidden"); $("doneView").classList.remove("hidden");
-    const rows = (res.items||[]).map(i=>`<div class="r"><span>${i.name} × ${i.quantity}</span><span>${won(i.line_total)}</span></div>`).join("");
-    $("receipt").innerHTML = rows +
-      `<div class="r"><span class="muted">사용 포인트</span><span>−${won(res.points_used)}</span></div>` +
+    const rows = (res.items||[]).map(i=>{
+      const ol = i.option_label ? ` <span class="muted" style="font-size:11px">${i.option_label}</span>` : "";
+      return `<div class="r"><span>${i.name}${ol} × ${i.quantity}</span><span>${won(i.line_total)}</span></div>`;
+    }).join("");
+    const discRow = res.discount>0 ? `<div class="r"><span style="color:var(--gold)">세트 할인</span><span style="color:var(--gold)">−${won(res.discount)}</span></div>` : "";
+    const useRow = res.points_used>0 ? `<div class="r"><span class="muted">사용 포인트</span><span>−${won(res.points_used)}</span></div>` : "";
+    $("receipt").innerHTML = rows + discRow + useRow +
       `<div class="r"><b>실결제액</b><b style="color:var(--gold)">${won(res.net_amount)}</b></div>`;
     if(res.member){
       $("doneSub").textContent = `${res.member.name} 님 · +${res.points_earned}P 적립 (보유 ${res.member.points.toLocaleString("ko-KR")}P)`;

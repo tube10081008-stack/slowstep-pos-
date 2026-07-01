@@ -31,10 +31,32 @@ class CheckoutError(Exception):
 @dataclass
 class Quote:
     gross_amount: int
+    discount: int
     points_used: int
     net_amount: int
     points_earned: int
     available_points: int
+
+
+@dataclass
+class OrderLine:
+    menu_item: "MenuItem"
+    quantity: int
+    temperature: str
+    decaf: bool
+    oatmilk: bool
+    unit_price: int  # 옵션 포함
+
+    @property
+    def line_total(self) -> int:
+        return self.unit_price * self.quantity
+
+
+@dataclass
+class ResolvedOrder:
+    lines: list  # list[OrderLine]
+    gross: int
+    discount: int
 
 
 @dataclass
@@ -49,28 +71,79 @@ def calc_points_earned(net_amount: int, store: Store) -> int:
     return int((Decimal(net_amount) * rate).quantize(Decimal("1"), ROUND_HALF_UP))
 
 
-def build_quote(member: Member | None, gross_amount: int, points_to_use: int) -> Quote:
-    """결제 전 견적 계산(승인 없음)."""
+def build_quote(
+    member: Member | None, gross_amount: int, points_to_use: int, discount: int = 0
+) -> Quote:
+    """결제 전 견적 계산(승인 없음). subtotal = 총액 − 세트할인."""
     if gross_amount <= 0:
         raise CheckoutError("주문 금액은 0보다 커야 합니다.")
     points_to_use = max(0, points_to_use)
+    discount = max(0, min(discount, gross_amount))
+    subtotal = gross_amount - discount
 
     available = member.points if member else 0
     if points_to_use > available:
         raise CheckoutError("사용 포인트가 보유 포인트를 초과합니다.")
-    if points_to_use > gross_amount:
-        raise CheckoutError("사용 포인트가 주문 금액을 초과합니다.")
+    if points_to_use > subtotal:
+        raise CheckoutError("사용 포인트가 결제 금액을 초과합니다.")
 
-    net = gross_amount - points_to_use
+    net = subtotal - points_to_use
     store = member.store if member else Store.objects.first()
     earned = calc_points_earned(net, store) if member else 0
     return Quote(
         gross_amount=gross_amount,
+        discount=discount,
         points_used=points_to_use,
         net_amount=net,
         points_earned=earned,
         available_points=available,
     )
+
+
+def resolve_order(items: list | None, store: Store) -> ResolvedOrder | None:
+    """
+    주문 항목([{menu_item_id, quantity, temperature, decaf, oatmilk}])을 검증하고
+    옵션 포함 단가·총액·세트할인을 계산. 총액은 서버가 계산(위변조 방지).
+    세트 할인: 커피(음료)+디저트 동시 주문 시 min(음료수, 디저트수)만큼 건당 할인.
+    """
+    if not items:
+        return None
+    opt = store.option_price
+    lines: list[OrderLine] = []
+    drink_qty = dessert_qty = 0
+    for raw in items:
+        qty = int(raw.get("quantity", 0))
+        if qty <= 0:
+            continue
+        try:
+            mi = MenuItem.objects.get(pk=raw.get("menu_item_id"), is_available=True)
+        except MenuItem.DoesNotExist:
+            raise CheckoutError(f"판매 중이 아닌 메뉴가 포함됐습니다(id={raw.get('menu_item_id')}).")
+
+        decaf = bool(raw.get("decaf")) and mi.decaf_available
+        oatmilk = bool(raw.get("oatmilk")) and mi.oatmilk_available
+        temperature = (raw.get("temperature") or "").lower()
+        if mi.temp_option == MenuItem.Temp.HOTICE:
+            if temperature not in ("hot", "ice"):
+                temperature = "ice"  # 기본 아이스
+        elif mi.temp_option == MenuItem.Temp.ICE:
+            temperature = "ice"
+        else:
+            temperature = ""
+
+        unit_price = mi.price + (opt if decaf else 0) + (opt if oatmilk else 0)
+        lines.append(OrderLine(mi, qty, temperature, decaf, oatmilk, unit_price))
+        if mi.category == MenuItem.Category.DESSERT:
+            dessert_qty += qty
+        else:
+            drink_qty += qty
+
+    if not lines:
+        raise CheckoutError("주문 항목이 비어 있습니다.")
+
+    gross = sum(l.line_total for l in lines)
+    discount = min(drink_qty, dessert_qty) * store.set_discount_amount
+    return ResolvedOrder(lines=lines, gross=gross, discount=discount)
 
 
 def _record_point(member, txn, delta, reason) -> int:
@@ -125,31 +198,6 @@ def _apply_stamp_and_tier(member: Member, txn: Transaction, rewards: list[dict])
     member.tier = member.compute_tier()
 
 
-def _resolve_items(items: list | None) -> tuple[int, list]:
-    """
-    주문 항목([{menu_item_id, quantity}])을 검증하고
-    (총액, [(MenuItem, 수량)]) 반환. 총액은 서버가 메뉴 가격으로 계산(위변조 방지).
-    """
-    if not items:
-        return 0, []
-    resolved = []
-    total = 0
-    for line in items:
-        mid = line.get("menu_item_id")
-        qty = int(line.get("quantity", 0))
-        if qty <= 0:
-            continue
-        try:
-            mi = MenuItem.objects.get(pk=mid, is_available=True)
-        except MenuItem.DoesNotExist:
-            raise CheckoutError(f"판매 중이 아닌 메뉴가 포함됐습니다(id={mid}).")
-        total += mi.price * qty
-        resolved.append((mi, qty))
-    if not resolved:
-        raise CheckoutError("주문 항목이 비어 있습니다.")
-    return total, resolved
-
-
 @db_transaction.atomic
 def checkout(
     *,
@@ -163,17 +211,21 @@ def checkout(
 ) -> CheckoutResult:
     """
     결제 확정 전체 플로우(원자적):
-    (메뉴 항목→총액) → 견적 → Toss 승인 → 포인트 사용/적립 → 스탬프·등급·미션.
-    items가 주어지면 서버가 메뉴 가격으로 총액을 계산한다(gross_amount 대체).
+    (메뉴 항목→옵션 단가·총액·세트할인) → 견적 → Toss 승인 →
+    포인트 사용/적립 → 스탬프·등급·미션.
+    items가 주어지면 서버가 총액·할인을 계산한다(gross_amount 대체).
     """
-    order_total, resolved_items = _resolve_items(items)
-    if resolved_items:
-        gross_amount = order_total
-
-    quote = build_quote(member, gross_amount, points_to_use)
     store = member.store if member else Store.objects.first()
     if store is None:
         raise CheckoutError("매장 설정이 없습니다. seed_demo를 실행하세요.")
+
+    resolved = resolve_order(items, store)
+    discount = 0
+    if resolved:
+        gross_amount = resolved.gross
+        discount = resolved.discount
+
+    quote = build_quote(member, gross_amount, points_to_use, discount)
 
     # 멱등: 동일 order_id가 이미 완료됐으면 거절(409 매핑).
     if toss_order_id and Transaction.objects.filter(
@@ -185,6 +237,7 @@ def checkout(
         store=store,
         member=member,
         gross_amount=quote.gross_amount,
+        discount=quote.discount,
         points_used=quote.points_used,
         net_amount=quote.net_amount,
         points_earned=quote.points_earned,
@@ -210,12 +263,14 @@ def checkout(
     txn.paid_at = timezone.now()
     txn.save()
 
-    # ── 주문 항목 기록(메뉴 스냅샷) ──
-    for mi, qty in resolved_items:
-        OrderItem.objects.create(
-            transaction=txn, menu_item=mi, name=mi.name,
-            unit_price=mi.price, quantity=qty,
-        )
+    # ── 주문 항목 기록(메뉴·옵션 스냅샷) ──
+    if resolved:
+        for l in resolved.lines:
+            OrderItem.objects.create(
+                transaction=txn, menu_item=l.menu_item, name=l.menu_item.name,
+                unit_price=l.unit_price, quantity=l.quantity,
+                temperature=l.temperature, decaf=l.decaf, oatmilk=l.oatmilk,
+            )
 
     rewards: list[dict] = []
 

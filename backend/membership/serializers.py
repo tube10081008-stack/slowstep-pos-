@@ -20,21 +20,31 @@ class MenuItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MenuItem
-        fields = ["id", "name", "price", "category", "category_display", "emoji"]
+        fields = [
+            "id", "name", "price", "category", "category_display", "emoji",
+            "temp_option", "decaf_available", "oatmilk_available",
+        ]
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
     line_total = serializers.IntegerField(read_only=True)
+    option_label = serializers.CharField(read_only=True)
 
     class Meta:
         model = OrderItem
-        fields = ["name", "unit_price", "quantity", "line_total"]
+        fields = [
+            "name", "unit_price", "quantity", "line_total",
+            "temperature", "decaf", "oatmilk", "option_label",
+        ]
 
 
 class StoreSerializer(serializers.ModelSerializer):
     class Meta:
         model = Store
-        fields = ["id", "name", "point_earn_rate", "stamp_goal", "stamp_reward_points"]
+        fields = [
+            "id", "name", "point_earn_rate", "stamp_goal", "stamp_reward_points",
+            "set_discount_amount", "option_price",
+        ]
 
 
 class MemberSerializer(serializers.ModelSerializer):
@@ -99,9 +109,9 @@ class TransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transaction
         fields = [
-            "id", "gross_amount", "points_used", "net_amount", "points_earned",
-            "payment_method", "status", "toss_order_id", "created_at", "paid_at",
-            "items",
+            "id", "gross_amount", "discount", "points_used", "net_amount",
+            "points_earned", "payment_method", "status", "toss_order_id",
+            "created_at", "paid_at", "items",
         ]
 
 
@@ -114,6 +124,9 @@ class QuoteRequestSerializer(serializers.Serializer):
 class OrderLineSerializer(serializers.Serializer):
     menu_item_id = serializers.IntegerField()
     quantity = serializers.IntegerField(min_value=1)
+    temperature = serializers.CharField(required=False, allow_blank=True, default="")
+    decaf = serializers.BooleanField(required=False, default=False)
+    oatmilk = serializers.BooleanField(required=False, default=False)
 
 
 class CheckoutRequestSerializer(serializers.Serializer):
