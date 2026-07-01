@@ -18,11 +18,11 @@ MENU = [
     ("오렌지 커피", 5000, "coffee", "ice", True, False, "🍊", 4),
     ("오렌지 비앙코", 5500, "coffee", "ice", True, False, "🍊", 5),
     ("골든애플커피", 5200, "coffee", "ice", True, False, "🍏", 6),
-    # ── 콜드브루 ──
-    ("콜드브루", 4500, "coldbrew", "ice", True, False, "🧊", 1),
-    ("콜드브루 라떼", 5000, "coldbrew", "ice", True, True, "🥛", 2),
-    ("콜드브루 슈페너", 5500, "coldbrew", "ice", True, False, "🧊", 3),
-    ("콜드브루 라떼 슈페너", 5800, "coldbrew", "ice", True, True, "🥛", 4),
+    # ── 콜드브루 (디카페인 불가) ──
+    ("콜드브루", 4500, "coldbrew", "ice", False, False, "🧊", 1),
+    ("콜드브루 라떼", 5000, "coldbrew", "ice", False, True, "🥛", 2),
+    ("콜드브루 슈페너", 5500, "coldbrew", "ice", False, False, "🧊", 3),
+    ("콜드브루 라떼 슈페너", 5800, "coldbrew", "ice", False, True, "🥛", 4),
     # ── 스무디·에이드 ──
     ("플레인 요거트 스무디", 5000, "ade", "ice", False, False, "🥤", 1),
     ("딸기 요거트 스무디", 5500, "ade", "ice", False, False, "🍓", 2),
@@ -31,12 +31,12 @@ MENU = [
     ("레드 청포도 스파클링", 5500, "ade", "ice", False, False, "🍇", 5),
     ("토마토 바질 에이드", 5500, "ade", "ice", False, False, "🍅", 6),
     ("쿨라임 민트 에이드", 5500, "ade", "ice", False, False, "🌿", 7),
-    # ── 논커피 ──
+    # ── 논커피 (오트밀크 옵션 없음) ──
     ("아이스티", 4000, "noncoffee", "ice", False, False, "🧊", 1),
-    ("딸기 라떼", 4500, "noncoffee", "ice", False, True, "🍓", 2),
-    ("쫀득한 미숫가루 크림 라떼", 5500, "noncoffee", "ice", False, True, "🥛", 3),
+    ("딸기 라떼", 4500, "noncoffee", "ice", False, False, "🍓", 2),
+    ("쫀득한 미숫가루 크림 라떼", 5500, "noncoffee", "ice", False, False, "🥛", 3),
     ("딥초코멜로우 (기라델리)", 5500, "noncoffee", "hotice", False, False, "🍫", 4),
-    ("허니 자몽 크림 라떼", 5500, "noncoffee", "hotice", False, True, "🍊", 5),
+    ("허니 자몽 크림 라떼", 5500, "noncoffee", "hotice", False, False, "🍊", 5),
     # ── 티 ──
     ("히비스커스", 4000, "tea", "hotice", False, False, "🌺", 1),
     ("루이보스", 4000, "tea", "hotice", False, False, "🍵", 2),
@@ -58,12 +58,15 @@ class Command(BaseCommand):
         store, _ = Store.objects.get_or_create(
             name="슬로우스텝",
             defaults={
-                "point_earn_rate": "0.05",
+                "point_earn_rate": "0.03",
                 "stamp_goal": 10,
                 "stamp_reward_points": 3000,
             },
         )
-        self.stdout.write(f"매장: {store.name}")
+        # 정책 갱신(기존 매장도 반영)
+        store.point_earn_rate = "0.03"
+        store.save(update_fields=["point_earn_rate"])
+        self.stdout.write(f"매장: {store.name} (적립 {float(store.point_earn_rate)*100:.0f}%)")
 
         missions = [
             {

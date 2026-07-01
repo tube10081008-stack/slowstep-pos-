@@ -1,7 +1,9 @@
 """
 API 뷰. API 계약(docs/API-CONTRACT.md, Base: /api/v1)에 맞춰 구현.
 """
+from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -49,9 +51,65 @@ class MenuView(APIView):
         return Response(MenuItemSerializer(qs, many=True).data)
 
 
+class StoreSessionView(APIView):
+    """영업 시작/마감 토글."""
+
+    def post(self, request):
+        store = Store.objects.first()
+        if store is None:
+            return Response({"detail": "매장 설정이 없습니다."}, status=404)
+        action = request.data.get("action")
+        if action == "open":
+            store.is_open = True
+            store.opened_at = timezone.now()
+        elif action == "close":
+            store.is_open = False
+        else:
+            return Response({"detail": "action은 open/close."}, status=400)
+        store.save(update_fields=["is_open", "opened_at"])
+        return Response(StoreSerializer(store).data)
+
+
+class SalesSummaryView(APIView):
+    """오늘 정산 요약 + 최근 결제."""
+
+    def get(self, request):
+        store = Store.objects.first()
+        today = timezone.localdate()
+        paid = Transaction.objects.filter(status=Transaction.Status.PAID)
+        today_qs = paid.filter(paid_at__date=today)
+        agg = today_qs.aggregate(
+            n=Count("id"), gross=Sum("gross_amount"),
+            discount=Sum("discount"), net=Sum("net_amount"),
+            points=Sum("points_earned"),
+        )
+        methods = {
+            row["payment_method"]: row["s"]
+            for row in today_qs.values("payment_method").annotate(s=Sum("net_amount"))
+        }
+        return Response({
+            "date": today.isoformat(),
+            "is_open": store.is_open if store else False,
+            "opened_at": store.opened_at.isoformat() if store and store.opened_at else None,
+            "count": agg["n"] or 0,
+            "gross": agg["gross"] or 0,
+            "discount": agg["discount"] or 0,
+            "net": agg["net"] or 0,
+            "points": agg["points"] or 0,
+            "by_method": methods,
+        })
+
+
 class MemberViewSet(viewsets.ModelViewSet):
     queryset = Member.objects.select_related("store").all()
     http_method_names = ["get", "post"]
+
+    def get_queryset(self):
+        qs = Member.objects.select_related("store").all()
+        q = self.request.query_params.get("q", "").strip()
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(phone__icontains=q))
+        return qs.order_by("-total_spent")
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -108,6 +166,13 @@ class TransactionViewSet(viewsets.ModelViewSet):
     queryset = Transaction.objects.select_related("member").all()
     serializer_class = TransactionSerializer
     http_method_names = ["get", "post"]
+
+    def get_queryset(self):
+        # 목록은 최근 결제완료 100건, 그 외 액션은 전체 대상.
+        base = Transaction.objects.select_related("member").prefetch_related("items")
+        if self.action == "list":
+            return base.filter(status=Transaction.Status.PAID)[:100]
+        return base.all()
 
     @action(detail=False, methods=["post"])
     def quote(self, request):

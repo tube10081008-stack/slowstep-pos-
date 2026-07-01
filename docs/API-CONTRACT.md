@@ -110,10 +110,22 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 
 ---
 
-## 매장 (Store)
+## 매장 (Store) · POS 운영
 
 ### `GET /api/v1/store`
-기본 매장 설정(적립률·스탬프 목표 등). POS 초기화에 사용.
+기본 매장 설정(적립률 3%·스탬프 목표·옵션가·세트할인·영업상태 `is_open`).
+
+### `POST /api/v1/store/session`
+영업 시작/마감. `{ "action": "open" | "close" }` → 갱신된 store 반환.
+
+### `GET /api/v1/sales/summary`
+오늘 정산: `{ count, gross, discount, net, points, by_method, is_open, opened_at }`.
+
+### `GET /api/v1/transactions`
+주문 내역: 최근 결제완료 100건(주문 항목·회원명·수단 포함).
+
+### `GET /api/v1/members?q=<검색어>`
+고객 관리: 이름·연락처로 검색(누적결제 내림차순).
 
 ---
 

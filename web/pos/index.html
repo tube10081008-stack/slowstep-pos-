@@ -122,6 +122,35 @@
   .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.66); backdrop-filter:blur(2px);
     display:flex; align-items:center; justify-content:center; z-index:20; padding:20px; }
   .modal-bg.hidden { display:none; }
+
+  /* ── 하단 탭 · 매장 관리 ── */
+  .wrap { padding-bottom:86px; }
+  .tab { animation:rise .3s ease both; }
+  .tabbar { position:fixed; left:0; right:0; bottom:0; z-index:15;
+    background:rgba(12,10,8,.94); backdrop-filter:blur(10px); border-top:1px solid var(--line); }
+  .tabbar .inner { display:flex; max-width:1000px; margin:0 auto; }
+  .tabbar button { flex:1; background:none; border:0; color:var(--muted); padding:11px 6px 13px;
+    font-size:11px; font-weight:600; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px;
+    letter-spacing:.02em; }
+  .tabbar button .ti { font-size:18px; line-height:1; font-family:var(--serif); }
+  .tabbar button.on { color:var(--gold-hi); }
+  .tabbar button.on .ti { text-shadow:0 0 12px rgba(203,171,109,.4); }
+  .msec .mh { font-family:var(--serif); font-size:15px; font-weight:600; margin:0 0 14px; }
+  .kv { display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px; }
+  .kv:last-child { border-bottom:0; }
+  .kv b { color:var(--gold); font-family:var(--serif); }
+  .lrow { display:flex; align-items:center; gap:10px; padding:11px 2px; border-bottom:1px solid var(--line); font-size:14px; }
+  .lrow:last-child { border-bottom:0; }
+  .lrow .g { flex:1; } .lrow small { color:var(--muted); display:block; font-size:11px; margin-top:2px; }
+  .lrow .amt { color:var(--gold); font-family:var(--serif); }
+  .biz-on { color:var(--green); font-weight:700; } .biz-off { color:var(--muted); }
+  .dev { display:flex; align-items:center; justify-content:space-between; padding:11px 2px; border-bottom:1px solid var(--line); font-size:14px; }
+  .dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:7px; vertical-align:middle; }
+  .dot.ok { background:var(--green); box-shadow:0 0 8px var(--green); } .dot.off { background:#6b5; opacity:.4; }
+  .hist { border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:10px; }
+  .hist .ht { display:flex; justify-content:space-between; font-size:14px; font-weight:600; }
+  .hist .hi { font-size:12px; color:var(--muted); margin-top:4px; }
+  .hist .amt { color:var(--gold); font-family:var(--serif); }
   .modal { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:22px;
     width:100%; max-width:360px; animation:rise .25s ease both; }
   .mtitle { font-family:var(--serif); font-size:19px; font-weight:600; }
@@ -182,6 +211,8 @@
     <nav><a href="../dashboard/">대시보드 ↗</a><a href="../member/">멤버십 ↗</a></nav>
   </header>
 
+  <!-- ===== 탭: 상품 주문 ===== -->
+  <div id="tabOrder" class="tab">
   <!-- ① 주문 화면 -->
   <div id="orderView">
     <div class="order">
@@ -252,6 +283,47 @@
       <button class="pay" style="margin-top:16px;" onclick="newOrder()">새 주문 받기</button>
     </div>
   </div>
+  </div><!-- /tabOrder -->
+
+  <!-- ===== 탭: 주문 내역 ===== -->
+  <div id="tabHistory" class="tab hidden">
+    <div class="card">
+      <h3>주문 내역 <span class="muted" style="font-weight:400" id="histCount"></span></h3>
+      <div id="histList" class="muted">불러오는 중…</div>
+    </div>
+  </div>
+
+  <!-- ===== 탭: 매장 관리 ===== -->
+  <div id="tabManage" class="tab hidden">
+    <div class="card msec">
+      <div class="mh">영업 관리</div>
+      <div id="bizState" class="muted">—</div>
+      <div class="row" style="margin-top:14px;">
+        <button class="confirm" onclick="setBiz('open')">영업 시작</button>
+        <button class="ghost" onclick="setBiz('close')">영업 마감</button>
+      </div>
+    </div>
+
+    <div class="card msec">
+      <div class="mh">오늘 결제 내역 · 정산</div>
+      <div id="salesBox" class="muted">불러오는 중…</div>
+    </div>
+
+    <div class="card msec">
+      <div class="mh">고객 관리</div>
+      <input id="custSearch" placeholder="이름 또는 연락처 검색" oninput="searchCust()" />
+      <div id="custList" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card msec">
+      <div class="mh">장비 연결 · 출력</div>
+      <div class="dev"><span><span class="dot ok" id="dTerm"></span>카드 단말기 (Toss)</span><span class="muted" id="dTermS">연결됨 · Mock</span></div>
+      <div class="dev"><span><span class="dot ok" id="dPrint"></span>영수증 프린터</span><span class="muted" id="dPrintS">연결됨</span></div>
+      <div class="dev" style="border-bottom:0;"><span><span class="dot ok"></span>고객 표시 화면</span><span class="muted">연결됨</span></div>
+      <button class="ghost" style="width:100%;margin-top:14px;" onclick="printLast()">최근 주문 영수증 출력</button>
+      <p class="muted" style="margin-top:8px;">* Toss 단말 API 연동 시 실제 승인·출력으로 전환됩니다.</p>
+    </div>
+  </div>
 
   <!-- 옵션 선택 모달 -->
   <div class="modal-bg hidden" id="optModal">
@@ -276,6 +348,14 @@
     </div>
   </div>
 </div>
+
+<!-- 하단 탭 바 -->
+<div class="tabbar"><div class="inner">
+  <button id="tabbtn-order" class="on" onclick="switchTab('order')"><span class="ti">▦</span>상품 주문</button>
+  <button id="tabbtn-history" onclick="switchTab('history')"><span class="ti">≣</span>주문 내역</button>
+  <button id="tabbtn-manage" onclick="switchTab('manage')"><span class="ti">◈</span>매장 관리</button>
+</div></div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -482,6 +562,7 @@
         member_id: member?member.id:null, items, points_to_use:use,
         payment_method:method, toss_order_id:"kiosk-"+Date.now(),
       })});
+      lastOrder = res;
       showDone(res);
     } catch(e){ toast("❌ "+e.message); }
     finally { $("approveBtn").disabled=false; $("approveBtn").textContent="결제 승인"; }
@@ -507,6 +588,96 @@
 
   function newOrder(){ cart={}; member=null; renderMenu(); renderCart();
     $("doneView").classList.add("hidden"); $("orderView").classList.remove("hidden"); }
+
+  // ── 하단 탭 전환 ──
+  let lastOrder=null, storeState=null;
+  function switchTab(name){
+    ["order","history","manage"].forEach(t=>{
+      $("tab"+t[0].toUpperCase()+t.slice(1)).classList.toggle("hidden", t!==name);
+      $("tabbtn-"+t).classList.toggle("on", t===name);
+    });
+    if(name==="history") loadHistory();
+    if(name==="manage") loadManage();
+  }
+
+  const METHOD_KR = { TOSS_CARD:"카드", TOSS_EASY:"간편결제", CASH:"현금" };
+  const fmtTime = (iso)=>{ if(!iso) return ""; const d=new Date(iso);
+    return `${d.getMonth()+1}.${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
+
+  async function loadHistory(){
+    try {
+      const list = await api("/api/v1/transactions");
+      $("histCount").textContent = "· 최근 " + list.length + "건";
+      if(!list.length){ $("histList").innerHTML='<p class="muted">주문 내역이 없습니다.</p>'; return; }
+      $("histList").innerHTML = list.map(t=>{
+        const names = (t.items||[]).map(i=>`${i.name}${i.option_label?`(${i.option_label})`:""}×${i.quantity}`).join(", ");
+        return `<div class="hist">
+          <div class="ht"><span>${t.member_name||"비회원"}</span><span class="amt">${won(t.net_amount)}</span></div>
+          <div class="hi">${names||"-"}</div>
+          <div class="hi">${fmtTime(t.paid_at)} · ${t.method_display||METHOD_KR[t.payment_method]||""}${t.discount>0?` · 할인 ${won(t.discount)}`:""}${t.points_earned>0?` · +${t.points_earned}P`:""}</div>
+        </div>`;
+      }).join("");
+    } catch(e){ $("histList").innerHTML = '<p class="muted">불러오기 실패: '+e.message+'</p>'; }
+  }
+
+  async function loadManage(){
+    try {
+      const [s, sum] = await Promise.all([api("/api/v1/store"), api("/api/v1/sales/summary")]);
+      storeState = s;
+      $("bizState").innerHTML = s.is_open
+        ? `<span class="biz-on">● 영업중</span> · 시작 ${fmtTime(s.opened_at)}`
+        : `<span class="biz-off">● 영업 마감</span>`;
+      $("salesBox").innerHTML =
+        `<div class="kv"><span class="muted">오늘 결제 건수</span><b>${sum.count}건</b></div>` +
+        `<div class="kv"><span class="muted">매출(주문 합계)</span><b>${won(sum.gross)}</b></div>` +
+        `<div class="kv"><span class="muted">세트 할인</span><b>-${won(sum.discount)}</b></div>` +
+        `<div class="kv"><span class="muted">순매출</span><b>${won(sum.net)}</b></div>` +
+        `<div class="kv"><span class="muted">적립 포인트</span><b>${(sum.points||0).toLocaleString("ko-KR")}P</b></div>` +
+        Object.entries(sum.by_method||{}).map(([m,v])=>`<div class="kv"><span class="muted">· ${METHOD_KR[m]||m}</span><span>${won(v)}</span></div>`).join("");
+      searchCust();
+    } catch(e){ $("salesBox").innerHTML = '<p class="muted">'+e.message+'</p>'; }
+  }
+
+  async function setBiz(action){
+    try { await api("/api/v1/store/session", { method:"POST", body: JSON.stringify({action}) });
+      toast(action==="open"?"영업을 시작했습니다":"영업을 마감했습니다"); loadManage();
+    } catch(e){ toast(e.message); }
+  }
+
+  let custTimer;
+  function searchCust(){ clearTimeout(custTimer); custTimer=setTimeout(doSearchCust, 250); }
+  async function doSearchCust(){
+    const q = $("custSearch").value.trim();
+    try {
+      const list = await api("/api/v1/members" + (q?("?q="+encodeURIComponent(q)):""));
+      const rows = list.slice(0,30);
+      $("custList").innerHTML = rows.length ? rows.map(m=>
+        `<div class="lrow"><div class="g">${m.name} <span class="badge b-${m.tier}">${m.tier_display||m.tier}</span>
+          <small>${m.phone} · 방문 ${m.visit_count}회 · 누적 ${won(m.total_spent)}</small></div>
+          <div class="amt">${(m.points).toLocaleString("ko-KR")}P</div></div>`
+      ).join("") : '<p class="muted">일치하는 고객이 없습니다.</p>';
+    } catch(e){ $("custList").innerHTML='<p class="muted">'+e.message+'</p>'; }
+  }
+
+  function printLast(){
+    if(!lastOrder){ toast("출력할 최근 주문이 없습니다"); return; }
+    const o = lastOrder;
+    const lines = (o.items||[]).map(i=>`<tr><td>${i.name}${i.option_label?`<br><small>${i.option_label}</small>`:""} ×${i.quantity}</td><td style="text-align:right">${won(i.line_total)}</td></tr>`).join("");
+    const html = `<html><head><meta charset="utf-8"><title>영수증</title>
+      <style>body{font-family:sans-serif;width:280px;padding:10px;color:#111}h2{text-align:center;margin:4px 0}
+      table{width:100%;border-collapse:collapse;font-size:13px}td{padding:3px 0;border-bottom:1px dashed #ccc}
+      .tot{font-weight:700;font-size:15px}small{color:#666}</style></head><body>
+      <h2>SLOWSTEP</h2><p style="text-align:center;font-size:12px">슬로우스텝 · 영수증</p>
+      <table>${lines}
+      ${o.discount>0?`<tr><td>세트 할인</td><td style="text-align:right">-${won(o.discount)}</td></tr>`:""}
+      ${o.points_used>0?`<tr><td>포인트 사용</td><td style="text-align:right">-${won(o.points_used)}</td></tr>`:""}
+      <tr class="tot"><td>결제금액</td><td style="text-align:right">${won(o.net_amount)}</td></tr></table>
+      ${o.member_name?`<p style="font-size:12px">${o.member_name} 님 · +${o.points_earned}P 적립</p>`:""}
+      <p style="text-align:center;font-size:11px;margin-top:10px">이용해 주셔서 감사합니다</p></body></html>`;
+    const w = window.open("", "", "width=320,height=560");
+    if(!w){ toast("팝업이 차단되었습니다. 허용 후 다시 시도하세요."); return; }
+    w.document.write(html); w.document.close(); w.focus(); setTimeout(()=>{ w.print(); }, 200);
+  }
 
   init(); renderCart(); renderPhone();
 </script>

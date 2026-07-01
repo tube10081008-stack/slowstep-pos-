@@ -7,6 +7,8 @@ from .views import (
     MemberViewSet,
     MenuView,
     MissionViewSet,
+    SalesSummaryView,
+    StoreSessionView,
     StoreView,
     TransactionViewSet,
 )
@@ -18,6 +20,8 @@ router.register("transactions", TransactionViewSet, basename="transaction")
 
 urlpatterns = [
     path("store", StoreView.as_view(), name="store"),
+    path("store/session", StoreSessionView.as_view(), name="store-session"),
     path("menu", MenuView.as_view(), name="menu"),
+    path("sales/summary", SalesSummaryView.as_view(), name="sales-summary"),
 ]
 urlpatterns += router.urls

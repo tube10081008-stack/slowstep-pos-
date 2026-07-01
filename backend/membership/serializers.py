@@ -43,7 +43,7 @@ class StoreSerializer(serializers.ModelSerializer):
         model = Store
         fields = [
             "id", "name", "point_earn_rate", "stamp_goal", "stamp_reward_points",
-            "set_discount_amount", "option_price",
+            "set_discount_amount", "option_price", "is_open", "opened_at",
         ]
 
 
@@ -105,12 +105,14 @@ class MemberMissionSerializer(serializers.ModelSerializer):
 
 class TransactionSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
+    member_name = serializers.CharField(source="member.name", read_only=True, default=None)
+    method_display = serializers.CharField(source="get_payment_method_display", read_only=True)
 
     class Meta:
         model = Transaction
         fields = [
-            "id", "gross_amount", "discount", "points_used", "net_amount",
-            "points_earned", "payment_method", "status", "toss_order_id",
+            "id", "member_name", "gross_amount", "discount", "points_used", "net_amount",
+            "points_earned", "payment_method", "method_display", "status", "toss_order_id",
             "created_at", "paid_at", "items",
         ]
 

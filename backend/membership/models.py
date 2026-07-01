@@ -11,9 +11,9 @@ class Store(models.Model):
     """매장. (단일 매장 가정, 다매장은 P3)"""
 
     name = models.CharField("매장명", max_length=100)
-    # 적립률 (0.05 = 5%)
+    # 적립률 (0.03 = 3%)
     point_earn_rate = models.DecimalField(
-        "적립률", max_digits=4, decimal_places=3, default=0.05
+        "적립률", max_digits=4, decimal_places=3, default=0.03
     )
     stamp_goal = models.PositiveSmallIntegerField("스탬프 목표", default=10)
     stamp_reward_points = models.PositiveIntegerField(
@@ -23,6 +23,9 @@ class Store(models.Model):
     set_discount_amount = models.IntegerField("세트 할인액", default=500)
     # 디카페인·오트밀크 등 옵션 추가금
     option_price = models.IntegerField("옵션 추가금", default=500)
+    # 영업 상태
+    is_open = models.BooleanField("영업중", default=False)
+    opened_at = models.DateTimeField("영업 시작 시각", null=True, blank=True)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
 
     class Meta:
