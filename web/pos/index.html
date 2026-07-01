@@ -117,12 +117,50 @@
 
   .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#241d13;
     border:1px solid var(--line); padding:12px 18px; border-radius:12px; font-size:14px; display:none; z-index:9; }
+
+  /* ── 로고 · 포일 · 인터랙션 ── */
+  .brand { display:flex; align-items:center; gap:11px; }
+  .mono { width:34px; height:34px; flex:0 0 auto; filter:drop-shadow(0 0 7px rgba(203,171,109,.30)); }
+  .wm { font-family:var(--serif); font-weight:600; font-size:17px; letter-spacing:.16em; line-height:1;
+    background:linear-gradient(100deg,#9c7e46 0%,#e7d5a6 42%,#fff6e0 50%,#e7d5a6 58%,#9c7e46 100%);
+    background-size:220% auto; -webkit-background-clip:text; background-clip:text; color:transparent;
+    animation:sheen 7s linear infinite; }
+  .wm-sub { font-size:9px; letter-spacing:.26em; text-transform:uppercase; color:var(--muted); display:block; margin-top:3px; }
+  @keyframes sheen { to { background-position:-220% center; } }
+  @keyframes rise { from{ opacity:0; transform:translateY(10px);} to{ opacity:1; transform:none;} }
+
+  .card { animation:rise .5s ease both; }
+  button, .cat, .pill, .mi, a, .stepper button { transition:transform .16s ease, box-shadow .22s ease,
+    border-color .22s ease, background .22s ease, filter .22s ease, color .2s ease; }
+  button:not(:disabled):hover { transform:translateY(-1px); filter:brightness(1.05); box-shadow:0 8px 24px rgba(203,171,109,.20); }
+  button:not(:disabled):active { transform:translateY(0) scale(.99); }
+  .mi:hover { border-color:var(--gold2); box-shadow:0 8px 22px rgba(0,0,0,.45); transform:translateY(-2px); }
+  .cat:hover, .pill:hover { border-color:var(--gold2); }
+  .pay, .confirm, .approve, .go { position:relative; overflow:hidden; }
+  .pay::after, .confirm::after, .approve::after, .go::after { content:""; position:absolute; top:0; left:-60%;
+    width:42%; height:100%; transform:skewX(-18deg); pointer-events:none;
+    background:linear-gradient(100deg,transparent,rgba(255,248,224,.55),transparent); transition:left .6s ease; }
+  .pay:hover::after, .confirm:hover::after, .approve:hover::after, .go:hover::after { left:135%; }
+  .amount, .term-amt .amt { text-shadow:0 2px 30px rgba(203,171,109,.22); }
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <linearGradient id="foil" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#8a6f3e"/><stop offset=".35" stop-color="#e7d5a6"/>
+    <stop offset=".52" stop-color="#fff6e0"/><stop offset=".72" stop-color="#c9a96a"/>
+    <stop offset="1" stop-color="#8a6f3e"/>
+  </linearGradient></defs></svg>
 <div class="wrap">
   <header>
-    <h1>슬로우스텝 주문</h1>
+    <div class="brand">
+      <svg class="mono" viewBox="0 0 48 48" aria-label="Slowstep">
+        <circle cx="24" cy="24" r="22" fill="none" stroke="url(#foil)" stroke-width="1.3"/>
+        <circle cx="24" cy="24" r="18.4" fill="none" stroke="url(#foil)" stroke-width=".5" opacity=".55"/>
+        <text x="24" y="32" text-anchor="middle" font-family="Noto Serif KR,Georgia,serif" font-size="23" font-weight="600" fill="url(#foil)">S</text>
+      </svg>
+      <div><span class="wm">SLOWSTEP</span><span class="wm-sub">주문 · POS</span></div>
+    </div>
     <span class="tag" id="storeTag">로딩…</span>
     <nav><a href="../dashboard/">대시보드 ↗</a><a href="../member/">멤버십 ↗</a></nav>
   </header>
