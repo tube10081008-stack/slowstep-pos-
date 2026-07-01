@@ -20,6 +20,7 @@ from .serializers import (
     StoreSerializer,
     TransactionSerializer,
 )
+from .profile import build_member_dashboard
 from .services import CheckoutError, build_quote, checkout
 
 
@@ -70,6 +71,14 @@ class MemberViewSet(viewsets.ModelViewSet):
         member = self.get_object()
         qs = member.member_missions.select_related("mission").all()
         return Response(MemberMissionSerializer(qs, many=True).data)
+
+    @action(detail=True, methods=["get"])
+    def dashboard(self, request, pk=None):
+        """고객 대시보드(배지·타임라인·랭킹·등급진행·미션) 한 번에."""
+        member = self.get_object()
+        data = {"member": MemberSerializer(member).data}
+        data.update(build_member_dashboard(member))
+        return Response(data)
 
     @action(detail=True, methods=["get"])
     def points(self, request, pk=None):

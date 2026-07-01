@@ -6,76 +6,177 @@
 <title>슬로우스텝 멤버십</title>
 <style>
   :root {
-    --bg:#0f1115; --card:#1a1e26; --line:#2a303c; --txt:#e8ecf2;
-    --muted:#8b93a3; --accent:#3b82f6; --gold:#f5c542;
+    --bg:#0e0c0a; --card:#1a1712; --card2:#1c1813; --line:#332c22; --txt:#f0ebe3;
+    --muted:#9a8f7e; --gold:#f5c542; --gold2:#c8922f; --coffee:#c8925a; --accent:#e0a852;
+    --green:#5fbf7e;
   }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--txt);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif; }
-  .wrap { max-width:440px; margin:0 auto; padding:20px 16px 56px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:16px;
-    padding:18px; margin-bottom:14px; }
-  .hero { text-align:center; padding:26px 18px;
-    background:linear-gradient(160deg,#1e2533,#161b24); }
-  .hero .name { font-size:20px; font-weight:800; }
-  .badge { display:inline-block; font-size:12px; padding:4px 12px; border-radius:999px;
-    font-weight:700; margin-top:8px; }
-  .b-BRONZE{background:#7c4a2188;} .b-SILVER{background:#5b6b7d88;} .b-GOLD{background:#a87b14aa; color:#fff;}
-  .points { font-size:40px; font-weight:900; margin-top:14px; color:var(--gold); }
-  .points span { font-size:16px; color:var(--muted); font-weight:600; }
-  .stats { display:flex; justify-content:space-around; margin-top:14px; }
-  .stats div { font-size:12px; color:var(--muted); }
-  .stats b { display:block; font-size:18px; color:var(--txt); margin-top:2px; }
-  h3 { font-size:14px; margin:0 0 12px; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:radial-gradient(120% 60% at 50% 0%, #1c160f 0%, var(--bg) 60%);
+    color:var(--txt); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif; }
+  .wrap { max-width:460px; margin:0 auto; padding:18px 16px 60px; }
+  .card { background:var(--card2); border:1px solid var(--line); border-radius:18px; padding:18px; margin-bottom:14px; }
+  h3 { font-size:14px; margin:0 0 14px; display:flex; align-items:center; gap:7px; }
+  .muted { color:var(--muted); font-size:12px; }
+  .hidden { display:none; }
+
+  /* 로그인 */
+  input { width:100%; background:#120f0b; border:1px solid var(--line); color:var(--txt);
+    border-radius:12px; padding:14px; font-size:16px; margin-top:8px; }
+  button.go { width:100%; border:0; border-radius:12px; padding:14px; font-weight:700; margin-top:10px;
+    color:#1a1206; background:linear-gradient(135deg,var(--gold),var(--gold2)); cursor:pointer; font-size:15px; }
+
+  /* 히어로 */
+  .hero { text-align:center; padding:26px 18px 22px;
+    background:linear-gradient(165deg,#241c12,#17120c); border:1px solid var(--line); border-radius:20px; margin-bottom:14px; }
+  .hero .name { font-size:19px; font-weight:800; }
+  .tier-badge { display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:4px 12px;
+    border-radius:999px; font-weight:800; margin-top:8px; }
+  .t-BRONZE{ background:#6b45248c; color:#e6b98a; } .t-SILVER{ background:#5f6b7d8c; color:#dbe6f2; }
+  .t-GOLD{ background:linear-gradient(135deg,#f5c542,#b9832a); color:#3a2606; }
+  .points { font-size:44px; font-weight:900; margin-top:14px; color:var(--gold);
+    text-shadow:0 2px 20px rgba(245,197,66,.25); letter-spacing:-1px; }
+  .points span { font-size:16px; color:var(--muted); font-weight:700; }
+  .hstats { display:flex; justify-content:space-around; margin-top:16px; padding-top:16px; border-top:1px solid var(--line); }
+  .hstats div { font-size:11px; color:var(--muted); }
+  .hstats b { display:block; font-size:17px; color:var(--txt); margin-top:3px; }
+
+  /* 등급 진행 링 */
+  .ring-wrap { display:flex; align-items:center; gap:16px; }
+  .ring { position:relative; width:92px; height:92px; flex:0 0 92px; }
+  .ring svg { transform:rotate(-90deg); }
+  .ring .pct { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .ring .pct b { font-size:22px; font-weight:900; color:var(--gold); }
+  .ring .pct span { font-size:9px; color:var(--muted); }
+  .ring-info .big { font-size:15px; font-weight:700; }
+  .ring-info .sub { font-size:12px; color:var(--muted); margin-top:4px; line-height:1.5; }
+
+  /* 랭킹 */
+  .myrank { display:flex; align-items:baseline; gap:8px; margin-bottom:12px; }
+  .myrank .r { font-size:30px; font-weight:900; color:var(--gold); }
+  .myrank .pctl { font-size:12px; color:var(--coffee); font-weight:700;
+    background:#2a2013; border:1px solid var(--line); padding:3px 9px; border-radius:999px; }
+  .lb-row { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:10px; font-size:14px; }
+  .lb-row.me { background:linear-gradient(90deg,#2a2013,#1c1813); border:1px solid var(--gold2); }
+  .lb-rank { width:24px; text-align:center; font-weight:800; color:var(--muted); }
+  .lb-name { flex:1; }
+  .lb-val { color:var(--muted); font-size:12px; }
+  .lb-row.me .lb-name { color:var(--gold); font-weight:700; }
+
+  /* 배지 */
+  .badges { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .badge { text-align:center; padding:12px 4px; border-radius:14px; background:#161209; border:1px solid var(--line); }
+  .badge .ic { font-size:26px; filter:grayscale(1) opacity(.35); }
+  .badge.on { background:linear-gradient(160deg,#2a2013,#191307); border-color:#4a3a1e; }
+  .badge.on .ic { filter:none; }
+  .badge .bt { font-size:10px; margin-top:5px; color:var(--muted); font-weight:600; }
+  .badge.on .bt { color:var(--txt); }
+  .badge .bd { font-size:8px; color:var(--muted); margin-top:2px; }
+
+  /* 스탬프 */
   .stamps { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
-  .stamp { aspect-ratio:1; border-radius:50%; border:1.5px dashed var(--line);
-    display:flex; align-items:center; justify-content:center; font-size:18px; color:var(--muted); }
-  .stamp.on { background:#2a2113; border:1.5px solid var(--gold); color:var(--gold); }
+  .stamp { aspect-ratio:1; border-radius:50%; border:1.5px dashed var(--line); display:flex; align-items:center;
+    justify-content:center; font-size:17px; color:var(--muted); }
+  .stamp.on { background:#2a2013; border:1.5px solid var(--gold); color:var(--gold); }
+
+  /* 타임라인 */
+  .tl { position:relative; padding-left:22px; }
+  .tl::before { content:""; position:absolute; left:6px; top:4px; bottom:4px; width:2px; background:var(--line); }
+  .tl-item { position:relative; padding:0 0 16px; }
+  .tl-item::before { content:""; position:absolute; left:-19px; top:3px; width:9px; height:9px; border-radius:50%;
+    background:var(--gold); box-shadow:0 0 0 3px #1c1813; }
+  .tl-item:last-child { padding-bottom:0; }
+  .tl-top { display:flex; justify-content:space-between; font-size:14px; font-weight:600; }
+  .tl-sub { font-size:12px; color:var(--muted); margin-top:2px; }
+  .tl-earn { color:var(--green); font-size:12px; font-weight:700; }
+
+  /* 미션 */
   .mission { border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:10px; }
-  .mission.done { border-color:#1f5d3a; background:#11251a; }
+  .mission.done { border-color:#3a5d2f; background:#141f11; }
   .mission .top { display:flex; justify-content:space-between; font-size:14px; font-weight:600; }
   .mission .rw { color:var(--gold); font-size:12px; }
-  .bar { height:7px; background:#11151c; border-radius:99px; margin-top:9px; overflow:hidden; }
-  .bar > i { display:block; height:100%; background:var(--accent); }
-  .muted { color:var(--muted); font-size:12px; }
+  .bar { height:7px; background:#120f0b; border-radius:99px; margin-top:9px; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:linear-gradient(90deg,var(--coffee),var(--gold)); }
   .center { text-align:center; }
-  input { width:100%; background:#11151c; border:1px solid var(--line); color:var(--txt);
-    border-radius:10px; padding:13px; font-size:16px; margin-top:8px; }
-  button { width:100%; border:0; border-radius:10px; padding:13px; font-weight:600;
-    color:#fff; background:var(--accent); margin-top:10px; cursor:pointer; }
-  .hidden { display:none; }
+  #err { color:#e88; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <!-- 조회 폼 (phone 미지정 시) -->
+  <!-- 조회 폼 -->
   <div class="card" id="loginCard">
     <h3>☕ 슬로우스텝 멤버십</h3>
     <p class="muted">QR을 스캔하거나 연락처로 내 멤버십을 확인하세요.</p>
     <input id="phone" inputmode="numeric" placeholder="01012345678" />
-    <button onclick="go()">내 멤버십 보기</button>
+    <button class="go" onclick="submitPhone()">내 멤버십 보기</button>
     <p class="muted center" style="margin-top:10px;" id="err"></p>
   </div>
 
-  <!-- 멤버십 카드 -->
-  <div id="memberView" class="hidden">
-    <div class="card hero">
+  <div id="view" class="hidden">
+    <!-- 히어로 -->
+    <div class="hero">
       <div class="name" id="name">—</div>
-      <span class="badge" id="tier">—</span>
+      <span class="tier-badge" id="tier">—</span>
       <div class="points" id="points">0<span>P</span></div>
-      <div class="stats">
-        <div>등급<b id="tier2">—</b></div>
+      <div class="hstats">
         <div>방문<b id="visits">0</b></div>
         <div>누적결제<b id="spent">0</b></div>
+        <div>스탬프<b id="stampCount">0</b></div>
       </div>
     </div>
 
+    <!-- 다음 등급 진행 링 -->
     <div class="card">
-      <h3>🎟️ 스탬프 적립 <span class="muted" id="stampLabel"></span></h3>
+      <h3>🎖️ 등급 여정</h3>
+      <div class="ring-wrap">
+        <div class="ring">
+          <svg width="92" height="92" viewBox="0 0 92 92">
+            <circle cx="46" cy="46" r="40" fill="none" stroke="#2a241a" stroke-width="9"/>
+            <circle id="ringFg" cx="46" cy="46" r="40" fill="none" stroke="url(#gg)" stroke-width="9"
+              stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="251.2"/>
+            <defs><linearGradient id="gg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#c8925a"/><stop offset="1" stop-color="#f5c542"/>
+            </linearGradient></defs>
+          </svg>
+          <div class="pct"><b id="ringPct">0%</b><span>진행</span></div>
+        </div>
+        <div class="ring-info">
+          <div class="big" id="ringTitle">—</div>
+          <div class="sub" id="ringSub">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 단골 랭킹 -->
+    <div class="card">
+      <h3>🔥 단골 랭킹 <span class="muted" style="font-weight:400">· 누적 방문</span></h3>
+      <div class="myrank">
+        <span class="muted">내 순위</span>
+        <span class="r" id="myRank">#-</span>
+        <span class="pctl" id="myPctl">상위 -%</span>
+      </div>
+      <div id="leaderboard"></div>
+    </div>
+
+    <!-- 성취 배지 -->
+    <div class="card">
+      <h3>🏅 성취 배지 <span class="muted" style="font-weight:400" id="badgeCount"></span></h3>
+      <div class="badges" id="badges"></div>
+    </div>
+
+    <!-- 스탬프 -->
+    <div class="card">
+      <h3>🎟️ 스탬프 적립 <span class="muted" style="font-weight:400" id="stampLabel"></span></h3>
       <div class="stamps" id="stamps"></div>
       <p class="muted" style="margin-top:10px;" id="stampHint"></p>
     </div>
 
+    <!-- 방문 기록 타임라인 -->
+    <div class="card">
+      <h3>📍 방문 기록</h3>
+      <div class="tl" id="timeline"></div>
+    </div>
+
+    <!-- 미션 -->
     <div class="card">
       <h3>🎯 진행 중인 미션</h3>
       <div id="missions"></div>
@@ -89,60 +190,108 @@
   const API_BASE = location.origin.includes(":5500") ? "http://localhost:8000" : location.origin;
   const $ = (id) => document.getElementById(id);
   const won = (n) => (n||0).toLocaleString("ko-KR");
+  const TIER_ICON = { BRONZE:"🥉", SILVER:"🥈", GOLD:"👑" };
+  const METHOD = { TOSS_CARD:"💳", TOSS_EASY:"📱", CASH:"💵" };
 
-  async function api(path) {
+  async function api(path){
     const r = await fetch(API_BASE + path);
-    const b = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(b.detail || ("오류 " + r.status));
+    const b = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(b.detail || ("오류 "+r.status));
     return b;
   }
 
-  function go() {
+  function submitPhone(){
     const p = $("phone").value.trim();
-    if (!p) return;
+    if(!p) return;
     location.search = "?phone=" + encodeURIComponent(p);
   }
 
-  async function load(phone) {
+  async function load(phone){
     try {
       const m = await api("/api/v1/members/lookup?phone=" + encodeURIComponent(phone));
-      render(m);
-      const missions = await api("/api/v1/members/" + m.id + "/missions");
-      renderMissions(missions);
-    } catch(e) {
-      $("err").textContent = "❌ " + e.message;
-    }
+      const d = await api("/api/v1/members/" + m.id + "/dashboard");
+      render(d);
+    } catch(e){ $("err").textContent = "❌ " + e.message; }
   }
 
-  function render(m) {
+  function render(d){
+    const m = d.member;
     $("loginCard").classList.add("hidden");
-    $("memberView").classList.remove("hidden");
+    $("view").classList.remove("hidden");
+
+    // 히어로
     $("name").textContent = m.name + " 님";
     $("points").innerHTML = won(m.points) + "<span>P</span>";
     $("visits").textContent = m.visit_count;
     $("spent").textContent = won(m.total_spent);
-    const label = m.tier_display || m.tier;
-    $("tier").textContent = label; $("tier").className = "badge b-" + m.tier;
-    $("tier2").textContent = label;
+    $("stampCount").textContent = m.stamps + "/" + m.stamp_goal;
+    const tb = $("tier");
+    tb.textContent = (TIER_ICON[m.tier]||"") + " " + (m.tier_display||m.tier);
+    tb.className = "tier-badge t-" + m.tier;
+
+    // 등급 링
+    const nt = d.next_tier, C = 251.2;
+    $("ringFg").style.strokeDashoffset = C * (1 - nt.progress_pct/100);
+    $("ringPct").textContent = nt.progress_pct + "%";
+    if(nt.is_max){
+      $("ringTitle").textContent = "최고 등급 달성 🎉";
+      $("ringSub").textContent = "골드 회원님, 최고의 단골이세요!";
+    } else {
+      $("ringTitle").textContent = nt.next + " 등급까지";
+      $("ringSub").innerHTML = "앞으로 <b style='color:var(--gold)'>" + won(nt.remaining) + "원</b> 더 쓰면<br>" + nt.next + " 등급으로 올라가요";
+    }
+
+    // 랭킹
+    $("myRank").textContent = "#" + d.ranking.rank;
+    $("myPctl").textContent = "상위 " + d.ranking.percentile + "%";
+    const medal = ["🥇","🥈","🥉"];
+    $("leaderboard").innerHTML = d.ranking.leaderboard.map(x =>
+      `<div class="lb-row ${x.is_me?"me":""}">
+        <span class="lb-rank">${medal[x.rank-1] || x.rank}</span>
+        <span class="lb-name">${x.nickname}${x.is_me?" (나)":""}</span>
+        <span class="lb-val">${x.visits}회</span>
+      </div>`
+    ).join("");
+
+    // 배지
+    const earned = d.badges.filter(b=>b.earned).length;
+    $("badgeCount").textContent = `· ${earned}/${d.badges.length}`;
+    $("badges").innerHTML = d.badges.map(b =>
+      `<div class="badge ${b.earned?"on":""}" title="${b.desc}">
+        <div class="ic">${b.icon}</div><div class="bt">${b.title}</div>
+        <div class="bd">${b.earned?"획득":b.desc}</div>
+      </div>`
+    ).join("");
 
     // 스탬프
     const goal = m.stamp_goal || 10;
     $("stampLabel").textContent = m.stamps + " / " + goal;
-    let html = "";
-    for (let i = 0; i < goal; i++)
-      html += `<div class="stamp ${i < m.stamps ? "on" : ""}">${i < m.stamps ? "☕" : i+1}</div>`;
-    $("stamps").innerHTML = html;
-    $("stampHint").textContent = goal - m.stamps > 0
-      ? `${goal - m.stamps}잔 더 모으면 보상 포인트!` : "보상 적립 완료 🎉";
-  }
+    let sh = "";
+    for(let i=0;i<goal;i++) sh += `<div class="stamp ${i<m.stamps?"on":""}">${i<m.stamps?"☕":i+1}</div>`;
+    $("stamps").innerHTML = sh;
+    $("stampHint").textContent = goal-m.stamps>0 ? `${goal-m.stamps}잔 더 모으면 보상 포인트!` : "보상 적립 완료 🎉";
 
-  function renderMissions(list) {
-    if (!list.length) { $("missions").innerHTML = '<p class="muted">진행 중인 미션이 없습니다.</p>'; return; }
-    $("missions").innerHTML = list.map(x => {
-      const pct = Math.min(100, Math.round((x.progress / x.target) * 100));
-      return `<div class="mission ${x.is_completed ? "done":""}">
-        <div class="top"><span>${x.is_completed ? "✅ ":""}${x.title}</span>
-          <span class="rw">+${x.reward_points}P</span></div>
+    // 타임라인
+    if(!d.timeline.length){
+      $("timeline").innerHTML = '<p class="muted">아직 방문 기록이 없어요.</p>';
+    } else {
+      $("timeline").innerHTML = d.timeline.map(t=>{
+        const dt = t.paid_at ? new Date(t.paid_at) : null;
+        const label = dt ? `${dt.getMonth()+1}월 ${dt.getDate()}일` : "";
+        return `<div class="tl-item">
+          <div class="tl-top"><span>${METHOD[t.payment_method]||""} ${won(t.net_amount)}원 결제</span>
+            <span class="tl-earn">+${t.points_earned}P</span></div>
+          <div class="tl-sub">${label}</div>
+        </div>`;
+      }).join("");
+    }
+
+    // 미션
+    if(!d.missions.length){ $("missions").innerHTML = '<p class="muted">진행 중인 미션이 없습니다.</p>'; }
+    else $("missions").innerHTML = d.missions.map(x=>{
+      const pct = Math.min(100, Math.round(x.progress/x.target*100));
+      return `<div class="mission ${x.is_completed?"done":""}">
+        <div class="top"><span>${x.is_completed?"✅ ":""}${x.title}</span><span class="rw">+${x.reward_points}P</span></div>
         <div class="muted">${x.description||""}</div>
         <div class="bar"><i style="width:${pct}%"></i></div>
         <div class="muted" style="margin-top:5px;">${won(x.progress)} / ${won(x.target)}</div>
@@ -151,7 +300,7 @@
   }
 
   const phone = new URLSearchParams(location.search).get("phone");
-  if (phone) load(phone);
+  if(phone) load(phone);
 </script>
 </body>
 </html>
