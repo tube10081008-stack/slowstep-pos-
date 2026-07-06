@@ -109,7 +109,7 @@ class Command(BaseCommand):
             )
             self.stdout.write(("생성: " if created else "존재: ") + str(obj))
 
-        # 메뉴 시드 (실제 메뉴 + 옵션)
+        # 메뉴 시드 (실제 메뉴 + 옵션). 에스프레소 샷은 커피류에만.
         names = []
         for name, price, cat, temp, decaf, oat, emoji, order in MENU:
             MenuItem.objects.update_or_create(
@@ -117,6 +117,7 @@ class Command(BaseCommand):
                 defaults={
                     "price": price, "category": cat, "temp_option": temp,
                     "decaf_available": decaf, "oatmilk_available": oat,
+                    "shot_available": cat == "coffee",
                     "emoji": emoji, "sort_order": order, "is_available": True,
                 },
             )

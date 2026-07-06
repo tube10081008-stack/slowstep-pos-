@@ -42,7 +42,7 @@ class AlimtalkClient:
         """광고성이면 (광고) 표기와 수신거부 안내를 부가."""
         if not is_ad:
             return body
-        return f"(광고) {body}\n\n무료수신거부 080-000-0000"
+        return f"(광고) {body}\n\n무료수신거부 {settings.ALIMTALK_OPT_OUT_NUMBER}"
 
     def send(self, phone: str, body: str) -> SendResult:
         """

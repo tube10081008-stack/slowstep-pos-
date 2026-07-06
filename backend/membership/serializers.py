@@ -18,11 +18,14 @@ class MenuItemSerializer(serializers.ModelSerializer):
         source="get_category_display", read_only=True
     )
 
+    sold_out = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = MenuItem
         fields = [
             "id", "name", "price", "category", "category_display", "emoji",
-            "temp_option", "decaf_available", "oatmilk_available",
+            "temp_option", "decaf_available", "oatmilk_available", "shot_available",
+            "stock", "sold_out",
         ]
 
 
@@ -129,6 +132,7 @@ class OrderLineSerializer(serializers.Serializer):
     temperature = serializers.CharField(required=False, allow_blank=True, default="")
     decaf = serializers.BooleanField(required=False, default=False)
     oatmilk = serializers.BooleanField(required=False, default=False)
+    shot = serializers.BooleanField(required=False, default=False)
 
 
 class CheckoutRequestSerializer(serializers.Serializer):

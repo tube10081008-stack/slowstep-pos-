@@ -45,6 +45,7 @@ class OrderLine:
     temperature: str
     decaf: bool
     oatmilk: bool
+    shot: bool
     unit_price: int  # 옵션 포함
 
     @property
@@ -120,8 +121,13 @@ def resolve_order(items: list | None, store: Store) -> ResolvedOrder | None:
         except MenuItem.DoesNotExist:
             raise CheckoutError(f"판매 중이 아닌 메뉴가 포함됐습니다(id={raw.get('menu_item_id')}).")
 
+        # 재고 확인 (null=무제한)
+        if mi.stock is not None and mi.stock < qty:
+            raise CheckoutError(f"'{mi.name}' 재고가 부족합니다(남은 {mi.stock}개).")
+
         decaf = bool(raw.get("decaf")) and mi.decaf_available
         oatmilk = bool(raw.get("oatmilk")) and mi.oatmilk_available
+        shot = bool(raw.get("shot")) and mi.shot_available
         temperature = (raw.get("temperature") or "").lower()
         if mi.temp_option == MenuItem.Temp.HOTICE:
             if temperature not in ("hot", "ice"):
@@ -131,8 +137,8 @@ def resolve_order(items: list | None, store: Store) -> ResolvedOrder | None:
         else:
             temperature = ""
 
-        unit_price = mi.price + (opt if decaf else 0) + (opt if oatmilk else 0)
-        lines.append(OrderLine(mi, qty, temperature, decaf, oatmilk, unit_price))
+        unit_price = mi.price + (opt if decaf else 0) + (opt if oatmilk else 0) + (opt if shot else 0)
+        lines.append(OrderLine(mi, qty, temperature, decaf, oatmilk, shot, unit_price))
         if mi.category == MenuItem.Category.DESSERT:
             dessert_qty += qty
         else:
@@ -269,8 +275,12 @@ def checkout(
             OrderItem.objects.create(
                 transaction=txn, menu_item=l.menu_item, name=l.menu_item.name,
                 unit_price=l.unit_price, quantity=l.quantity,
-                temperature=l.temperature, decaf=l.decaf, oatmilk=l.oatmilk,
+                temperature=l.temperature, decaf=l.decaf, oatmilk=l.oatmilk, shot=l.shot,
             )
+            # 재고 차감 (null=무제한)
+            if l.menu_item.stock is not None:
+                l.menu_item.stock = max(0, l.menu_item.stock - l.quantity)
+                l.menu_item.save(update_fields=["stock"])
 
     rewards: list[dict] = []
 
@@ -298,3 +308,35 @@ def checkout(
 
     member.save()
     return CheckoutResult(transaction=txn, rewards=rewards)
+
+
+@db_transaction.atomic
+def cancel_transaction(txn: Transaction) -> Transaction:
+    """
+    결제 취소/환불(원자적): 상태 전환 + 포인트 원복(사용분 환급·적립분 회수) +
+    누적/방문/스탬프 되돌림 + 재고 원복. 실 Toss 연동 시 환불 API 호출 지점.
+    """
+    if txn.status != Transaction.Status.PAID:
+        raise CheckoutError("결제완료 건만 취소할 수 있습니다.")
+
+    member = txn.member
+    if member is not None:
+        # 순 포인트 변동 = 사용분 환급(+) − 적립분 회수(−)
+        delta = txn.points_used - txn.points_earned
+        if delta != 0:
+            _record_point(member, txn, delta, PointEntry.Reason.CANCEL)
+        member.total_spent = max(0, member.total_spent - txn.net_amount)
+        member.visit_count = max(0, member.visit_count - 1)
+        member.stamps = max(0, member.stamps - 1)
+        member.tier = member.compute_tier()
+        member.save()
+
+    # 재고 원복
+    for it in txn.items.select_related("menu_item").all():
+        if it.menu_item and it.menu_item.stock is not None:
+            it.menu_item.stock += it.quantity
+            it.menu_item.save(update_fields=["stock"])
+
+    txn.status = Transaction.Status.CANCELED
+    txn.save(update_fields=["status"])
+    return txn

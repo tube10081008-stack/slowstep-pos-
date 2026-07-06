@@ -20,11 +20,16 @@ def env_list(key: str) -> list[str]:
 
 
 # ── 보안 ────────────────────────────────────────────────────────
-SECRET_KEY = os.environ.get(
-    "DJANGO_SECRET_KEY",
-    "django-insecure-slowstep-pos-dev-key-do-not-use-in-prod",
-)
 DEBUG = env_bool("DJANGO_DEBUG", True)
+
+_INSECURE_DEV_KEY = "django-insecure-slowstep-pos-dev-key-do-not-use-in-prod"
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", _INSECURE_DEV_KEY)
+# 운영(DEBUG=False)에서 임시키로 부팅 금지 — 반드시 DJANGO_SECRET_KEY 주입.
+if not DEBUG and SECRET_KEY == _INSECURE_DEV_KEY:
+    raise RuntimeError(
+        "운영 배포에는 DJANGO_SECRET_KEY 환경변수가 필요합니다(임시 개발키 사용 불가)."
+    )
+
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS") or ["*"]
 
 INSTALLED_APPS = [
@@ -79,15 +84,24 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if DATABASE_URL:
     try:
         import dj_database_url
-
-        DATABASES = {
-            "default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)
-        }
     except ImportError:
         raise RuntimeError(
             "DATABASE_URL이 설정됐지만 dj-database-url 미설치. "
             "requirements-prod.txt를 설치하세요."
         )
+    # 서버리스(Vercel)는 인스턴스가 짧게 살고 동시성이 커서, 연결을 재사용하면
+    # (conn_max_age>0) Postgres 연결 수가 금방 고갈된다. → 서버리스는 요청마다
+    # 연결을 닫고(conn_max_age=0), Neon의 "pooled" 접속 문자열(호스트에 -pooler)을
+    # 쓰는 것을 권장. 상시 서버(gunicorn)는 연결 재사용(600s)이 유리.
+    _serverless = bool(os.environ.get("VERCEL"))
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=0 if _serverless else 600,
+            conn_health_checks=not _serverless,
+            ssl_require=True,  # Neon 등 관리형 Postgres는 SSL 필수
+        )
+    }
 else:
     # 서버리스(Vercel)는 앱 디렉터리가 읽기 전용 → 쓰기 가능한 /tmp 사용.
     # 임시 저장소라 콜드스타트마다 초기화되며, 시작 시 데모 데이터를 자동 시드한다.
@@ -176,6 +190,25 @@ ALIMTALK_SENDER_KEY = os.environ.get("ALIMTALK_SENDER_KEY", "")  # 발신 프로
 ALIMTALK_API_BASE = os.environ.get("ALIMTALK_API_BASE", "")
 # 발신번호(매장 대표번호) — 알림톡 실패 시 문자(LMS) 대체발송에 사용
 ALIMTALK_SENDER_PHONE = os.environ.get("ALIMTALK_SENDER_PHONE", "")
+# 광고성 메시지 무료 수신거부 번호(법적 표기) — 실제 매장 번호로 교체
+ALIMTALK_OPT_OUT_NUMBER = os.environ.get("ALIMTALK_OPT_OUT_NUMBER", "080-0000-0000")
+
+# ── 로깅 ────────────────────────────────────────────────────────
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "std": {"format": "[{levelname}] {asctime} {name}: {message}", "style": "{"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "std"},
+    },
+    "root": {"handlers": ["console"], "level": os.environ.get("LOG_LEVEL", "INFO")},
+    "loggers": {
+        "django.request": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        "slowstep": {"handlers": ["console"], "level": "INFO", "propagate": False},
+    },
+}
 
 # ── 운영 보안 헤더 (DEBUG=False일 때) ───────────────────────────
 if not DEBUG:

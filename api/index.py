@@ -5,9 +5,12 @@ Vercel 서버리스 진입점 — Django(WSGI) 전체를 하나의 함수로 서
 - 콜드스타트 시 DB 스키마가 없으면 자동 migrate + 데모 시드(터미널 불필요).
 - DATABASE_URL(Neon 등) 주입 시 영구 Postgres, 미주입 시 /tmp SQLite(임시).
 """
+import logging
 import os
 import sys
 from pathlib import Path
+
+log = logging.getLogger("slowstep")
 
 # backend/ 를 import 경로에 추가 (이 파일은 slowstep-pos/api/index.py).
 ROOT = Path(__file__).resolve().parent.parent
@@ -38,13 +41,13 @@ def _ensure_database() -> None:
             call_command("seed_demo")
             call_command("seed_marketing")
         except Exception as exc:  # 시드 실패는 치명적이지 않음
-            print("[vercel] seed skipped:", exc)
+            log.warning("seed skipped: %s", exc)
 
 
 try:
     _ensure_database()
 except Exception as exc:  # 부팅은 계속, 로그만 남김
-    print("[vercel] DB setup error:", exc)
+    log.error("DB setup error: %s", exc)
 
 from django.core.wsgi import get_wsgi_application  # noqa: E402
 

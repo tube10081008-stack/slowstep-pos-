@@ -98,8 +98,12 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 400 { "detail": "사용 포인트가 보유 포인트를 초과합니다." }
 ```
 
-### `POST /api/v1/transactions/{id}/cancel`  *(P1)*
-결제 취소/환불 + 포인트 원복.
+### `POST /api/v1/transactions/{id}/cancel`
+결제 취소/환불. `paid`→`canceled` 전환 + **포인트 원복**(사용분 환급·적립분 회수)
++ 누적/방문/스탬프 되돌림 + **재고 원복**. (실 Toss 연동 시 환불 API 호출 지점)
+
+> 메뉴 옵션: `shot`(에스프레소 샷, 커피류) 추가 지원 — `decaf`/`oatmilk`와 동일하게 +`option_price`.
+> 재고: `MenuItem.stock`(null=무제한). 결제 시 차감, 부족하면 400, `sold_out`이면 주문 불가.
 
 ---
 

@@ -110,12 +110,19 @@ class MenuItem(models.Model):
     temp_option = models.CharField(
         "온도 옵션", max_length=10, choices=Temp.choices, default=Temp.HOTICE
     )
-    # 디카페인 변경 가능(커피류) · 오트밀크 변경 가능(라떼류) — 각 +옵션추가금
+    # 디카페인 변경 가능(커피류) · 오트밀크 변경 가능(라떼류) · 샷 추가 — 각 +옵션추가금
     decaf_available = models.BooleanField("디카페인 선택", default=False)
     oatmilk_available = models.BooleanField("오트밀크 선택", default=False)
+    shot_available = models.BooleanField("샷 추가 선택", default=False)
     emoji = models.CharField("이모지", max_length=8, blank=True, default="")
     is_available = models.BooleanField("판매중", default=True)
+    # 재고: null=무제한. 0이면 품절 처리.
+    stock = models.IntegerField("재고(빈칸=무제한)", null=True, blank=True, default=None)
     sort_order = models.IntegerField("정렬", default=0)
+
+    @property
+    def sold_out(self) -> bool:
+        return self.stock is not None and self.stock <= 0
 
     class Meta:
         verbose_name = "메뉴"
@@ -195,6 +202,7 @@ class OrderItem(models.Model):
     temperature = models.CharField("온도", max_length=4, blank=True, default="")  # "", "ice", "hot"
     decaf = models.BooleanField("디카페인", default=False)
     oatmilk = models.BooleanField("오트밀크", default=False)
+    shot = models.BooleanField("샷 추가", default=False)
 
     class Meta:
         verbose_name = "주문 항목"
@@ -215,6 +223,8 @@ class OrderItem(models.Model):
             parts.append("디카페인")
         if self.oatmilk:
             parts.append("오트밀크")
+        if self.shot:
+            parts.append("샷추가")
         return " · ".join(parts)
 
     def __str__(self) -> str:

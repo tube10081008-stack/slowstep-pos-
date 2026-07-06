@@ -148,9 +148,16 @@
   .dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:7px; vertical-align:middle; }
   .dot.ok { background:var(--green); box-shadow:0 0 8px var(--green); } .dot.off { background:#6b5; opacity:.4; }
   .hist { border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:10px; }
+  .hist.canceled { opacity:.5; }
   .hist .ht { display:flex; justify-content:space-between; font-size:14px; font-weight:600; }
   .hist .hi { font-size:12px; color:var(--muted); margin-top:4px; }
   .hist .amt { color:var(--gold); font-family:var(--serif); }
+  .hist .cancelbtn { margin-top:8px; font-size:12px; padding:6px 12px; border-radius:8px;
+    background:#241d13; border:1px solid var(--line); color:var(--muted); cursor:pointer; }
+  .hist .cancelbtn:hover { border-color:var(--red); color:var(--red); }
+  .tag-cancel { font-size:10px; color:var(--red); border:1px solid var(--red); border-radius:6px; padding:1px 6px; margin-left:6px; }
+  .mi.soldout { opacity:.4; cursor:not-allowed; }
+  .mi.soldout:hover { transform:none; box-shadow:none; }
   .modal { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:22px;
     width:100%; max-width:360px; animation:rise .25s ease both; }
   .mtitle { font-family:var(--serif); font-size:19px; font-weight:600; }
@@ -396,18 +403,21 @@
 
   const tempLabel = (t)=> t==="hot"?"HOT":(t==="ice"?"ICE":"");
   const optLabel = (e)=>{ const p=[]; const t=tempLabel(e.temp); if(t)p.push(t);
-    if(e.decaf)p.push("디카페인"); if(e.oatmilk)p.push("오트밀크"); return p.join(" · "); };
+    if(e.decaf)p.push("디카페인"); if(e.oatmilk)p.push("오트밀크"); if(e.shot)p.push("샷추가"); return p.join(" · "); };
   const itemQty = (id)=> Object.values(cart).filter(c=>c.item.id===id).reduce((s,c)=>s+c.qty,0);
-  const needsOptions = (m)=> m.temp_option==="hotice" || m.decaf_available || m.oatmilk_available;
+  const needsOptions = (m)=> m.temp_option==="hotice" || m.decaf_available || m.oatmilk_available || m.shot_available;
 
   function renderMenu(){
     const items = menu.filter(m => cat==="all" || m.category===cat);
     $("menu").innerHTML = items.map(m=>{
       const q = itemQty(m.id);
+      if(m.sold_out) return `<div class="mi soldout">
+        <div class="emo">${m.emoji||"◆"}</div><div class="nm">${m.name}</div>
+        <div class="pr" style="color:var(--muted)">품절</div></div>`;
       return `<div class="mi ${q?"sel":""}" onclick="tapItem(${m.id})">
         ${q?`<span class="qty">${q}</span>`:""}
         <div class="emo">${m.emoji||"◆"}</div>
-        <div class="nm">${m.name}</div>
+        <div class="nm">${m.name}${m.stock!=null?` <span class="muted" style="font-size:10px">(${m.stock})</span>`:""}</div>
         <div class="pr">${won(m.price)}</div>
       </div>`;
     }).join("");
@@ -416,19 +426,21 @@
   function tapItem(id){
     const m = menu.find(x=>x.id===id);
     if(needsOptions(m)) openOpt(m);
-    else addLine(m, m.temp_option==="ice"?"ice":"", false, false);
+    else addLine(m, m.temp_option==="ice"?"ice":"", false, false, false);
   }
 
   // ── 옵션 모달 ──
-  let optItem=null, optTemp="ice", optDecaf=false, optOat=false;
+  let optItem=null, optTemp="ice", optDecaf=false, optOat=false, optShot=false;
   function openOpt(m){
-    optItem=m; optTemp = m.temp_option==="hotice"?"ice":(m.temp_option==="ice"?"ice":""); optDecaf=false; optOat=false;
+    optItem=m; optTemp = m.temp_option==="hotice"?"ice":(m.temp_option==="ice"?"ice":"");
+    optDecaf=false; optOat=false; optShot=false;
     $("optTitle").innerHTML = m.name + `<small>기본 ${won(m.price)}</small>`;
     if(m.temp_option==="hotice"){ $("optTempSec").classList.remove("hidden"); setTempUI(); }
     else $("optTempSec").classList.add("hidden");
     let ex="";
     if(m.decaf_available) ex += `<div class="opt" id="optDecaf" onclick="toggleExtra('decaf')">디카페인<small>+${won(optPrice)}</small></div>`;
     if(m.oatmilk_available) ex += `<div class="opt" id="optOat" onclick="toggleExtra('oat')">오트밀크<small>+${won(optPrice)}</small></div>`;
+    if(m.shot_available) ex += `<div class="opt" id="optShot" onclick="toggleExtra('shot')">샷 추가<small>+${won(optPrice)}</small></div>`;
     if(ex){ $("optExtraSec").classList.remove("hidden"); $("optExtraRow").innerHTML=ex; }
     else $("optExtraSec").classList.add("hidden");
     updateOptPrice();
@@ -438,18 +450,19 @@
   function setTempUI(){ document.querySelectorAll("#optTempSec .opt").forEach(o=>o.classList.toggle("on", o.dataset.temp===optTemp)); }
   function toggleExtra(k){
     if(k==="decaf"){ optDecaf=!optDecaf; $("optDecaf").classList.toggle("on",optDecaf); }
-    else { optOat=!optOat; $("optOat").classList.toggle("on",optOat); }
+    else if(k==="oat"){ optOat=!optOat; $("optOat").classList.toggle("on",optOat); }
+    else { optShot=!optShot; $("optShot").classList.toggle("on",optShot); }
     updateOptPrice();
   }
-  function updateOptPrice(){ $("optPrice").textContent = won(optItem.price + (optDecaf?optPrice:0) + (optOat?optPrice:0)); }
+  function updateOptPrice(){ $("optPrice").textContent = won(optItem.price + (optDecaf?optPrice:0) + (optOat?optPrice:0) + (optShot?optPrice:0)); }
   function closeOpt(){ $("optModal").classList.add("hidden"); }
-  function addFromOpt(){ addLine(optItem, optTemp, optDecaf, optOat); closeOpt(); }
+  function addFromOpt(){ addLine(optItem, optTemp, optDecaf, optOat, optShot); closeOpt(); }
 
-  const sig = (id,t,d,o)=> id+"|"+t+"|"+(d?1:0)+"|"+(o?1:0);
-  function addLine(m, temp, decaf, oat){
-    const s = sig(m.id,temp,decaf,oat);
-    const unit = m.price + (decaf?optPrice:0) + (oat?optPrice:0);
-    if(!cart[s]) cart[s] = { item:m, temp, decaf, oat, qty:0, unit };
+  const sig = (id,t,d,o,sh)=> id+"|"+t+"|"+(d?1:0)+"|"+(o?1:0)+"|"+(sh?1:0);
+  function addLine(m, temp, decaf, oat, shot){
+    const s = sig(m.id,temp,decaf,oat,shot);
+    const unit = m.price + (decaf?optPrice:0) + (oat?optPrice:0) + (shot?optPrice:0);
+    if(!cart[s]) cart[s] = { item:m, temp, decaf, oat, shot, qty:0, unit };
     cart[s].qty++;
     renderMenu(); renderCart();
   }
@@ -555,7 +568,7 @@
   async function approve(){
     const use = member ? Math.max(0, parseInt($("usePoints").value||"0",10)) : 0;
     const items = Object.values(cart).map(c=>({ menu_item_id:c.item.id, quantity:c.qty,
-      temperature:c.temp, decaf:c.decaf, oatmilk:c.oat }));
+      temperature:c.temp, decaf:c.decaf, oatmilk:c.oat, shot:c.shot }));
     $("approveBtn").disabled=true; $("approveBtn").textContent="승인 중…";
     try {
       const res = await api("/api/v1/transactions", { method:"POST", body: JSON.stringify({
@@ -586,7 +599,9 @@
     } else { $("doneSub").textContent = "비회원 결제 완료"; $("doneRewards").innerHTML=""; }
   }
 
-  function newOrder(){ cart={}; member=null; renderMenu(); renderCart();
+  async function newOrder(){ cart={}; member=null;
+    try { menu = await api("/api/v1/menu"); } catch(e){}  // 재고 반영
+    renderMenu(); renderCart();
     $("doneView").classList.add("hidden"); $("orderView").classList.remove("hidden"); }
 
   // ── 하단 탭 전환 ──
@@ -611,13 +626,22 @@
       if(!list.length){ $("histList").innerHTML='<p class="muted">주문 내역이 없습니다.</p>'; return; }
       $("histList").innerHTML = list.map(t=>{
         const names = (t.items||[]).map(i=>`${i.name}${i.option_label?`(${i.option_label})`:""}×${i.quantity}`).join(", ");
-        return `<div class="hist">
-          <div class="ht"><span>${t.member_name||"비회원"}</span><span class="amt">${won(t.net_amount)}</span></div>
+        const canceled = t.status==="canceled";
+        return `<div class="hist ${canceled?"canceled":""}">
+          <div class="ht"><span>${t.member_name||"비회원"}${canceled?'<span class="tag-cancel">취소됨</span>':""}</span><span class="amt">${won(t.net_amount)}</span></div>
           <div class="hi">${names||"-"}</div>
           <div class="hi">${fmtTime(t.paid_at)} · ${t.method_display||METHOD_KR[t.payment_method]||""}${t.discount>0?` · 할인 ${won(t.discount)}`:""}${t.points_earned>0?` · +${t.points_earned}P`:""}</div>
+          ${canceled?"":`<button class="cancelbtn" onclick="cancelOrder(${t.id})">결제 취소</button>`}
         </div>`;
       }).join("");
     } catch(e){ $("histList").innerHTML = '<p class="muted">불러오기 실패: '+e.message+'</p>'; }
+  }
+
+  async function cancelOrder(id){
+    if(!confirm("이 결제를 취소하시겠어요? 포인트·재고가 원복됩니다.")) return;
+    try { await api(`/api/v1/transactions/${id}/cancel`, { method:"POST" });
+      toast("결제를 취소했습니다"); loadHistory();
+    } catch(e){ toast("취소 실패: "+e.message); }
   }
 
   async function loadManage(){

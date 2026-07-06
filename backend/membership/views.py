@@ -24,7 +24,7 @@ from .serializers import (
     TransactionSerializer,
 )
 from .profile import build_member_dashboard
-from .services import CheckoutError, build_quote, checkout
+from .services import CheckoutError, build_quote, cancel_transaction, checkout
 
 
 def _resolve_member(member_id):
@@ -168,11 +168,26 @@ class TransactionViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post"]
 
     def get_queryset(self):
-        # 목록은 최근 결제완료 100건, 그 외 액션은 전체 대상.
+        # 목록은 최근 결제/취소 100건(대기 제외), 그 외 액션은 전체 대상.
         base = Transaction.objects.select_related("member").prefetch_related("items")
         if self.action == "list":
-            return base.filter(status=Transaction.Status.PAID)[:100]
+            return base.exclude(status=Transaction.Status.PENDING)[:100]
         return base.all()
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        """결제 취소/환불(포인트·누적·재고 원복)."""
+        txn = self.get_object()
+        try:
+            cancel_transaction(txn)
+        except CheckoutError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        txn.refresh_from_db()
+        body = TransactionSerializer(txn).data
+        if txn.member:
+            txn.member.refresh_from_db()
+            body["member"] = MemberSerializer(txn.member).data
+        return Response(body)
 
     @action(detail=False, methods=["post"])
     def quote(self, request):
