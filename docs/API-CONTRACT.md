@@ -82,8 +82,11 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
   "payment_method": "TOSS_CARD",
   "toss_payment_key": "tviva20250101...", "toss_order_id": "kiosk-...."
 }
-- 라인별 옵션: `temperature`(`hot`/`ice`), `decaf`, `oatmilk`. 서버가 단가(옵션 포함)와
+- 라인별 옵션: `temperature`(`hot`/`ice`), `decaf`, `oatmilk`, `shot`. 서버가 단가(옵션 포함)와
   세트 할인을 계산한다. 응답에 `discount`, 주문 항목(`items[]`, `option_label` 포함)이 담긴다.
+- **결제수단(`payment_method`)**: `CARD`·`NAVERPAY`·`EASYPAY`·`CASH` 은 **외부 단말
+  (네이버페이 커넥트 멀티패드 등)에서 결제** → 앱은 기록만(PG 호출 없음).
+  `approval_no`(선택)로 단말 승인번호를 정산용 저장. `TOSS_CARD`·`TOSS_EASY` 는 Toss PG 실연동용.
 --- (직접 금액 방식도 지원) ---
 요청 {
   "member_id": 1, "gross_amount": 6500, "points_to_use": 1000,

@@ -212,14 +212,16 @@ def checkout(
     points_to_use: int,
     payment_method: str,
     items: list | None = None,
+    approval_no: str = "",
     toss_payment_key: str = "",
     toss_order_id: str = "",
 ) -> CheckoutResult:
     """
     결제 확정 전체 플로우(원자적):
-    (메뉴 항목→옵션 단가·총액·세트할인) → 견적 → Toss 승인 →
+    (메뉴 항목→옵션 단가·총액·세트할인) → 견적 → 결제 승인 →
     포인트 사용/적립 → 스탬프·등급·미션.
-    items가 주어지면 서버가 총액·할인을 계산한다(gross_amount 대체).
+    결제는 외부 단말(네이버 커넥트 등)에서 처리되고 앱은 기록만 한다.
+    단, TOSS_* 결제수단은 Toss PG 승인 API를 호출한다(옵션).
     """
     store = member.store if member else Store.objects.first()
     if store is None:
@@ -248,11 +250,14 @@ def checkout(
         net_amount=quote.net_amount,
         points_earned=quote.points_earned,
         payment_method=payment_method,
+        approval_no=approval_no,
         toss_order_id=toss_order_id,
         status=Transaction.Status.PENDING,
     )
 
-    # ── 결제 승인 (Toss / 현금) ──
+    # ── 결제 승인 ──
+    # 외부 단말(CARD/NAVERPAY/EASYPAY/CASH)은 단말에서 이미 승인됨 → 기록만.
+    # TOSS_* 만 서버가 PG 승인 API 호출.
     if payment_method in (Transaction.Method.TOSS_CARD, Transaction.Method.TOSS_EASY):
         client = TossClient()
         try:

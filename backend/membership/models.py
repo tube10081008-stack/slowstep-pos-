@@ -137,9 +137,14 @@ class Transaction(models.Model):
     """거래(결제) 1건."""
 
     class Method(models.TextChoices):
-        TOSS_CARD = "TOSS_CARD", "토스-카드"
-        TOSS_EASY = "TOSS_EASY", "토스-간편결제"
+        # 외부 단말(네이버페이 커넥트 멀티패드 등)에서 결제 → 앱은 기록만
+        CARD = "CARD", "카드"
+        NAVERPAY = "NAVERPAY", "네이버페이"
+        EASYPAY = "EASYPAY", "간편결제"  # 삼성/애플페이 등
         CASH = "CASH", "현금"
+        # (옵션) Toss PG 실연동용 — 서버가 승인 API 호출
+        TOSS_CARD = "TOSS_CARD", "토스-카드(PG)"
+        TOSS_EASY = "TOSS_EASY", "토스-간편(PG)"
 
     class Status(models.TextChoices):
         PENDING = "pending", "승인 전"
@@ -164,6 +169,10 @@ class Transaction(models.Model):
     points_earned = models.IntegerField("적립 포인트", default=0)
     payment_method = models.CharField(
         "결제수단", max_length=20, choices=Method.choices
+    )
+    # 외부 단말 승인번호(정산 대사용, 선택 입력)
+    approval_no = models.CharField(
+        "단말 승인번호", max_length=50, blank=True, default=""
     )
     status = models.CharField(
         "상태", max_length=10, choices=Status.choices, default=Status.PENDING

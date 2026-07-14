@@ -223,6 +223,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 points_to_use=data["points_to_use"],
                 payment_method=data["payment_method"],
                 items=data.get("items"),
+                approval_no=data.get("approval_no", ""),
                 toss_payment_key=data.get("toss_payment_key", ""),
                 toss_order_id=data.get("toss_order_id", ""),
             )

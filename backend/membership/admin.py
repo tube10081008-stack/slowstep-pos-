@@ -40,9 +40,9 @@ class OrderItemInline(admin.TabularInline):
 
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
-    list_display = ["id", "member", "gross_amount", "points_used", "net_amount", "points_earned", "payment_method", "status", "created_at"]
+    list_display = ["id", "member", "gross_amount", "points_used", "net_amount", "points_earned", "payment_method", "approval_no", "status", "created_at"]
     list_filter = ["status", "payment_method"]
-    search_fields = ["member__name", "member__phone", "toss_order_id"]
+    search_fields = ["member__name", "member__phone", "toss_order_id", "approval_no"]
     inlines = [OrderItemInline]
 
 

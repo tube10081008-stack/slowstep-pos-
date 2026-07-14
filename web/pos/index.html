@@ -247,12 +247,16 @@
         </div>
         <label>결제수단</label>
         <div class="pill-row" id="methods">
-          <span class="pill on" data-m="TOSS_CARD">카드</span>
-          <span class="pill" data-m="TOSS_EASY">간편결제</span>
+          <span class="pill on" data-m="CARD">카드</span>
+          <span class="pill" data-m="NAVERPAY">네이버페이</span>
+          <span class="pill" data-m="EASYPAY">간편결제</span>
           <span class="pill" data-m="CASH">현금</span>
         </div>
+        <label style="margin-top:12px;">단말 승인번호 <span class="muted" style="font-weight:400">· 선택(정산용)</span></label>
+        <input id="approvalNo" inputmode="numeric" placeholder="네이버 커넥트 단말 승인번호" />
         <div class="total"><span class="muted">실결제액</span><b id="payNet">0원</b></div>
-        <button class="approve" id="approveBtn" onclick="approve()">결제 승인</button>
+        <p class="muted" style="margin:0 0 4px;">💳 네이버 커넥트 단말기에서 결제 후 아래 버튼을 눌러주세요.</p>
+        <button class="approve" id="approveBtn" onclick="approve()">결제 완료 확인</button>
         <button class="ghost" style="width:100%;margin-top:8px;" onclick="resetPhone()">← 다시 입력</button>
       </div>
     </div>
@@ -350,7 +354,7 @@
   const won = (n) => (n||0).toLocaleString("ko-KR") + "원";
   const CAT_ORDER = [["all","전체"],["coffee","커피"],["coldbrew","콜드브루"],["ade","스무디·에이드"],["noncoffee","논커피"],["tea","티"],["dessert","디저트"]];
 
-  let store=null, menu=[], cat="all", cart={}, member=null, method="TOSS_CARD", earnRate=0.05;
+  let store=null, menu=[], cat="all", cart={}, member=null, method="CARD", earnRate=0.05;
   let optPrice=500, setDiscount=500;
 
   function toast(m){ const t=$("toast"); t.textContent=m; t.style.display="block";
@@ -530,6 +534,7 @@
       $("pointBox").classList.add("hidden");
     }
     $("usePoints").value="0";
+    $("approvalNo").value="";
     recalcPay();
   }
 
@@ -548,16 +553,17 @@
     const use = member ? Math.max(0, parseInt($("usePoints").value||"0",10)) : 0;
     const items = Object.values(cart).map(c=>({ menu_item_id:c.item.id, quantity:c.qty,
       temperature:c.temp, decaf:c.decaf, oatmilk:c.oat, shot:c.shot }));
-    $("approveBtn").disabled=true; $("approveBtn").textContent="승인 중…";
+    $("approveBtn").disabled=true; $("approveBtn").textContent="처리 중…";
     try {
       const res = await api("/api/v1/transactions", { method:"POST", body: JSON.stringify({
         member_id: member?member.id:null, items, points_to_use:use,
-        payment_method:method, toss_order_id:"kiosk-"+Date.now(),
+        payment_method:method, approval_no:($("approvalNo").value||"").trim(),
+        toss_order_id:"kiosk-"+Date.now(),
       })});
       lastOrder = res;
       showDone(res);
     } catch(e){ toast("❌ "+e.message); }
-    finally { $("approveBtn").disabled=false; $("approveBtn").textContent="결제 승인"; }
+    finally { $("approveBtn").disabled=false; $("approveBtn").textContent="결제 완료 확인"; }
   }
 
   function showDone(res){
@@ -594,7 +600,7 @@
     if(name==="manage") loadManage();
   }
 
-  const METHOD_KR = { TOSS_CARD:"카드", TOSS_EASY:"간편결제", CASH:"현금" };
+  const METHOD_KR = { CARD:"카드", NAVERPAY:"네이버페이", EASYPAY:"간편결제", CASH:"현금", TOSS_CARD:"카드", TOSS_EASY:"간편결제" };
   const fmtTime = (iso)=>{ if(!iso) return ""; const d=new Date(iso);
     return `${d.getMonth()+1}.${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
 

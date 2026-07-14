@@ -217,7 +217,7 @@
   const API_BASE = location.origin.includes(":5500") ? "http://localhost:8000" : location.origin;
   const $ = (id) => document.getElementById(id);
   const won = (n) => (n||0).toLocaleString("ko-KR");
-  const METHOD = { TOSS_CARD:"카드", TOSS_EASY:"간편결제", CASH:"현금" };
+  const METHOD = { CARD:"카드", NAVERPAY:"네이버페이", EASYPAY:"간편결제", CASH:"현금", TOSS_CARD:"카드", TOSS_EASY:"간편결제" };
 
   async function api(path){
     const r = await fetch(API_BASE + path);

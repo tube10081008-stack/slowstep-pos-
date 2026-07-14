@@ -115,8 +115,8 @@ class TransactionSerializer(serializers.ModelSerializer):
         model = Transaction
         fields = [
             "id", "member_name", "gross_amount", "discount", "points_used", "net_amount",
-            "points_earned", "payment_method", "method_display", "status", "toss_order_id",
-            "created_at", "paid_at", "items",
+            "points_earned", "payment_method", "method_display", "approval_no", "status",
+            "toss_order_id", "created_at", "paid_at", "items",
         ]
 
 
@@ -142,6 +142,7 @@ class CheckoutRequestSerializer(serializers.Serializer):
     gross_amount = serializers.IntegerField(min_value=1, required=False)
     points_to_use = serializers.IntegerField(min_value=0, default=0)
     payment_method = serializers.ChoiceField(choices=Transaction.Method.choices)
+    approval_no = serializers.CharField(required=False, allow_blank=True, default="")
     toss_payment_key = serializers.CharField(required=False, allow_blank=True, default="")
     toss_order_id = serializers.CharField(required=False, allow_blank=True, default="")
 

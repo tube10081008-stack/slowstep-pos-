@@ -58,7 +58,7 @@ class Command(BaseCommand):
                 txn = Transaction.objects.create(
                     store=store, member=member, gross_amount=amount,
                     points_used=0, net_amount=amount, points_earned=earned,
-                    payment_method=rng.choice(["TOSS_CARD", "TOSS_EASY", "CASH"]),
+                    payment_method=rng.choice(["CARD", "NAVERPAY", "EASYPAY", "CASH"]),
                     status=Transaction.Status.PAID, paid_at=paid_at,
                     toss_order_id=f"seed-{member.id}-{v}",
                 )
