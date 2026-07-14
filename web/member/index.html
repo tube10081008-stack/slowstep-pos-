@@ -5,164 +5,127 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>슬로우스텝 멤버십</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
   :root {
-    --bg:#0a0908; --card:#121110; --card2:#151312; --line:#2a251f; --hair:rgba(203,171,109,.20);
-    --txt:#ece6da; --muted:#8b8274; --gold:#cbab6d; --gold-hi:#e7d5a6; --gold2:#a5854c;
-    --coffee:#b7966a; --accent:#cbab6d; --green:#a3b89c;
-    --serif:"Noto Serif KR", Georgia, serif;
-    --sans:"Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --bg:#f4f6f9; --card:#ffffff; --card2:#f8fafc; --line:#e6e9ef; --txt:#161a25;
+    --muted:#6b7280; --brand:#3b5bff; --brand-dk:#2846e6; --brand-soft:#eef2ff;
+    --green:#16a34a; --amber:#f59e0b; --gold:#3b5bff;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 6px 20px rgba(16,24,40,.06);
+    --sans:"Inter","Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  body { margin:0; background:
-      radial-gradient(140% 55% at 50% -8%, #171310 0%, var(--bg) 55%),
-      var(--bg);
-    color:var(--txt); font-family:var(--sans); font-weight:400;
-    letter-spacing:.01em; }
+  body { margin:0; background:var(--bg); color:var(--txt); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; }
   .wrap { max-width:460px; margin:0 auto; padding:22px 16px 64px; }
-  .card { background:var(--card2); border:1px solid var(--line); border-radius:16px;
-    padding:20px; margin-bottom:14px; box-shadow:0 1px 0 rgba(255,255,255,.02) inset; }
-  h3 { font-family:var(--serif); font-size:15px; font-weight:600; margin:0 0 16px;
-    letter-spacing:.01em; color:#e4dccd; }
-  .eyebrow { font-size:10px; letter-spacing:.34em; text-transform:uppercase;
-    color:var(--gold); font-weight:500; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:20px; margin-bottom:14px; box-shadow:var(--shadow); }
+  h3 { font-size:15px; font-weight:700; margin:0 0 16px; color:var(--txt); letter-spacing:-.01em; }
+  .eyebrow { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--brand); font-weight:600; }
   .muted { color:var(--muted); font-size:12px; }
   .hidden { display:none; }
 
   /* 로그인 */
-  input { width:100%; background:#0f0d0b; border:1px solid var(--line); color:var(--txt);
-    border-radius:11px; padding:15px; font-size:16px; margin-top:8px; font-family:var(--sans); }
-  button.go { width:100%; border:0; border-radius:11px; padding:15px; font-weight:600; margin-top:12px;
-    color:#211703; background:linear-gradient(135deg,var(--gold-hi),var(--gold)); cursor:pointer;
-    font-size:14px; letter-spacing:.08em; }
+  input { width:100%; background:#fff; border:1px solid var(--line); color:var(--txt);
+    border-radius:10px; padding:14px; font-size:16px; margin-top:8px; font-family:var(--sans); }
+  input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-soft); }
+  button.go { width:100%; border:0; border-radius:10px; padding:15px; font-weight:600; margin-top:12px;
+    color:#fff; background:var(--brand); cursor:pointer; font-size:15px; }
 
   /* 히어로 */
-  .hero { text-align:center; padding:32px 20px 24px; position:relative; overflow:hidden;
-    background:linear-gradient(170deg,#1b1712 0%,#100d0b 100%);
-    border:1px solid var(--line); border-radius:18px; margin-bottom:14px; }
-  .hero::after { content:""; position:absolute; inset:0 0 auto 0; height:1px;
-    background:linear-gradient(90deg,transparent,var(--hair),transparent); }
-  .hero .name { font-family:var(--serif); font-size:24px; font-weight:600; margin-top:6px; letter-spacing:.02em; }
-  .tier-badge { display:inline-flex; align-items:center; gap:5px; font-size:10px; padding:5px 14px;
-    border-radius:999px; font-weight:600; margin-top:12px; letter-spacing:.22em; text-transform:uppercase; }
-  .t-BRONZE{ background:#221a12; color:#c8a575; border:1px solid #4a3a24; }
-  .t-SILVER{ background:#1b1f24; color:#c9d3de; border:1px solid #445162; }
-  .t-GOLD{ background:linear-gradient(135deg,#e7d5a6,#a5854c); color:#241a0c; }
-  .points { font-family:var(--serif); font-size:46px; font-weight:600; margin-top:20px; color:var(--gold-hi);
-    text-shadow:0 2px 30px rgba(203,171,109,.22); letter-spacing:0; line-height:1; }
-  .points span { font-size:15px; color:var(--muted); font-weight:400; font-family:var(--sans); margin-left:2px; }
+  .hero { text-align:center; padding:30px 20px 22px; border-radius:18px; margin-bottom:14px; color:#fff;
+    background:linear-gradient(135deg,#4b6bff 0%,#6a4cff 100%); box-shadow:0 10px 26px rgba(59,91,255,.28); }
+  .hero .eyebrow { color:rgba(255,255,255,.75); }
+  .hero .name { font-size:23px; font-weight:800; margin-top:6px; letter-spacing:-.01em; }
+  .tier-badge { display:inline-flex; align-items:center; gap:5px; font-size:11px; padding:5px 13px;
+    border-radius:999px; font-weight:600; margin-top:12px; background:rgba(255,255,255,.22); color:#fff; }
+  .t-BRONZE, .t-SILVER, .t-GOLD { background:rgba(255,255,255,.22); color:#fff; }
+  .points { font-size:46px; font-weight:800; margin-top:18px; color:#fff; letter-spacing:-.02em; line-height:1; }
+  .points span { font-size:15px; color:rgba(255,255,255,.75); font-weight:500; margin-left:2px; }
   .hstats { display:flex; justify-content:space-around; margin-top:22px; padding-top:18px;
-    border-top:1px solid var(--line); }
-  .hstats div { font-size:10px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase; }
-  .hstats b { display:block; font-family:var(--serif); font-size:19px; font-weight:500; color:var(--txt); margin-top:6px; }
+    border-top:1px solid rgba(255,255,255,.2); }
+  .hstats div { font-size:11px; color:rgba(255,255,255,.7); }
+  .hstats b { display:block; font-size:19px; font-weight:700; color:#fff; margin-top:5px; }
 
   /* 등급 진행 링 */
   .ring-wrap { display:flex; align-items:center; gap:18px; }
   .ring { position:relative; width:96px; height:96px; flex:0 0 96px; }
   .ring svg { transform:rotate(-90deg); }
   .ring .pct { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-  .ring .pct b { font-family:var(--serif); font-size:23px; font-weight:600; color:var(--gold-hi); }
-  .ring .pct span { font-size:8px; color:var(--muted); letter-spacing:.2em; text-transform:uppercase; margin-top:2px; }
-  .ring-info .big { font-family:var(--serif); font-size:16px; font-weight:500; }
+  .ring .pct b { font-size:23px; font-weight:800; color:var(--brand); }
+  .ring .pct span { font-size:9px; color:var(--muted); margin-top:2px; }
+  .ring-info .big { font-size:16px; font-weight:700; }
   .ring-info .sub { font-size:12px; color:var(--muted); margin-top:5px; line-height:1.6; }
 
   /* 랭킹 */
   .myrank { display:flex; align-items:baseline; gap:10px; margin-bottom:14px; }
-  .myrank .r { font-family:var(--serif); font-size:32px; font-weight:600; color:var(--gold-hi); }
-  .myrank .pctl { font-size:11px; color:var(--gold); font-weight:500; letter-spacing:.1em;
-    background:#181410; border:1px solid var(--line); padding:4px 10px; border-radius:999px; }
+  .myrank .r { font-size:32px; font-weight:800; color:var(--brand); letter-spacing:-.02em; }
+  .myrank .pctl { font-size:11px; color:var(--brand-dk); font-weight:600;
+    background:var(--brand-soft); border:1px solid #dfe4ff; padding:4px 10px; border-radius:999px; }
   .lb-row { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px; font-size:14px; }
-  .lb-row.me { background:linear-gradient(90deg,#1d1811,#151312); border:1px solid var(--gold2); }
-  .lb-rank { width:24px; text-align:center; font-weight:600; color:var(--muted); font-family:var(--serif); }
-  .lb-name { flex:1; letter-spacing:.02em; }
+  .lb-row.me { background:var(--brand-soft); border:1px solid #d5dcff; }
+  .lb-rank { width:24px; text-align:center; font-weight:700; color:var(--muted); }
+  .lb-name { flex:1; }
   .lb-val { color:var(--muted); font-size:12px; }
-  .lb-row.me .lb-name { color:var(--gold-hi); font-weight:500; }
+  .lb-row.me .lb-name { color:var(--brand-dk); font-weight:700; }
 
   /* 배지 */
   .badges { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
-  .badge { text-align:center; padding:14px 4px; border-radius:12px; background:#100e0c; border:1px solid var(--line); }
-  .badge .ic { font-family:var(--serif); font-size:22px; color:#3b352b; line-height:1; }
-  .badge.on { background:linear-gradient(165deg,#1d1811,#141110); border-color:var(--gold2); }
-  .badge.on .ic { color:var(--gold-hi); }
-  .badge .bt { font-size:10px; margin-top:6px; color:var(--muted); font-weight:500; letter-spacing:.02em; }
-  .badge.on .bt { color:#e4dccd; }
+  .badge { text-align:center; padding:14px 4px; border-radius:12px; background:var(--card2); border:1px solid var(--line); }
+  .badge .ic { font-size:22px; color:#c3c8d2; line-height:1; }
+  .badge.on { background:var(--brand-soft); border-color:#d5dcff; }
+  .badge.on .ic { color:var(--brand); }
+  .badge .bt { font-size:10px; margin-top:6px; color:var(--muted); font-weight:500; }
+  .badge.on .bt { color:var(--txt); }
   .badge .bd { font-size:8px; color:var(--muted); margin-top:2px; }
 
   /* 스탬프 */
   .stamps { display:grid; grid-template-columns:repeat(5,1fr); gap:9px; }
-  .stamp { aspect-ratio:1; border-radius:50%; border:1px solid var(--line); display:flex; align-items:center;
-    justify-content:center; font-size:15px; color:var(--muted); font-family:var(--serif); }
-  .stamp.on { background:linear-gradient(160deg,#1d1811,#141110); border:1px solid var(--gold); color:var(--gold-hi); }
+  .stamp { aspect-ratio:1; border-radius:50%; border:1.5px solid var(--line); display:flex; align-items:center;
+    justify-content:center; font-size:15px; color:var(--muted); font-weight:600; }
+  .stamp.on { background:var(--brand-soft); border:1.5px solid var(--brand); color:var(--brand); }
 
   /* 타임라인 */
   .tl { position:relative; padding-left:22px; }
-  .tl::before { content:""; position:absolute; left:5px; top:4px; bottom:4px; width:1px; background:var(--line); }
+  .tl::before { content:""; position:absolute; left:5px; top:4px; bottom:4px; width:1.5px; background:var(--line); }
   .tl-item { position:relative; padding:0 0 16px; }
-  .tl-item::before { content:""; position:absolute; left:-19px; top:4px; width:7px; height:7px; border-radius:50%;
-    background:var(--gold); box-shadow:0 0 0 3px var(--card2); }
+  .tl-item::before { content:""; position:absolute; left:-19px; top:4px; width:8px; height:8px; border-radius:50%;
+    background:var(--brand); box-shadow:0 0 0 3px var(--card); }
   .tl-item:last-child { padding-bottom:0; }
-  .tl-top { display:flex; justify-content:space-between; font-size:14px; font-weight:500; }
-  .tl-sub { font-size:11px; color:var(--muted); margin-top:3px; letter-spacing:.04em; }
-  .tl-earn { color:var(--gold); font-size:12px; font-weight:500; }
+  .tl-top { display:flex; justify-content:space-between; font-size:14px; font-weight:600; }
+  .tl-sub { font-size:11px; color:var(--muted); margin-top:3px; }
+  .tl-earn { color:var(--green); font-size:12px; font-weight:600; }
 
   /* 미션 */
   .mission { border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:10px; }
-  .mission.done { border-color:var(--gold2); background:#141110; }
-  .mission .top { display:flex; justify-content:space-between; font-size:14px; font-weight:500; }
-  .mission .rw { color:var(--gold); font-size:12px; }
-  .bar { height:5px; background:#0f0d0b; border-radius:99px; margin-top:10px; overflow:hidden; }
-  .bar > i { display:block; height:100%; background:linear-gradient(90deg,var(--gold2),var(--gold-hi)); }
+  .mission.done { border-color:#bbf7d0; background:#f0fdf4; }
+  .mission .top { display:flex; justify-content:space-between; font-size:14px; font-weight:600; }
+  .mission .rw { color:var(--brand); font-size:12px; font-weight:600; }
+  .bar { height:6px; background:var(--card2); border-radius:99px; margin-top:10px; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:linear-gradient(90deg,#5b76ff,var(--brand)); }
   .center { text-align:center; }
-  #err { color:#d68b6b; }
+  #err { color:var(--red,#ef4444); }
 
-  /* ── 로고 · 포일 · 인터랙션 ── */
-  .topbrand { display:flex; align-items:center; justify-content:center; gap:11px; padding:2px 0 18px; }
+  /* ── 로고 · 인터랙션 ── */
+  .topbrand { display:flex; align-items:center; justify-content:center; gap:10px; padding:2px 0 18px; }
   .brand { display:flex; align-items:center; gap:11px; }
-  .mono { width:36px; height:36px; flex:0 0 auto;
-    filter:drop-shadow(0 0 7px rgba(203,171,109,.30)); }
-  .wm { font-family:var(--serif); font-weight:600; font-size:18px; letter-spacing:.16em;
-    background:linear-gradient(100deg,#9c7e46 0%,#e7d5a6 42%,#fff6e0 50%,#e7d5a6 58%,#9c7e46 100%);
-    background-size:220% auto; -webkit-background-clip:text; background-clip:text;
-    color:transparent; animation:sheen 7s linear infinite; }
-  .wm-sub { font-size:10px; letter-spacing:.28em; text-transform:uppercase; color:var(--muted);
-    display:block; margin-top:3px; }
-  @keyframes sheen { to { background-position:-220% center; } }
-  @keyframes rise { from{ opacity:0; transform:translateY(10px);} to{ opacity:1; transform:none;} }
-
-  .card, .hero { animation:rise .5s ease both; }
-  button, .cat, .pill, .mi, .lb-row, .badge, .chip, a, .stamp {
-    transition:transform .16s ease, box-shadow .22s ease, border-color .22s ease,
-      background .22s ease, filter .22s ease, color .2s ease; }
-  button:not(:disabled):hover { transform:translateY(-1px); filter:brightness(1.05);
-    box-shadow:0 8px 24px rgba(203,171,109,.20); }
-  button:not(:disabled):active { transform:translateY(0) scale(.99); }
-  .go, .pay, .confirm, .approve, .send { position:relative; overflow:hidden; }
-  .go::after, .pay::after, .confirm::after, .approve::after, .send::after { content:"";
-    position:absolute; top:0; left:-60%; width:42%; height:100%; transform:skewX(-18deg);
-    background:linear-gradient(100deg,transparent,rgba(255,248,224,.55),transparent);
-    transition:left .6s ease; pointer-events:none; }
-  .go:hover::after, .pay:hover::after, .confirm:hover::after, .approve:hover::after, .send:hover::after { left:135%; }
-  .lb-row:hover { background:rgba(203,171,109,.05); }
-  .badge:hover { border-color:var(--gold2); transform:translateY(-1px); }
-  .stamp.on { box-shadow:0 0 10px rgba(203,171,109,.15); }
-  .points { text-shadow:0 2px 34px rgba(203,171,109,.28); }
+  .logo { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#5b76ff,var(--brand));
+    color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:19px;
+    flex:0 0 auto; box-shadow:0 4px 12px rgba(59,91,255,.3); }
+  .wm { font-weight:800; font-size:19px; letter-spacing:-.01em; color:var(--txt); }
+  .wm-sub { font-size:11px; color:var(--muted); display:block; margin-top:1px; font-weight:500; }
+  @keyframes rise { from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none;} }
+  .card, .hero { animation:rise .4s ease both; }
+  button, .lb-row, .badge, .stamp { transition:all .16s ease; }
+  button:not(:disabled):hover { filter:brightness(1.05); box-shadow:0 6px 16px rgba(59,91,255,.22); }
+  button:not(:disabled):active { transform:translateY(1px); }
+  .badge:hover { border-color:#d5dcff; }
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
-  <linearGradient id="foil" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0" stop-color="#8a6f3e"/><stop offset=".35" stop-color="#e7d5a6"/>
-    <stop offset=".52" stop-color="#fff6e0"/><stop offset=".72" stop-color="#c9a96a"/>
-    <stop offset="1" stop-color="#8a6f3e"/>
-  </linearGradient></defs></svg>
 <div class="wrap">
   <div class="topbrand">
-    <svg class="mono" viewBox="0 0 48 48" aria-label="Slowstep">
-      <circle cx="24" cy="24" r="22" fill="none" stroke="url(#foil)" stroke-width="1.3"/>
-      <circle cx="24" cy="24" r="18.4" fill="none" stroke="url(#foil)" stroke-width=".5" opacity=".55"/>
-      <text x="24" y="32" text-anchor="middle" font-family="Noto Serif KR,Georgia,serif" font-size="23" font-weight="600" fill="url(#foil)">S</text>
-    </svg>
-    <span class="wm">SLOWSTEP</span>
+    <span class="logo">S</span>
+    <span class="wm">Slowstep</span>
   </div>
   <!-- 조회 폼 -->
   <div class="card" id="loginCard">
@@ -194,11 +157,11 @@
       <div class="ring-wrap">
         <div class="ring">
           <svg width="92" height="92" viewBox="0 0 92 92">
-            <circle cx="46" cy="46" r="40" fill="none" stroke="#2a241a" stroke-width="9"/>
+            <circle cx="46" cy="46" r="40" fill="none" stroke="#e6e9ef" stroke-width="9"/>
             <circle id="ringFg" cx="46" cy="46" r="40" fill="none" stroke="url(#gg)" stroke-width="9"
               stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="251.2"/>
             <defs><linearGradient id="gg" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stop-color="#a5854c"/><stop offset="1" stop-color="#e7d5a6"/>
+              <stop offset="0" stop-color="#5b76ff"/><stop offset="1" stop-color="#3b5bff"/>
             </linearGradient></defs>
           </svg>
           <div class="pct"><b id="ringPct">0%</b><span>진행</span></div>
