@@ -25,21 +25,20 @@
 
 ### 2. 프로젝트 가져오기
 1. 대시보드 → **Add New… → Project**.
-2. 저장소 목록에서 **`tube10081008-stack/Urge-surfing`** → **Import**.
+2. 저장소 목록에서 **`tube10081008-stack/slowstep-pos-`** → **Import**.
    (안 보이면 **Adjust GitHub App Permissions** 로 이 저장소 접근 허용)
 
 ### 3. 설정 (중요)
 
 | 항목 | 값 |
 | --- | --- |
-| **Root Directory** | **`slowstep-pos`** ← *반드시 변경* (Edit 눌러 선택) |
+| **Root Directory** | **`./`** (저장소 루트 그대로 — *변경 불필요*) |
 | Framework Preset | `Other` (자동) |
 | Build/Output | 비워둠 (vercel.json이 처리) |
 
-> **Production Branch**: 이 프로젝트는 `claude/new-project-setup-hz2qo8` 브랜치에 있다.
-> Vercel은 보통 저장소 기본 브랜치를 배포하므로, 가져온 뒤
-> **Settings → Git → Production Branch** 를 `claude/new-project-setup-hz2qo8` 로 바꾸고
-> 한 번 더 배포(Deployments → Redeploy)한다.
+> **Production Branch**: 이 저장소는 독립 저장소이고 기본 브랜치가 **`main`** 이다.
+> Vercel이 기본 브랜치(`main`)를 그대로 배포하므로 **브랜치 변경이 필요 없다.**
+> (구 모노레포 시절의 `slowstep-pos` 루트·`claude/...` 브랜치 설정은 더 이상 쓰지 않는다.)
 
 ### 4. 배포
 - **Deploy** 클릭 → 1~2분 뒤 완료. 나온 주소 클릭.
@@ -83,7 +82,7 @@ Vercel 프로젝트 → **Settings → Environment Variables** 에서 추가:
 
 ### 4. (선택) 관리자 계정
 서버리스라 셸이 없으므로, 로컬에서 같은 `DATABASE_URL` 로 한 번만 만든다.
-(파이썬 가능 PC에서) `slowstep-pos/backend` 에서:
+(파이썬 가능 PC에서) `backend/` 에서:
 ```bash
 set DATABASE_URL=postgresql://...   # Windows
 python manage.py createsuperuser
@@ -93,10 +92,10 @@ python manage.py createsuperuser
 
 ## 동작 원리 (참고)
 
-- `slowstep-pos/vercel.json` — 모든 요청을 Python 함수 `api/index.py` 로 라우팅.
-- `slowstep-pos/api/index.py` — Django(WSGI)를 적재하고, DB가 비어 있으면
+- `vercel.json` — 모든 요청을 Python 함수 `api/index.py` 로 라우팅.
+- `api/index.py` — Django(WSGI)를 적재하고, DB가 비어 있으면
   자동으로 migrate + 데모 시드.
-- `slowstep-pos/requirements.txt` — Vercel이 설치하는 의존성(Django·DRF·
+- `requirements.txt` — Vercel이 설치하는 의존성(Django·DRF·
   psycopg·whitenoise 등).
 - 정적/웹페이지는 WhiteNoise가 `web/` 폴더를 사이트 루트로 서빙.
 
@@ -104,7 +103,8 @@ python manage.py createsuperuser
 
 | 증상 | 확인 |
 | --- | --- |
-| 404 / 빈 화면 | **Root Directory가 `slowstep-pos`** 인지, Production Branch가 맞는지 |
+| 404 / 빈 화면 | **Root Directory가 저장소 루트(`./`)** 인지, 배포 브랜치가 `main` 인지 |
+| 빌드가 파이썬 버전으로 실패 | Django 5는 Python 3.10+ 필요. Vercel **Settings → General → Python Version** 을 3.12로 지정 |
 | 500 에러 | Vercel **Deployments → Functions 로그** 확인. `DATABASE_URL` 형식·`sslmode=require` 여부 |
 | 데이터가 사라짐 | 아직 Neon 미연결(임시 저장). 2단계 진행 |
 | admin 로그인 실패 | `DJANGO_CSRF_TRUSTED_ORIGINS` 에 `https://<프로젝트>.vercel.app` 추가 |
