@@ -3,7 +3,7 @@
 > **결제사 종속에서 벗어난 자체 모바일 POS · 단말결제 · 게이미피케이션 멤버십 시스템**
 > 카페 *슬로우스텝* 이 직접 모은 멤버십 고객(약 220명)을 **온전히 우리 자산으로** 운영하기 위한 프로젝트.
 
-이 폴더는 기존 레포(`Urge-surfing`)와 독립적인 **새 프로젝트**입니다.
+이 저장소는 구 모노레포(`Urge-surfing`)에서 분리된 **독립 저장소**입니다. (모든 파일이 저장소 루트에 있습니다.)
 
 ---
 
@@ -49,7 +49,7 @@
 ## 📂 폴더 구조
 
 ```
-slowstep-pos/
+.  (저장소 루트)
 ├─ README.md                ← (이 문서)
 ├─ docs/
 │  ├─ PRD.md                ← 제품 기획 (문제·목표·기능·로드맵)
@@ -73,7 +73,7 @@ slowstep-pos/
 ## 🚀 빠른 시작 (백엔드)
 
 ```bash
-cd slowstep-pos/backend
+cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python manage.py migrate
@@ -88,7 +88,7 @@ python manage.py runserver
 ## 🖥️ 웹 클라이언트 (정적)
 
 ```bash
-cd slowstep-pos/web
+cd web
 python -m http.server 5500
 # 직원 POS   : http://localhost:5500/pos/
 # 고객 QR    : http://localhost:5500/member/?phone=01012345678
