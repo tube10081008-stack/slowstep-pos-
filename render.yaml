@@ -5,9 +5,11 @@
 #
 # ── 사용법 (둘 중 하나) ─────────────────────────────────────────
 # A) 수동 생성(권장, 비개발자):  DEPLOY.md의 단계별 안내를 따른다.
-# B) Blueprint 자동 생성(고급):  이 파일을 저장소 "루트"로 복사한 뒤
-#    Render → New → Blueprint → 저장소 연결 → Apply.
-#    (루트에는 이미 다른 프로젝트용 render.yaml이 있으니 주의)
+# B) Blueprint 자동 생성(고급):  이 파일은 이미 저장소 "루트"에 있으므로
+#    Render → New → Blueprint → 저장소 연결 → Apply 만 하면 된다.
+#
+# 이 저장소는 구 모노레포(Urge-surfing)의 slowstep-pos/ 폴더를 독립 저장소로
+# 분리한 것입니다. 경로가 한 단계 올라오면서 rootDir 를 'backend' 로 조정했습니다.
 #
 # 데이터는 무료 플랜에서 재시작 시 초기화된다. 시작할 때마다 데모
 # 데이터를 다시 시드하므로 대시보드는 항상 채워진 상태로 보인다.
@@ -17,8 +19,8 @@ services:
     name: slowstep-pos
     runtime: python
     plan: free
-    rootDir: slowstep-pos/backend
-    branch: claude/new-project-setup-hz2qo8
+    rootDir: backend
+    branch: claude/multi-project-bottleneck-analysis-ppa8qq
     buildCommand: "pip install -r requirements-prod.txt && python manage.py collectstatic --noinput"
     startCommand: "python manage.py migrate && python manage.py seed_demo && python manage.py seed_marketing && gunicorn config.wsgi:application"
     healthCheckPath: /api/v1/store
