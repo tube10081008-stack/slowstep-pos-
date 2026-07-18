@@ -1,6 +1,8 @@
 """
 API 뷰. API 계약(docs/API-CONTRACT.md, Base: /api/v1)에 맞춰 구현.
 """
+from django.conf import settings
+from django.db import connection
 from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -31,6 +33,41 @@ def _resolve_member(member_id):
     if member_id is None:
         return None
     return get_object_or_404(Member, pk=member_id)
+
+
+class HealthView(APIView):
+    """
+    서비스 상태 점검: DB 연결 + 저장 영속성 보고.
+
+    POS·대시보드가 부팅 시 호출해 임시 저장소 모드(서버리스 + 무DB)면
+    경고 배너를 띄운다. 모니터링/헬스체크 경로로도 사용.
+    """
+
+    def get(self, request):
+        db_ok = True
+        db_error = ""
+        try:
+            with connection.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        except Exception as exc:  # 연결 실패도 200으로 보고(상태가 본문)
+            db_ok = False
+            db_error = str(exc)[:200]
+        engine = connection.settings_dict.get("ENGINE", "").rsplit(".", 1)[-1]
+        persistent = getattr(settings, "STORAGE_PERSISTENT", True)
+        body = {
+            "status": "ok" if db_ok else "degraded",
+            "db": {"ok": db_ok, "engine": engine, "persistent": persistent},
+        }
+        if db_error:
+            body["db"]["error"] = db_error
+        if not persistent:
+            body["warning"] = (
+                "임시 저장소 모드: 주문·회원 데이터가 콜드스타트 시 초기화되고 "
+                "동시 접속 간 불일치할 수 있습니다. DATABASE_URL(Neon 등)을 "
+                "설정해 영구 저장으로 전환하세요."
+            )
+        return Response(body, status=200 if db_ok else 503)
 
 
 class StoreView(APIView):
@@ -238,4 +275,8 @@ class TransactionViewSet(viewsets.ModelViewSet):
             txn.member.refresh_from_db()
             body["member"] = MemberSerializer(txn.member).data
         body["rewards"] = result.rewards
+        if result.idempotent_replay:
+            # 재전송된 요청 — 새로 결제된 게 아니라 기존 거래를 돌려줌.
+            body["idempotent_replay"] = True
+            return Response(body, status=status.HTTP_200_OK)
         return Response(body, status=status.HTTP_201_CREATED)

@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from django.urls import path
 
 from .views import (
+    HealthView,
     MemberViewSet,
     MenuView,
     MissionViewSet,
@@ -19,6 +20,7 @@ router.register("missions", MissionViewSet, basename="mission")
 router.register("transactions", TransactionViewSet, basename="transaction")
 
 urlpatterns = [
+    path("health", HealthView.as_view(), name="health"),
     path("store", StoreView.as_view(), name="store"),
     path("store/session", StoreSessionView.as_view(), name="store-session"),
     path("menu", MenuView.as_view(), name="menu"),

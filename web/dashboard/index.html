@@ -101,6 +101,9 @@
       <a href="../pos/">POS ↗</a><a href="../member/">멤버십 ↗</a>
     </nav>
   </header>
+  <!-- 저장소 상태 경고 (임시 저장 모드/DB 오류 시 /api/v1/health 결과로 표시) -->
+  <div id="storageBanner" style="display:none;margin:8px 0;padding:10px 14px;border-radius:10px;
+       background:#fff3cd;color:#7a5b00;border:1px solid #ffe08a;font-size:13px;line-height:1.5"></div>
 
   <!-- KPI -->
   <div class="grid kpis" id="kpis"></div>
@@ -341,7 +344,26 @@
     finally { $("sendBtn").disabled=false; $("sendBtn").textContent="발송하기"; }
   }
 
+  async function checkStorage(){
+    // 저장소 상태 점검 — 임시 저장 모드(서버리스+무DB)면 점주에게 경고.
+    try {
+      const h = await api("/api/v1/health");
+      if(h.db && h.db.persistent === false){
+        const b = $("storageBanner");
+        b.innerHTML = "⚠️ <b>임시 저장 모드</b> — 주문·회원 데이터가 서버 재시작 시 초기화될 수 있어요. "
+          + "영구 저장하려면 Vercel에 <b>DATABASE_URL</b>(Neon 무료 DB)을 설정하세요. (DEPLOY.md 2단계)";
+        b.style.display = "block";
+      }
+    } catch(e){
+      const b = $("storageBanner");
+      b.innerHTML = "❌ <b>데이터베이스 연결 이상</b> — 지표가 실제와 다를 수 있습니다. 잠시 후 새로고침 해주세요.";
+      b.style.background = "#fdecea"; b.style.color = "#8a1f11"; b.style.borderColor = "#f5c6cb";
+      b.style.display = "block";
+    }
+  }
+
   (async ()=>{
+    checkStorage();
     try { await loadDashboard(); await loadSegments(); doPreview(); }
     catch(e){ $("sub").textContent = "백엔드 연결 안됨: "+e.message; }
   })();
