@@ -8,7 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
-from django.db import transaction as db_transaction
+from django.db import IntegrityError, transaction as db_transaction
+from django.db.models import F
 from django.utils import timezone
 
 from .models import (
@@ -64,6 +65,8 @@ class ResolvedOrder:
 class CheckoutResult:
     transaction: Transaction
     rewards: list[dict] = field(default_factory=list)
+    # 동일 order_id 재시도(네트워크 재전송 등)로 기존 거래를 그대로 돌려준 경우 True.
+    idempotent_replay: bool = False
 
 
 def calc_points_earned(net_amount: int, store: Store) -> int:
@@ -204,8 +207,51 @@ def _apply_stamp_and_tier(member: Member, txn: Transaction, rewards: list[dict])
     member.tier = member.compute_tier()
 
 
-@db_transaction.atomic
+class _DuplicateOrder(Exception):
+    """동시 요청이 같은 order_id로 먼저 결제를 완료함(유니크 제약 충돌)."""
+
+    def __init__(self, order_id: str):
+        self.order_id = order_id
+
+
 def checkout(
+    *,
+    member: Member | None,
+    gross_amount: int,
+    points_to_use: int,
+    payment_method: str,
+    items: list | None = None,
+    approval_no: str = "",
+    toss_payment_key: str = "",
+    toss_order_id: str = "",
+) -> CheckoutResult:
+    """결제 확정(멱등 래퍼). 동일 order_id 중복 요청은 기존 거래를 반환한다.
+
+    유니크 제약 충돌(동시 중복)은 트랜잭션 전체가 롤백된 뒤 여기서
+    승자의 거래를 조회해 재생으로 돌려준다.
+    """
+    try:
+        return _checkout_atomic(
+            member=member,
+            gross_amount=gross_amount,
+            points_to_use=points_to_use,
+            payment_method=payment_method,
+            items=items,
+            approval_no=approval_no,
+            toss_payment_key=toss_payment_key,
+            toss_order_id=toss_order_id,
+        )
+    except _DuplicateOrder as dup:
+        existing = Transaction.objects.filter(
+            toss_order_id=dup.order_id, status=Transaction.Status.PAID
+        ).first()
+        if existing is not None:
+            return CheckoutResult(transaction=existing, idempotent_replay=True)
+        raise CheckoutError("이미 처리된 주문입니다.")
+
+
+@db_transaction.atomic
+def _checkout_atomic(
     *,
     member: Member | None,
     gross_amount: int,
@@ -222,7 +268,25 @@ def checkout(
     포인트 사용/적립 → 스탬프·등급·미션.
     결제는 외부 단말(네이버 커넥트 등)에서 처리되고 앱은 기록만 한다.
     단, TOSS_* 결제수단은 Toss PG 승인 API를 호출한다(옵션).
+
+    동시성/멱등성:
+    - 회원 행을 select_for_update로 잠가 동시 결제의 포인트 이중사용을 막는다.
+    - 재고는 조건부 UPDATE(stock >= qty)로 차감해 초과판매(TOCTOU)를 막는다.
+    - 동일 order_id의 완료 거래가 있으면 그 거래를 그대로 반환한다(멱등 재생)
+      → POS가 네트워크 오류로 재전송해도 중복 결제가 생기지 않는다.
     """
+    # 멱등 재생: 이미 완료된 동일 주문이면 기존 거래 반환(중복 기록 방지).
+    if toss_order_id:
+        existing = Transaction.objects.filter(
+            toss_order_id=toss_order_id, status=Transaction.Status.PAID
+        ).first()
+        if existing is not None:
+            return CheckoutResult(transaction=existing, idempotent_replay=True)
+
+    # 회원 행 잠금(동시 결제 직렬화). SQLite는 no-op이나 쓰기 자체가 직렬화됨.
+    if member is not None:
+        member = Member.objects.select_for_update().get(pk=member.pk)
+
     store = member.store if member else Store.objects.first()
     if store is None:
         raise CheckoutError("매장 설정이 없습니다. seed_demo를 실행하세요.")
@@ -234,12 +298,6 @@ def checkout(
         discount = resolved.discount
 
     quote = build_quote(member, gross_amount, points_to_use, discount)
-
-    # 멱등: 동일 order_id가 이미 완료됐으면 거절(409 매핑).
-    if toss_order_id and Transaction.objects.filter(
-        toss_order_id=toss_order_id, status=Transaction.Status.PAID
-    ).exists():
-        raise CheckoutError("이미 처리된 주문입니다.")
 
     txn = Transaction.objects.create(
         store=store,
@@ -272,7 +330,13 @@ def checkout(
 
     txn.status = Transaction.Status.PAID
     txn.paid_at = timezone.now()
-    txn.save()
+    try:
+        txn.save()
+    except IntegrityError:
+        # 부분 유니크 제약(uniq_paid_toss_order_id) 충돌 = 동시 중복 주문.
+        if txn.toss_order_id:
+            raise _DuplicateOrder(txn.toss_order_id)
+        raise
 
     # ── 주문 항목 기록(메뉴·옵션 스냅샷) ──
     if resolved:
@@ -282,10 +346,14 @@ def checkout(
                 unit_price=l.unit_price, quantity=l.quantity,
                 temperature=l.temperature, decaf=l.decaf, oatmilk=l.oatmilk, shot=l.shot,
             )
-            # 재고 차감 (null=무제한)
+            # 재고 차감: 조건부 UPDATE로 확인→차감 사이 초과판매(TOCTOU) 방지.
+            # (null=무제한은 차감 없음)
             if l.menu_item.stock is not None:
-                l.menu_item.stock = max(0, l.menu_item.stock - l.quantity)
-                l.menu_item.save(update_fields=["stock"])
+                updated = MenuItem.objects.filter(
+                    pk=l.menu_item.pk, stock__gte=l.quantity
+                ).update(stock=F("stock") - l.quantity)
+                if not updated:
+                    raise CheckoutError(f"'{l.menu_item.name}' 재고가 부족합니다.")
 
     rewards: list[dict] = []
 
@@ -320,12 +388,16 @@ def cancel_transaction(txn: Transaction) -> Transaction:
     """
     결제 취소/환불(원자적): 상태 전환 + 포인트 원복(사용분 환급·적립분 회수) +
     누적/방문/스탬프 되돌림 + 재고 원복. 실 Toss 연동 시 환불 API 호출 지점.
+
+    거래·회원 행을 잠근 뒤 상태를 재확인해 동시 이중 취소를 막는다.
     """
+    txn = Transaction.objects.select_for_update().get(pk=txn.pk)
     if txn.status != Transaction.Status.PAID:
         raise CheckoutError("결제완료 건만 취소할 수 있습니다.")
 
     member = txn.member
     if member is not None:
+        member = Member.objects.select_for_update().get(pk=member.pk)
         # 순 포인트 변동 = 사용분 환급(+) − 적립분 회수(−)
         delta = txn.points_used - txn.points_earned
         if delta != 0:
@@ -336,11 +408,12 @@ def cancel_transaction(txn: Transaction) -> Transaction:
         member.tier = member.compute_tier()
         member.save()
 
-    # 재고 원복
+    # 재고 원복 (F식으로 원자적 증가 — 동시 판매와 충돌해도 유실 없음)
     for it in txn.items.select_related("menu_item").all():
         if it.menu_item and it.menu_item.stock is not None:
-            it.menu_item.stock += it.quantity
-            it.menu_item.save(update_fields=["stock"])
+            MenuItem.objects.filter(
+                pk=it.menu_item.pk, stock__isnull=False
+            ).update(stock=F("stock") + it.quantity)
 
     txn.status = Transaction.Status.CANCELED
     txn.save(update_fields=["status"])

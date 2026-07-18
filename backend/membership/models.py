@@ -190,6 +190,15 @@ class Transaction(models.Model):
         verbose_name = "거래"
         verbose_name_plural = "거래"
         ordering = ["-created_at"]
+        constraints = [
+            # 같은 order_id로 결제완료 거래는 1건만 — 재시도/동시요청의
+            # 중복 결제를 DB 레벨에서 차단(서비스 로직의 최후 방어선).
+            models.UniqueConstraint(
+                fields=["toss_order_id"],
+                condition=models.Q(status="paid") & ~models.Q(toss_order_id=""),
+                name="uniq_paid_toss_order_id",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"거래#{self.pk} {self.net_amount}원 [{self.status}]"

@@ -196,6 +196,9 @@
     <span class="tag" id="storeTag">로딩…</span>
     <nav><a href="../dashboard/">대시보드 ↗</a><a href="../member/">멤버십 ↗</a></nav>
   </header>
+  <!-- 저장소 상태 경고 (임시 저장 모드/DB 오류 시 /api/v1/health 결과로 표시) -->
+  <div id="storageBanner" style="display:none;margin:8px 0;padding:10px 14px;border-radius:10px;
+       background:#fff3cd;color:#7a5b00;border:1px solid #ffe08a;font-size:13px;line-height:1.5"></div>
 
   <!-- ===== 탭: 상품 주문 ===== -->
   <div id="tabOrder" class="tab">
@@ -366,7 +369,26 @@
     return b;
   }
 
+  async function checkStorage(){
+    // 저장소 상태 점검 — 임시 저장 모드(서버리스+무DB)면 점주에게 경고.
+    try {
+      const h = await api("/api/v1/health");
+      if(h.db && h.db.persistent === false){
+        const b = $("storageBanner");
+        b.innerHTML = "⚠️ <b>임시 저장 모드</b> — 주문·회원 데이터가 서버 재시작 시 초기화될 수 있어요. "
+          + "영구 저장하려면 Vercel에 <b>DATABASE_URL</b>(Neon 무료 DB)을 설정하세요. (DEPLOY.md 2단계)";
+        b.style.display = "block";
+      }
+    } catch(e){
+      const b = $("storageBanner");
+      b.innerHTML = "❌ <b>데이터베이스 연결 이상</b> — 주문이 저장되지 않을 수 있습니다. 잠시 후 새로고침 해주세요.";
+      b.style.background = "#fdecea"; b.style.color = "#8a1f11"; b.style.borderColor = "#f5c6cb";
+      b.style.display = "block";
+    }
+  }
+
   async function init(){
+    checkStorage();
     try {
       store = await api("/api/v1/store");
       earnRate = Number(store.point_earn_rate);
@@ -493,8 +515,15 @@
     $("lookupBtn").disabled = phone.length < 10;
   }
 
+  // 결제 시도 멱등키: 결제 화면 진입 시 1회 생성, 재시도에도 유지 →
+  // 네트워크 오류로 재전송해도 서버가 같은 주문으로 인식(중복 결제 방지).
+  let orderId = null;
+  const newOrderId = () => (crypto.randomUUID ? crypto.randomUUID()
+    : "pos-"+Date.now()+"-"+Math.random().toString(36).slice(2,10));
+
   function goPay(){
     if(!Object.keys(cart).length) return;
+    orderId = newOrderId();
     member=null; phone=""; renderPhone();
     $("termAmt").textContent = won(finalTotal());
     $("orderView").classList.add("hidden"); $("doneView").classList.add("hidden");
@@ -558,9 +587,10 @@
       const res = await api("/api/v1/transactions", { method:"POST", body: JSON.stringify({
         member_id: member?member.id:null, items, points_to_use:use,
         payment_method:method, approval_no:($("approvalNo").value||"").trim(),
-        toss_order_id:"kiosk-"+Date.now(),
+        toss_order_id: orderId || newOrderId(),
       })});
       lastOrder = res;
+      if(res.idempotent_replay) toast("이미 처리된 주문입니다 — 기존 결제를 표시합니다");
       showDone(res);
     } catch(e){ toast("❌ "+e.message); }
     finally { $("approveBtn").disabled=false; $("approveBtn").textContent="결제 완료 확인"; }
@@ -584,7 +614,7 @@
     } else { $("doneSub").textContent = "비회원 결제 완료"; $("doneRewards").innerHTML=""; }
   }
 
-  async function newOrder(){ cart={}; member=null;
+  async function newOrder(){ cart={}; member=null; orderId=null;
     try { menu = await api("/api/v1/menu"); } catch(e){}  // 재고 반영
     renderMenu(); renderCart();
     $("doneView").classList.add("hidden"); $("orderView").classList.remove("hidden"); }
