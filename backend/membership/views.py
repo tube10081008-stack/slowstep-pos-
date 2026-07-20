@@ -25,6 +25,7 @@ from .serializers import (
     StoreSerializer,
     TransactionSerializer,
 )
+from .imports import CsvImportError, import_members_csv
 from .profile import build_member_dashboard
 from .services import CheckoutError, build_quote, cancel_transaction, checkout
 
@@ -169,6 +170,31 @@ class MemberViewSet(viewsets.ModelViewSet):
         if member is None:
             return Response({"detail": "회원을 찾을 수 없습니다."}, status=404)
         return Response(MemberSerializer(member).data)
+
+    @action(detail=False, methods=["post"], url_path="import")
+    def import_csv(self, request):
+        """
+        기존 고객 CSV 일괄 등록(payhere 등 이관).
+
+        multipart `file`(엑셀 CP949·UTF-8 자동 판별) 또는 JSON `csv`(텍스트).
+        `dry_run=true` 면 검증·집계만 하고 저장하지 않는다(미리보기).
+        """
+        upload = request.FILES.get("file")
+        csv_text = (request.data.get("csv") or "").strip()
+        dry_run = str(request.data.get("dry_run", "")).lower() in ("1", "true", "yes", "y")
+        if upload is None and not csv_text:
+            return Response(
+                {"detail": "file(업로드) 또는 csv(텍스트)가 필요합니다."}, status=400
+            )
+        try:
+            summary = import_members_csv(
+                file_bytes=upload.read() if upload else None,
+                csv_text=csv_text or None,
+                dry_run=dry_run,
+            )
+        except CsvImportError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(summary)
 
     @action(detail=True, methods=["get"])
     def missions(self, request, pk=None):

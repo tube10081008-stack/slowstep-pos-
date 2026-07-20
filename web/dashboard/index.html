@@ -195,6 +195,33 @@
     </div>
   </div>
 
+  <!-- 고객 일괄 등록 (payhere 이관) -->
+  <div class="card" style="margin-top:14px;">
+    <h3>고객 일괄 등록 <span class="muted" style="font-weight:500">— payhere 등 기존 고객 CSV 이관</span></h3>
+    <div class="grid cols">
+      <div>
+        <p class="muted" style="margin:0 0 10px;line-height:1.6">
+          기존 결제사에서 내려받은 고객 명단을 CSV로 올리면 한 번에 등록됩니다.<br/>
+          필수 열: <b>이름, 연락처</b> · 선택 열: 포인트, 누적결제액, 방문횟수, 스탬프, 마케팅동의, 가입일<br/>
+          엑셀에서 "CSV로 저장"한 파일 그대로 올려도 됩니다(한글 인코딩 자동 인식).
+          이미 등록된 연락처는 건너뛰어 기존 데이터를 덮어쓰지 않아요.
+        </p>
+        <button class="ghost" onclick="downloadTemplate()">📄 템플릿 CSV 내려받기</button>
+        <label>CSV 파일 선택</label>
+        <input id="impFile" type="file" accept=".csv,text/csv" onchange="resetImport()" />
+        <div class="frow" style="margin-top:12px;">
+          <button class="ghost" id="impCheckBtn" onclick="runImport(true)">① 검증하기 (저장 안 함)</button>
+          <button id="impRunBtn" onclick="runImport(false)" disabled>② 등록 실행</button>
+        </div>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">결과</div>
+        <div class="preview-box" id="impSummary">파일을 선택하고 ① 검증하기를 눌러 주세요.</div>
+        <div class="result" id="impDetail"></div>
+      </div>
+    </div>
+  </div>
+
   <p class="muted" style="text-align:center;margin-top:18px;">
     알림톡 키 미설정 시 Mock 발송 — 세그먼트·치환·수신거부 로직 전체 검증 가능</p>
 </div>
@@ -342,6 +369,71 @@
       loadDashboard(); loadSegments();
     } catch(e){ toast("❌ "+e.message); }
     finally { $("sendBtn").disabled=false; $("sendBtn").textContent="발송하기"; }
+  }
+
+  // ── 고객 일괄 등록 (CSV 이관) ──
+  function downloadTemplate(){
+    // ﻿ BOM — 엑셀에서 한글이 깨지지 않게
+    const csv = "﻿이름,연락처,포인트,누적결제액,방문횟수,스탬프,마케팅동의,가입일\n"
+      + "김슬로우,010-1234-5678,3200,84000,12,4,Y,2024-03-15\n"
+      + "이커피,01098765432,0,0,0,0,N,\n";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv;charset=utf-8"}));
+    a.download = "slowstep-고객이관-템플릿.csv";
+    a.click(); URL.revokeObjectURL(a.href);
+  }
+
+  function resetImport(){
+    // 파일이 바뀌면 검증부터 다시 — 검증 안 된 파일은 실행 금지
+    $("impRunBtn").disabled = true;
+    $("impSummary").textContent = "파일을 검증해 주세요.";
+    $("impDetail").innerHTML = "";
+  }
+
+  async function runImport(dryRun){
+    const file = $("impFile").files[0];
+    if(!file) return toast("CSV 파일을 먼저 선택하세요");
+    const btn = dryRun ? $("impCheckBtn") : $("impRunBtn");
+    btn.disabled = true;
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("dry_run", dryRun ? "true" : "false");
+      const r = await fetch(API_BASE+"/api/v1/members/import", { method:"POST", body: fd });
+      const b = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(b.detail || ("오류 "+r.status));
+
+      $("impSummary").innerHTML =
+        (dryRun ? "🔍 <b>검증 결과</b> (아직 저장 안 됨)" : "✅ <b>등록 완료</b>") +
+        `<div style="margin-top:8px">` +
+        `<span class="pill">전체 ${b.total}</span>` +
+        `<span class="pill ok">등록${dryRun?" 예정":""} ${b.created}</span>` +
+        `<span class="pill skip">건너뜀 ${b.skipped}</span>` +
+        `<span class="pill fail">오류 ${b.errors}</span></div>`;
+
+      const issues = b.results.filter(x=>x.status!=="created").slice(0,10);
+      $("impDetail").innerHTML = issues.length
+        ? `<table><thead><tr><th>행</th><th>이름</th><th>연락처</th><th>사유</th></tr></thead><tbody>` +
+          issues.map(x=>`<tr><td>${x.row}</td><td>${x.name||"—"}</td><td>${x.phone||"—"}</td>
+            <td class="${x.status==="error"?"fail":"skip"}">${x.reason}</td></tr>`).join("") +
+          `</tbody></table>` +
+          (b.results.length - b.created > 10 ? `<div class="muted" style="margin-top:6px">외 ${b.results.length-b.created-10}건</div>` : "")
+        : "";
+
+      if(dryRun){
+        $("impRunBtn").disabled = b.created === 0;
+        if(b.created > 0) toast(`검증 완료 — ${b.created}명 등록 가능`);
+      } else {
+        $("impRunBtn").disabled = true;
+        toast(`${b.created}명 등록 완료`);
+        loadDashboard();
+      }
+    } catch(e){
+      $("impSummary").textContent = "❌ "+e.message;
+    } finally {
+      $("impCheckBtn").disabled = false;
+      if(dryRun===false) $("impRunBtn").disabled = true;
+    }
   }
 
   async function checkStorage(){

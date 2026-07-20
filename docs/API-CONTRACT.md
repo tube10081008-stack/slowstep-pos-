@@ -26,6 +26,22 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 201  { "id": 1, "phone": "...", "name": "...", "points": 0, "tier": "BRONZE", ... }
 ```
 
+### `POST /api/v1/members/import`
+**기존 고객 CSV 일괄 등록** (payhere 등 타 시스템 이관용).
+- 입력: multipart `file`(엑셀 CP949·UTF-8 자동 판별) 또는 JSON `csv`(텍스트) + `dry_run`.
+- CSV 첫 행은 헤더. 필수 열 `이름`·`연락처`, 선택 열 `포인트`·`누적결제액`·`방문횟수`·
+  `스탬프`·`마케팅동의`(Y/N)·`가입일`(YYYY-MM-DD). 열 이름은 유사 표기 자동 매핑
+  (전화번호/휴대폰, 보유포인트/잔여적립금 등).
+- 규칙: 초기 포인트는 **원장(PointEntry, `adjust`)에 기록**, 등급은 누적액으로 재계산,
+  **이미 등록된 연락처는 건너뜀**(덮어쓰지 않음), 원래 가입일 보존.
+- `dry_run=true` → 검증·집계만(저장 없음). 대시보드의 "① 검증하기"가 사용.
+```json
+200 { "dry_run": false, "total": 220, "created": 210, "skipped": 8, "errors": 2,
+      "results": [ { "row": 2, "name": "김이관", "phone": "01055556666",
+                     "status": "created", "reason": "", "points": 3200 }, ... ] }
+400 { "detail": "헤더에서 이름·연락처 열을 찾을 수 없습니다. ..." }
+```
+
 ### `GET /api/v1/members/{id}`
 회원 상세 + 진행 중 미션 + 최근 적립 내역.
 

@@ -146,6 +146,92 @@ class CancelTests(TestCase):
         self.assertEqual(self.member.visit_count, 0)
 
 
+class MemberImportTests(TestCase):
+    """CSV 일괄 등록(payhere 이관) — 검증·원장·중복·dry_run."""
+
+    URL = "/api/v1/members/import"
+
+    def setUp(self):
+        self.store = make_store()
+
+    def _post_csv(self, csv_text, dry_run=False):
+        return self.client.post(
+            self.URL,
+            data={"csv": csv_text, "dry_run": dry_run},
+            content_type="application/json",
+        )
+
+    def test_import_creates_member_with_ledger_and_tier(self):
+        csv_text = (
+            "이름,연락처,포인트,누적결제액,방문횟수,스탬프,마케팅동의,가입일\n"
+            "김이관,010-5555-6666,\"3,200\",250000,42,4,Y,2024-03-15\n"
+        )
+        res = self._post_csv(csv_text)
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["created"], 1)
+        self.assertEqual(body["errors"], 0)
+
+        m = Member.objects.get(phone="01055556666")
+        self.assertEqual(m.name, "김이관")
+        self.assertEqual(m.points, 3200)
+        self.assertEqual(m.total_spent, 250000)
+        self.assertEqual(m.visit_count, 42)
+        self.assertEqual(m.stamps, 4)
+        self.assertTrue(m.marketing_opt_in)
+        # 등급은 누적액으로 재계산(20만 이상 → GOLD)
+        self.assertEqual(m.tier, Member.Tier.GOLD)
+        # 원래 가입일 보존(auto_now_add 우회)
+        self.assertEqual(timezone.localtime(m.joined_at).date().isoformat(), "2024-03-15")
+        # 초기 포인트는 원장(adjust)에 기록 — 잔액의 진실 원천 유지
+        entry = m.point_entries.get()
+        self.assertEqual(entry.delta, 3200)
+        self.assertEqual(entry.reason, "adjust")
+        self.assertEqual(entry.balance_after, 3200)
+
+    def test_duplicates_and_invalid_phone(self):
+        Member.objects.create(store=self.store, phone="01011112222", name="기존")
+        csv_text = (
+            "이름,전화번호\n"
+            "기존회원,01011112222\n"      # DB에 이미 있음 → skipped
+            "새회원,010-7777-8888\n"      # 등록
+            "중복행,01077778888\n"        # 파일 내 중복 → skipped
+            "이상한번호,02-123-4567\n"    # 유효하지 않음 → error
+        )
+        res = self._post_csv(csv_text)
+        body = res.json()
+        self.assertEqual(body["created"], 1)
+        self.assertEqual(body["skipped"], 2)
+        self.assertEqual(body["errors"], 1)
+        # 기존 회원은 덮어쓰지 않음
+        self.assertEqual(Member.objects.get(phone="01011112222").name, "기존")
+        self.assertTrue(Member.objects.filter(phone="01077778888").exists())
+
+    def test_dry_run_writes_nothing(self):
+        res = self._post_csv("이름,연락처\n미리보기,01099998888\n", dry_run=True)
+        body = res.json()
+        self.assertTrue(body["dry_run"])
+        self.assertEqual(body["created"], 1)
+        self.assertFalse(Member.objects.filter(phone="01099998888").exists())
+
+    def test_cp949_file_upload(self):
+        # 한국 엑셀 저장 파일(CP949)도 자동 판별
+        from io import BytesIO
+        data = "이름,연락처,포인트\n박엑셀,01033335555,500\n".encode("cp949")
+        f = BytesIO(data)
+        f.name = "members.csv"
+        res = self.client.post(self.URL, data={"file": f, "dry_run": "false"})
+        self.assertEqual(res.status_code, 200)
+        m = Member.objects.get(phone="01033335555")
+        self.assertEqual(m.name, "박엑셀")
+        self.assertEqual(m.points, 500)
+
+    def test_missing_required_header_rejected(self):
+        res = self._post_csv("포인트,누적결제액\n100,2000\n")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("이름·연락처", res.json()["detail"])
+
+
 class HealthEndpointTests(TestCase):
     def test_health_reports_persistent_storage(self):
         res = self.client.get("/api/v1/health")
