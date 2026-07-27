@@ -5,6 +5,7 @@ from django.urls import path
 
 from .views import (
     HealthView,
+    MarginView,
     MemberViewSet,
     MenuView,
     MissionViewSet,
@@ -25,5 +26,6 @@ urlpatterns = [
     path("store/session", StoreSessionView.as_view(), name="store-session"),
     path("menu", MenuView.as_view(), name="menu"),
     path("sales/summary", SalesSummaryView.as_view(), name="sales-summary"),
+    path("margins/summary", MarginView.as_view(), name="margins-summary"),
 ]
 urlpatterns += router.urls

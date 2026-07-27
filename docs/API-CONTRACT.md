@@ -142,7 +142,29 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 영업 시작/마감. `{ "action": "open" | "close" }` → 갱신된 store 반환.
 
 ### `GET /api/v1/sales/summary`
-오늘 정산: `{ count, gross, discount, net, points, by_method, is_open, opened_at }`.
+오늘 정산: `{ count, gross, discount, net, points, by_method, is_open, opened_at, margin }`.
+`margin` = 오늘 기여이익 `{ supply_revenue, material_cost, reward_cost, contribution, margin_rate }`.
+
+### `GET /api/v1/margins/summary?days=30`
+**원가·마진 분석**(점주 전용). 기준: **공급가(매출÷(1+vat))** − **재료원가** −
+**적립비용(포인트·스탬프·미션, 적립 시점 인식)** = 기여이익. 인건비·임대료 등 고정비는
+범위 밖(재료비 기준). 취소 거래는 매출·원가·비용 모두에서 제외.
+```json
+200 {
+  "days": 30, "vat_rate": 0.1, "tx_count": 3,
+  "revenue_incl_vat": 33000, "supply_revenue": 30000,
+  "material_cost": 9300, "reward_cost": 1990,
+  "contribution": 18710, "margin_rate": 62.4, "cost_rate": 31.0,
+  "menu": [ { "name": "카페 라떼", "qty": 3, "supply_revenue": 13636,
+             "material_cost": 4200, "margin": 9436, "margin_rate": 69.2,
+             "cost_rate": 30.8, "has_cost": true }, ... ]
+}
+```
+- **메뉴별 마진**(`menu[]`)은 각 메뉴 정가(옵션 포함 단가) 공급가 − 재료원가.
+  세트할인·포인트는 거래 단위라 개별 메뉴에 배분하지 않음(상품 자체 수익성).
+- 원가는 **관리자 → 메뉴**의 `재료원가`, 옵션 추가원가는 `Store.option_cost`,
+  부가세율은 `Store.vat_rate`. 원가는 결제 시점에 `OrderItem.unit_cost`로 스냅샷되어
+  나중에 원가를 바꿔도 과거 마진은 불변. `has_cost=false`는 원가 미입력 메뉴.
 
 ### `GET /api/v1/transactions`
 주문 내역: 최근 결제완료 100건(주문 항목·회원명·수단 포함).

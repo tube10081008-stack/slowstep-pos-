@@ -48,6 +48,7 @@ class OrderLine:
     oatmilk: bool
     shot: bool
     unit_price: int  # 옵션 포함
+    unit_cost: int = 0  # 재료원가(옵션 원가 포함) 스냅샷
 
     @property
     def line_total(self) -> int:
@@ -113,6 +114,7 @@ def resolve_order(items: list | None, store: Store) -> ResolvedOrder | None:
     if not items:
         return None
     opt = store.option_price
+    opt_cost = store.option_cost
     lines: list[OrderLine] = []
     drink_qty = dessert_qty = 0
     for raw in items:
@@ -140,8 +142,11 @@ def resolve_order(items: list | None, store: Store) -> ResolvedOrder | None:
         else:
             temperature = ""
 
-        unit_price = mi.price + (opt if decaf else 0) + (opt if oatmilk else 0) + (opt if shot else 0)
-        lines.append(OrderLine(mi, qty, temperature, decaf, oatmilk, shot, unit_price))
+        n_opts = int(decaf) + int(oatmilk) + int(shot)
+        unit_price = mi.price + opt * n_opts
+        # 재료원가 스냅샷: 메뉴 원가 + 옵션당 추가 원가.
+        unit_cost = mi.cost + opt_cost * n_opts
+        lines.append(OrderLine(mi, qty, temperature, decaf, oatmilk, shot, unit_price, unit_cost))
         if mi.category == MenuItem.Category.DESSERT:
             dessert_qty += qty
         else:
@@ -343,7 +348,7 @@ def _checkout_atomic(
         for l in resolved.lines:
             OrderItem.objects.create(
                 transaction=txn, menu_item=l.menu_item, name=l.menu_item.name,
-                unit_price=l.unit_price, quantity=l.quantity,
+                unit_price=l.unit_price, unit_cost=l.unit_cost, quantity=l.quantity,
                 temperature=l.temperature, decaf=l.decaf, oatmilk=l.oatmilk, shot=l.shot,
             )
             # 재고 차감: 조건부 UPDATE로 확인→차감 사이 초과판매(TOCTOU) 방지.

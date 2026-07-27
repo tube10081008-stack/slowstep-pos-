@@ -15,15 +15,15 @@ from .models import (
 
 @admin.register(MenuItem)
 class MenuItemAdmin(admin.ModelAdmin):
-    list_display = ["name", "category", "price", "temp_option", "decaf_available", "oatmilk_available", "shot_available", "stock", "is_available", "sort_order"]
+    list_display = ["name", "category", "price", "cost", "temp_option", "decaf_available", "oatmilk_available", "shot_available", "stock", "is_available", "sort_order"]
     list_filter = ["category", "temp_option", "is_available"]
-    list_editable = ["price", "stock", "is_available", "sort_order"]
+    list_editable = ["price", "cost", "stock", "is_available", "sort_order"]
     search_fields = ["name"]
 
 
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
-    list_display = ["name", "point_earn_rate", "stamp_goal", "stamp_reward_points"]
+    list_display = ["name", "point_earn_rate", "stamp_goal", "stamp_reward_points", "option_price", "option_cost", "vat_rate"]
 
 
 @admin.register(Member)

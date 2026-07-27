@@ -23,6 +23,12 @@ class Store(models.Model):
     set_discount_amount = models.IntegerField("세트 할인액", default=500)
     # 디카페인·오트밀크 등 옵션 추가금
     option_price = models.IntegerField("옵션 추가금", default=500)
+    # 옵션 1개당 추가 재료원가(오트밀크·샷 등) — 마진 분석용
+    option_cost = models.IntegerField("옵션 추가 원가", default=0)
+    # 부가세율(마진은 공급가=매출÷(1+vat) 기준으로 계산)
+    vat_rate = models.DecimalField(
+        "부가세율", max_digits=4, decimal_places=3, default=0.10
+    )
     # 영업 상태
     is_open = models.BooleanField("영업중", default=False)
     opened_at = models.DateTimeField("영업 시작 시각", null=True, blank=True)
@@ -103,6 +109,8 @@ class MenuItem(models.Model):
     )
     name = models.CharField("메뉴명", max_length=100)
     price = models.IntegerField("가격")
+    # 재료원가(1잔·1개당). 마진 = 공급가 − 원가. 0이면 원가 미입력.
+    cost = models.IntegerField("재료원가", default=0)
     category = models.CharField(
         "카테고리", max_length=20, choices=Category.choices, default=Category.COFFEE
     )
@@ -215,6 +223,8 @@ class OrderItem(models.Model):
     )
     name = models.CharField("메뉴명(스냅샷)", max_length=100)
     unit_price = models.IntegerField("단가(옵션 포함)")
+    # 결제 시점 재료원가 스냅샷(옵션 원가 포함). 원가 변경돼도 과거 마진 불변.
+    unit_cost = models.IntegerField("단가 원가(스냅샷)", default=0)
     quantity = models.PositiveIntegerField("수량", default=1)
     # 옵션 스냅샷
     temperature = models.CharField("온도", max_length=4, blank=True, default="")  # "", "ice", "hot"
@@ -229,6 +239,10 @@ class OrderItem(models.Model):
     @property
     def line_total(self) -> int:
         return self.unit_price * self.quantity
+
+    @property
+    def cost_total(self) -> int:
+        return self.unit_cost * self.quantity
 
     @property
     def option_label(self) -> str:

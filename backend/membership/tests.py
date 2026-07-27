@@ -232,6 +232,99 @@ class MemberImportTests(TestCase):
         self.assertIn("이름·연락처", res.json()["detail"])
 
 
+class MarginTests(TestCase):
+    """원가·마진: 원가 스냅샷, 공급가 기준, 적립비용(적립 시점), 메뉴별 마진."""
+
+    def setUp(self):
+        self.store = make_store(point_earn_rate="0.03", option_cost=300, vat_rate="0.10")
+        self.member = Member.objects.create(
+            store=self.store, phone="01088889999", name="마진", points=0
+        )
+        self.latte = MenuItem.objects.create(
+            store=self.store, name="라떼", price=5000, cost=1200,
+            category=MenuItem.Category.COFFEE, oatmilk_available=True, stock=100,
+        )
+
+    def test_unit_cost_snapshot_includes_option(self):
+        checkout(
+            member=self.member, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.latte.id, "quantity": 2, "oatmilk": True}],
+            toss_order_id="m1",
+        )
+        from .models import OrderItem
+        oi = OrderItem.objects.get(name="라떼")
+        # 단가 = 5000 + 옵션가 500, 원가 = 1200 + 옵션원가 300
+        self.assertEqual(oi.unit_price, 5500)
+        self.assertEqual(oi.unit_cost, 1500)
+        # 원가 변경해도 과거 스냅샷 불변
+        self.latte.cost = 9999
+        self.latte.save(update_fields=["cost"])
+        oi.refresh_from_db()
+        self.assertEqual(oi.unit_cost, 1500)
+
+    def test_margin_summary_supply_basis_and_reward_cost(self):
+        from .margins import margin_summary, to_supply
+        # 라떼 1잔(옵션 없음): 정가 5000, net 5000, 적립 3% = 150P
+        checkout(
+            member=self.member, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.latte.id, "quantity": 1}],
+            toss_order_id="m2",
+        )
+        s = margin_summary(days=30)
+        self.assertEqual(s["revenue_incl_vat"], 5000)
+        self.assertEqual(s["supply_revenue"], to_supply(5000))  # 5000/1.1 ≈ 4545
+        self.assertEqual(s["material_cost"], 1200)
+        self.assertEqual(s["reward_cost"], 150)  # 적립 시점 인식
+        self.assertEqual(s["contribution"], s["supply_revenue"] - 1200 - 150)
+
+    def test_canceled_excluded_from_margin(self):
+        from .margins import margin_summary
+        r = checkout(
+            member=self.member, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.latte.id, "quantity": 1}],
+            toss_order_id="m3",
+        )
+        cancel_transaction(r.transaction)
+        s = margin_summary(days=30)
+        self.assertEqual(s["supply_revenue"], 0)
+        self.assertEqual(s["material_cost"], 0)
+        self.assertEqual(s["reward_cost"], 0)
+
+    def test_menu_item_margins_ranking(self):
+        from .margins import menu_item_margins
+        checkout(
+            member=None, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CASH,
+            items=[{"menu_item_id": self.latte.id, "quantity": 3}],
+            toss_order_id="m4",
+        )
+        rows = menu_item_margins(days=30)
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["name"], "라떼")
+        self.assertEqual(row["qty"], 3)
+        self.assertEqual(row["material_cost"], 3600)  # 1200 × 3
+        self.assertTrue(row["has_cost"])
+        self.assertGreater(row["margin_rate"], 0)
+
+    def test_margins_endpoint(self):
+        checkout(
+            member=None, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CASH,
+            items=[{"menu_item_id": self.latte.id, "quantity": 1}],
+            toss_order_id="m5",
+        )
+        res = self.client.get("/api/v1/margins/summary?days=7")
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["days"], 7)
+        self.assertIn("contribution", body)
+        self.assertEqual(len(body["menu"]), 1)
+
+
 class HealthEndpointTests(TestCase):
     def test_health_reports_persistent_storage(self):
         res = self.client.get("/api/v1/health")

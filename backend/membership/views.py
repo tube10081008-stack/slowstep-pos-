@@ -3,7 +3,7 @@ API 뷰. API 계약(docs/API-CONTRACT.md, Base: /api/v1)에 맞춰 구현.
 """
 from django.conf import settings
 from django.db import connection
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, F, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -11,7 +11,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Member, MenuItem, Mission, Store, Transaction
+from .models import Member, MenuItem, Mission, OrderItem, PointEntry, Store, Transaction
 from .payments import TossError
 from .serializers import (
     CheckoutRequestSerializer,
@@ -26,6 +26,7 @@ from .serializers import (
     TransactionSerializer,
 )
 from .imports import CsvImportError, import_members_csv
+from .margins import margin_summary, menu_item_margins, to_supply
 from .profile import build_member_dashboard
 from .services import CheckoutError, build_quote, cancel_transaction, checkout
 
@@ -125,6 +126,18 @@ class SalesSummaryView(APIView):
             row["payment_method"]: row["s"]
             for row in today_qs.values("payment_method").annotate(s=Sum("net_amount"))
         }
+        # 오늘 기여이익(공급가 − 재료원가 − 적립비용). 자세한 기준은 margins.py.
+        net_today = agg["net"] or 0
+        material_cost = OrderItem.objects.filter(transaction__in=today_qs).aggregate(
+            s=Sum(F("unit_cost") * F("quantity"))
+        )["s"] or 0
+        reward_cost = PointEntry.objects.filter(
+            transaction__in=today_qs,
+            reason__in=(PointEntry.Reason.EARN, PointEntry.Reason.STAMP, PointEntry.Reason.MISSION),
+            delta__gt=0,
+        ).aggregate(s=Sum("delta"))["s"] or 0
+        supply = to_supply(net_today)
+        contribution = supply - material_cost - reward_cost
         return Response({
             "date": today.isoformat(),
             "is_open": store.is_open if store else False,
@@ -132,10 +145,35 @@ class SalesSummaryView(APIView):
             "count": agg["n"] or 0,
             "gross": agg["gross"] or 0,
             "discount": agg["discount"] or 0,
-            "net": agg["net"] or 0,
+            "net": net_today,
             "points": agg["points"] or 0,
             "by_method": methods,
+            "margin": {
+                "supply_revenue": supply,
+                "material_cost": material_cost,
+                "reward_cost": reward_cost,
+                "contribution": contribution,
+                "margin_rate": round(contribution / supply * 100, 1) if supply else 0.0,
+            },
         })
+
+
+class MarginView(APIView):
+    """
+    원가·마진 분석: 기간 기여이익 + 메뉴별 마진 순위.
+
+    ?days=N (기본 30). 기준: 공급가 매출 − 재료원가 − 적립비용(적립 시점 인식).
+    점주 전용 지표(원가 노출) — 인증 도입 시 이 뷰부터 보호 대상.
+    """
+
+    def get(self, request):
+        try:
+            days = max(1, min(365, int(request.query_params.get("days", 30))))
+        except (TypeError, ValueError):
+            days = 30
+        summary = margin_summary(days)
+        summary["menu"] = menu_item_margins(days)
+        return Response(summary)
 
 
 class MemberViewSet(viewsets.ModelViewSet):

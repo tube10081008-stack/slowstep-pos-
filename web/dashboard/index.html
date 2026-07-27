@@ -138,6 +138,33 @@
     </div>
   </div>
 
+  <!-- 원가·마진 분석 -->
+  <div class="card" style="margin-top:14px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <h3 style="margin:0;">원가·마진 분석 <span class="muted" style="font-weight:500">— 공급가(부가세 제외) 기준 기여이익</span></h3>
+      <select id="marginDays" onchange="loadMargins()" style="width:auto;padding:7px 10px;">
+        <option value="7">최근 7일</option>
+        <option value="30" selected>최근 30일</option>
+        <option value="90">최근 90일</option>
+      </select>
+    </div>
+    <div class="grid kpis" id="marginKpis" style="margin-top:14px;"></div>
+    <div style="margin-top:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h3 style="margin:0;font-size:14px;">메뉴별 마진</h3>
+        <span class="muted" id="marginNote"></span>
+      </div>
+      <table style="margin-top:10px;"><thead><tr>
+        <th>메뉴</th><th>판매</th><th>공급가 매출</th><th>재료원가</th><th>원가율</th><th>마진</th><th>마진율</th>
+      </tr></thead><tbody id="marginRows"></tbody></table>
+    </div>
+    <p class="muted" style="margin-top:12px;line-height:1.6">
+      매출은 <b>공급가(÷1.1)</b> 기준, 포인트·스탬프·미션 적립은 <b>적립 시점</b>에 비용으로 반영합니다.
+      인건비·임대료 등 고정비는 이번 분석 범위 밖(재료비 기준 기여이익)입니다.
+      원가는 <b>관리자 → 메뉴</b>에서 항목별로 입력하세요.
+    </p>
+  </div>
+
   <!-- 마케팅 발송 -->
   <div class="card" style="margin-top:14px;">
     <h3>마케팅 알림톡 발송</h3>
@@ -371,6 +398,37 @@
     finally { $("sendBtn").disabled=false; $("sendBtn").textContent="발송하기"; }
   }
 
+  // ── 원가·마진 분석 ──
+  const pct = (n) => (n==null?"—":n+"%");
+  function marginClass(rate){ return rate>=60?"ok":(rate>=35?"":"fail"); }
+
+  async function loadMargins(){
+    const days = $("marginDays").value;
+    let d;
+    try { d = await api("/api/v1/margins/summary?days="+days); }
+    catch(e){ $("marginKpis").innerHTML = `<div class="muted">마진 불러오기 실패: ${e.message}</div>`; return; }
+
+    $("marginKpis").innerHTML = [
+      ["공급가 매출", won(d.supply_revenue), `부가세 ${Math.round(d.vat_rate*100)}% 제외 · ${num(d.tx_count)}건`],
+      ["재료원가", won(d.material_cost), `원가율 ${pct(d.cost_rate)}`],
+      ["적립 비용", won(d.reward_cost), "포인트·스탬프·미션(적립 시점)"],
+      ["기여이익", won(d.contribution), `마진율 ${pct(d.margin_rate)}`],
+    ].map(([l,v,f],i)=>`<div class="card kpi"><div class="label">${l}</div>
+      <div class="val" ${i===3?`style="color:${d.margin_rate>=0?'var(--green)':'var(--red)'}"`:""}>${v}</div>
+      <div class="foot">${f}</div></div>`).join("");
+
+    const noCost = d.menu.filter(m=>!m.has_cost).length;
+    $("marginNote").textContent = noCost ? `⚠️ ${noCost}개 메뉴 원가 미입력` : "판매량 순";
+    $("marginRows").innerHTML = d.menu.length ? d.menu.map(m=>{
+      const cls = m.has_cost ? marginClass(m.margin_rate) : "";
+      return `<tr><td>${m.name}${m.has_cost?"":' <span class="muted">(원가 미입력)</span>'}</td>
+        <td>${num(m.qty)}</td><td>${won(m.supply_revenue)}</td>
+        <td>${won(m.material_cost)}</td><td>${m.has_cost?pct(m.cost_rate):"—"}</td>
+        <td>${won(m.margin)}</td>
+        <td class="${cls}"><b>${m.has_cost?pct(m.margin_rate):"—"}</b></td></tr>`;
+    }).join("") : `<tr><td colspan="7" class="muted">기간 내 판매 내역이 없습니다.</td></tr>`;
+  }
+
   // ── 고객 일괄 등록 (CSV 이관) ──
   function downloadTemplate(){
     // ﻿ BOM — 엑셀에서 한글이 깨지지 않게
@@ -456,7 +514,7 @@
 
   (async ()=>{
     checkStorage();
-    try { await loadDashboard(); await loadSegments(); doPreview(); }
+    try { await loadDashboard(); await loadMargins(); await loadSegments(); doPreview(); }
     catch(e){ $("sub").textContent = "백엔드 연결 안됨: "+e.message; }
   })();
 </script>
