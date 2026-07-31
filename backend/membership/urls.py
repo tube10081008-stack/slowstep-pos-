@@ -6,6 +6,7 @@ from django.urls import path
 from .views import (
     HealthView,
     MarginView,
+    PinLoginView,
     MemberViewSet,
     MenuView,
     MissionViewSet,
@@ -22,6 +23,7 @@ router.register("transactions", TransactionViewSet, basename="transaction")
 
 urlpatterns = [
     path("health", HealthView.as_view(), name="health"),
+    path("auth/pin", PinLoginView.as_view(), name="auth-pin"),
     path("store", StoreView.as_view(), name="store"),
     path("store/session", StoreSessionView.as_view(), name="store-session"),
     path("menu", MenuView.as_view(), name="menu"),

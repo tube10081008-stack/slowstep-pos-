@@ -20,6 +20,14 @@ def make_store(**kw):
     return Store.objects.create(name="슬로우스텝", **kw)
 
 
+def authenticate(client):
+    """테스트 클라이언트에 매장 PIN 토큰을 붙인다(점주·직원 API용)."""
+    from .auth import issue_token
+
+    client.defaults["HTTP_X_STORE_TOKEN"] = issue_token()
+    return client
+
+
 class CheckoutIdempotencyTests(TestCase):
     def setUp(self):
         self.store = make_store()
@@ -153,6 +161,7 @@ class MemberImportTests(TestCase):
 
     def setUp(self):
         self.store = make_store()
+        authenticate(self.client)
 
     def _post_csv(self, csv_text, dry_run=False):
         return self.client.post(
@@ -244,6 +253,7 @@ class MarginTests(TestCase):
             store=self.store, name="라떼", price=5000, cost=1200,
             category=MenuItem.Category.COFFEE, oatmilk_available=True, stock=100,
         )
+        authenticate(self.client)
 
     def test_unit_cost_snapshot_includes_option(self):
         checkout(
@@ -323,6 +333,88 @@ class MarginTests(TestCase):
         self.assertEqual(body["days"], 7)
         self.assertIn("contribution", body)
         self.assertEqual(len(body["menu"]), 1)
+
+
+class StorePinAuthTests(TestCase):
+    """매장 PIN: 토큰 발급·보호 엔드포인트 차단·공개 경로 유지."""
+
+    def setUp(self):
+        self.store = make_store()
+        self.member = Member.objects.create(
+            store=self.store, phone="01077776666", name="공개", points=100
+        )
+        from django.core.cache import cache
+        cache.clear()  # 시도 카운터 초기화
+
+    def _token(self, pin="0812"):
+        res = self.client.post(
+            "/api/v1/auth/pin", data={"pin": pin}, content_type="application/json"
+        )
+        return res
+
+    def test_correct_pin_issues_token(self):
+        res = self._token()
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json()["token"])
+
+    def test_wrong_pin_rejected(self):
+        res = self._token("9999")
+        self.assertEqual(res.status_code, 401)
+
+    def test_protected_endpoints_require_token(self):
+        # 원가·매출·고객명단·결제는 토큰 없이 접근 불가
+        for url in (
+            "/api/v1/margins/summary",
+            "/api/v1/sales/summary",
+            "/api/v1/dashboard/stats",
+            "/api/v1/members",
+            "/api/v1/transactions",
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 403)
+
+    def test_protected_endpoints_pass_with_token(self):
+        token = self._token().json()["token"]
+        hdr = {"HTTP_X_STORE_TOKEN": token}
+        for url in ("/api/v1/margins/summary", "/api/v1/sales/summary", "/api/v1/members"):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url, **hdr).status_code, 200)
+
+    def test_customer_pages_stay_public(self):
+        # 고객 멤버십 조회는 PIN 없이 열려야 한다
+        r1 = self.client.get("/api/v1/members/lookup?phone=01077776666")
+        self.assertEqual(r1.status_code, 200)
+        r2 = self.client.get(f"/api/v1/members/{self.member.id}/dashboard")
+        self.assertEqual(r2.status_code, 200)
+        # 메뉴·매장·헬스도 공개
+        for url in ("/api/v1/menu", "/api/v1/store", "/api/v1/health"):
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 200)
+
+    def test_checkout_blocked_without_pin(self):
+        # 결제 생성도 매장 전용 — 외부에서 가짜 주문 못 넣음
+        res = self.client.post(
+            "/api/v1/transactions",
+            data={"gross_amount": 1000, "payment_method": "CASH"},
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_brute_force_rate_limited(self):
+        from .auth import ATTEMPT_LIMIT
+        for _ in range(ATTEMPT_LIMIT):
+            self._token("0000")
+        res = self._token("0000")
+        self.assertEqual(res.status_code, 429)
+        # 제한 중에는 올바른 PIN도 막힘(창 만료까지)
+        self.assertEqual(self._token("0812").status_code, 429)
+
+    def test_tampered_token_rejected(self):
+        token = self._token().json()["token"]
+        res = self.client.get(
+            "/api/v1/margins/summary", HTTP_X_STORE_TOKEN=token + "x"
+        )
+        self.assertEqual(res.status_code, 403)
 
 
 class HealthEndpointTests(TestCase):

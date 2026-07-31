@@ -2,7 +2,31 @@
 
 Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 
-> P0 스캐폴드는 인증을 생략(데모). P1에서 직원 토큰/세션 인증 추가.
+## 인증 — 매장 PIN
+
+점주·직원 화면(POS·대시보드)의 API는 **매장 PIN 토큰**이 필요하다.
+고객 멤버십 조회는 **공개** 유지(QR로 바로 열려야 하므로).
+
+### `POST /api/v1/auth/pin`
+```json
+요청 { "pin": "0000" }
+200  { "token": "store:1abc..." }     ← 이후 요청에 X-Store-Token 헤더로 전달
+401  { "detail": "PIN이 올바르지 않습니다." }
+429  { "detail": "시도 횟수를 초과했습니다. 잠시 후 다시 시도하세요." }
+```
+### `GET /api/v1/auth/pin`
+현재 토큰 유효성 확인 → `{ "authorized": true }`.
+
+- PIN은 환경변수 **`STORE_PIN`** 으로 설정(미설정 시 기본값). 공개 저장소면 반드시 재정의.
+- 토큰은 `SECRET_KEY`로 서명(유효기간 30일). `SECRET_KEY`를 바꾸면 전부 무효화된다.
+- 무차별 대입 방지: IP당 5분에 7회 초과 시 429.
+
+| 구분 | 엔드포인트 |
+| --- | --- |
+| 🔒 **매장 전용** | `transactions*` · `sales/summary` · `margins/summary` · `dashboard/stats` · `store/session` · `members`(목록·가입·`import`) · `segments*` · `campaigns*` |
+| 🌐 **공개** | `health` · `menu` · `store` · `missions` · `members/lookup` · `members/{id}/dashboard`·`missions`·`points` |
+
+> 토큰 없이 매장 전용 API 호출 시 **403**.
 
 ---
 

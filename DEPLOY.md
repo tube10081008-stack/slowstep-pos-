@@ -71,9 +71,16 @@ Vercel 프로젝트 → **Settings → Environment Variables** 에서 추가:
 | `DJANGO_SECRET_KEY` | 아무 긴 무작위 문자열 (예: `slowstep-1q2w3e4r5t6y7u8i-secret`) |
 | `DJANGO_SECURE_SSL_REDIRECT` | `False` |
 | `DJANGO_ALLOWED_HOSTS` | `.vercel.app` |
+| `STORE_PIN` | 매장 PIN (예: `0812`) — POS·대시보드 잠금 |
 
 > 관리자(/admin) 로그인까지 쓰려면 `DJANGO_CSRF_TRUSTED_ORIGINS` 에
 > `https://<프로젝트>.vercel.app` 도 추가한다.
+
+> **매장 PIN**: POS·대시보드는 첫 진입에 PIN을 묻고, 통과하면 그 기기는 30일간
+> 기억한다(고객 멤버십 페이지는 공개 유지). `STORE_PIN`을 설정하지 않으면
+> 코드 기본값이 쓰이므로 **배포 시 반드시 환경변수로 지정**할 것.
+> PIN을 바꾸려면 이 값만 수정 후 재배포하면 되고, 모든 기기를 즉시 로그아웃시키려면
+> `DJANGO_SECRET_KEY`를 새 값으로 교체한다.
 
 ### 3. 재배포
 - **Deployments → 최신 항목 ⋯ → Redeploy**.

@@ -184,12 +184,23 @@ REST_FRAMEWORK = {
     ],
 }
 
+# ── 매장 PIN(점주·직원 화면 보호) ───────────────────────────────
+# POS·대시보드 API는 이 PIN으로 발급한 토큰이 있어야 접근 가능.
+# 고객 멤버십 조회는 공개 유지. 배포 시 환경변수로 재정의 권장.
+STORE_PIN = os.environ.get("STORE_PIN", "0812")
+
 # ── CORS ────────────────────────────────────────────────────────
 _cors_origins = env_list("CORS_ALLOWED_ORIGINS")
 if _cors_origins:
     CORS_ALLOWED_ORIGINS = _cors_origins
 else:
     CORS_ALLOW_ALL_ORIGINS = True
+
+# 매장 PIN 토큰 헤더를 프리플라이트에서 허용(기본 목록엔 커스텀 헤더가 없음).
+# 웹(5500)과 API(8000)를 분리해 띄우는 로컬 개발에서 필요.
+from corsheaders.defaults import default_headers  # noqa: E402
+
+CORS_ALLOW_HEADERS = (*default_headers, "x-store-token")
 
 # ── Toss페이먼츠 ────────────────────────────────────────────────
 # 미주입 시 payments.py가 Mock 승인으로 폴백(스캐폴드/데모).

@@ -185,6 +185,7 @@
   .mi:hover { border-color:#c7d0ff; box-shadow:0 6px 16px rgba(16,24,40,.08); transform:translateY(-2px); }
   .cat:hover, .pill:hover { border-color:#c7d0ff; }
 </style>
+<script src="../pin.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -363,9 +364,13 @@
   function toast(m){ const t=$("toast"); t.textContent=m; t.style.display="block";
     clearTimeout(t._t); t._t=setTimeout(()=>t.style.display="none",2400); }
   async function api(path, opts){
-    const r = await fetch(API_BASE+path, { headers:{"Content-Type":"application/json"}, ...opts });
+    opts = opts || {};
+    const r = await fetch(API_BASE+path, { ...opts,
+      headers:{"Content-Type":"application/json", ...StorePin.headers(), ...(opts.headers||{})} });
     const b = await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(b.detail || ("오류 "+r.status));
+    if(!r.ok){
+      const e = new Error(b.detail || ("오류 "+r.status)); e.status = r.status; throw e;
+    }
     return b;
   }
 
@@ -388,6 +393,7 @@
   }
 
   async function init(){
+    await StorePin.require("직원 POS");   // 매장 PIN 통과 후 로드
     checkStorage();
     try {
       store = await api("/api/v1/store");

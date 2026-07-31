@@ -25,6 +25,13 @@ from .serializers import (
     StoreSerializer,
     TransactionSerializer,
 )
+from .auth import (
+    PinRateLimited,
+    StorePinPermission,
+    check_pin,
+    issue_token,
+    request_authorized,
+)
 from .imports import CsvImportError, import_members_csv
 from .margins import margin_summary, menu_item_margins, to_supply
 from .profile import build_member_dashboard
@@ -72,6 +79,33 @@ class HealthView(APIView):
         return Response(body, status=200 if db_ok else 503)
 
 
+class PinLoginView(APIView):
+    """
+    매장 PIN 로그인 → 토큰 발급.
+
+    POST {"pin": "0000"} → {"token": "..."} · 실패 401 · 시도 초과 429.
+    GET → 현재 토큰이 유효한지 확인({"authorized": bool}).
+    """
+
+    def get(self, request):
+        return Response({"authorized": request_authorized(request)})
+
+    def post(self, request):
+        pin = str(request.data.get("pin", "")).strip()
+        if not pin:
+            return Response({"detail": "PIN을 입력하세요."}, status=400)
+        try:
+            ok = check_pin(request, pin)
+        except PinRateLimited:
+            return Response(
+                {"detail": "시도 횟수를 초과했습니다. 잠시 후 다시 시도하세요."},
+                status=429,
+            )
+        if not ok:
+            return Response({"detail": "PIN이 올바르지 않습니다."}, status=401)
+        return Response({"token": issue_token()})
+
+
 class StoreView(APIView):
     """기본 매장 설정 조회 (POS 초기화)."""
 
@@ -93,6 +127,8 @@ class MenuView(APIView):
 class StoreSessionView(APIView):
     """영업 시작/마감 토글."""
 
+    permission_classes = [StorePinPermission]
+
     def post(self, request):
         store = Store.objects.first()
         if store is None:
@@ -110,7 +146,9 @@ class StoreSessionView(APIView):
 
 
 class SalesSummaryView(APIView):
-    """오늘 정산 요약 + 최근 결제."""
+    """오늘 정산 요약 + 최근 결제. (매출·마진 → 점주 전용)"""
+
+    permission_classes = [StorePinPermission]
 
     def get(self, request):
         store = Store.objects.first()
@@ -163,8 +201,10 @@ class MarginView(APIView):
     원가·마진 분석: 기간 기여이익 + 메뉴별 마진 순위.
 
     ?days=N (기본 30). 기준: 공급가 매출 − 재료원가 − 적립비용(적립 시점 인식).
-    점주 전용 지표(원가 노출) — 인증 도입 시 이 뷰부터 보호 대상.
+    원가가 드러나므로 매장 PIN 필수.
     """
+
+    permission_classes = [StorePinPermission]
 
     def get(self, request):
         try:
@@ -179,6 +219,14 @@ class MarginView(APIView):
 class MemberViewSet(viewsets.ModelViewSet):
     queryset = Member.objects.select_related("store").all()
     http_method_names = ["get", "post"]
+
+    # 고객이 본인 멤버십을 보는 경로만 공개. 명단 검색·가입·일괄등록은 매장 전용.
+    PUBLIC_ACTIONS = {"lookup", "dashboard", "missions", "points"}
+
+    def get_permissions(self):
+        if self.action in self.PUBLIC_ACTIONS:
+            return []
+        return [StorePinPermission()]
 
     def get_queryset(self):
         qs = Member.objects.select_related("store").all()
@@ -267,6 +315,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
     queryset = Transaction.objects.select_related("member").all()
     serializer_class = TransactionSerializer
     http_method_names = ["get", "post"]
+    permission_classes = [StorePinPermission]
 
     def get_queryset(self):
         # 목록은 최근 결제/취소 100건(대기 제외), 그 외 액션은 전체 대상.
