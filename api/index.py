@@ -58,10 +58,22 @@ def _ensure_database() -> None:
 
         if not seeded:
             try:
+                # 매장·메뉴·미션은 운영에 필요한 설정 → 항상 시드.
                 call_command("seed_demo")
-                call_command("seed_marketing")
+                # 가짜 회원·매출은 데모용 → 명시적으로 켤 때만.
+                # (실매장에서 켜면 매출·마진 지표가 오염된다)
+                if os.environ.get("SEED_MARKETING", "").lower() in ("1", "true", "yes"):
+                    call_command("seed_marketing")
             except Exception as exc:  # 시드 실패는 치명적이지 않음
                 log.warning("seed skipped: %s", exc)
+
+        # 이미 들어간 데모 데이터 정리(실매장 전환). 대상이 없으면 no-op이라
+        # 환경변수를 켜둔 채로 둬도 안전하다.
+        if os.environ.get("PURGE_DEMO", "").lower() in ("1", "true", "yes"):
+            try:
+                call_command("purge_demo")
+            except Exception as exc:
+                log.warning("purge_demo skipped: %s", exc)
 
         # 관리자 계정(메뉴·원가 관리용): 환경변수가 있고 아직 없으면 생성.
         # 서버리스엔 셸이 없어 createsuperuser를 못 돌리므로 여기서 보장한다.

@@ -464,6 +464,74 @@ class EnsureAdminTests(TestCase):
         self.assertEqual(get_user_model().objects.count(), 0)
 
 
+class PurgeDemoTests(TestCase):
+    """데모 시드만 정확히 제거하고 실제 고객·메뉴는 보존하는지."""
+
+    def setUp(self):
+        self.store = make_store()
+        # 데모 회원(시드 패턴) + 실제 고객
+        self.demo = Member.objects.create(
+            store=self.store, phone="01012345678", name="김슬로우", points=500
+        )
+        self.real = Member.objects.create(
+            store=self.store, phone="01055551234", name="진짜고객", points=1000
+        )
+        self.menu = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000, cost=600
+        )
+        for m, oid in ((self.demo, "seed-1-0"), (self.real, "real-1")):
+            Transaction.objects.create(
+                store=self.store, member=m, gross_amount=5000, net_amount=5000,
+                points_earned=150, payment_method=Transaction.Method.CARD,
+                status=Transaction.Status.PAID, paid_at=timezone.now(),
+                toss_order_id=oid,
+            )
+
+    def _run(self, *args):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        call_command("purge_demo", *args, stdout=out)
+        return out.getvalue()
+
+    def test_purges_demo_keeps_real(self):
+        self._run()
+        self.assertFalse(Member.objects.filter(phone="01012345678").exists())
+        self.assertTrue(Member.objects.filter(phone="01055551234").exists())
+        # 데모 거래는 삭제, 실제 거래는 보존
+        self.assertFalse(Transaction.objects.filter(toss_order_id="seed-1-0").exists())
+        self.assertTrue(Transaction.objects.filter(toss_order_id="real-1").exists())
+        # 메뉴·매장 설정은 유지(원가 포함)
+        self.menu.refresh_from_db()
+        self.assertEqual(self.menu.cost, 600)
+        self.assertTrue(Store.objects.exists())
+
+    def test_demo_member_transactions_removed_not_orphaned(self):
+        # 회원만 지우면 거래가 member=NULL 로 남아 '비회원 매출'로 잡히는 문제 방지
+        Transaction.objects.create(
+            store=self.store, member=self.demo, gross_amount=9000, net_amount=9000,
+            payment_method=Transaction.Method.CASH, status=Transaction.Status.PAID,
+            paid_at=timezone.now(), toss_order_id="",
+        )
+        self._run()
+        self.assertEqual(
+            Transaction.objects.filter(member__isnull=True).count(), 0
+        )
+        self.assertEqual(Transaction.objects.count(), 1)  # 실제 거래만 남음
+
+    def test_dry_run_deletes_nothing(self):
+        out = self._run("--dry-run")
+        self.assertIn("모의 실행", out)
+        self.assertTrue(Member.objects.filter(phone="01012345678").exists())
+
+    def test_idempotent_noop(self):
+        self._run()
+        out = self._run()
+        self.assertIn("건너뜀", out)
+
+
 class HealthEndpointTests(TestCase):
     def test_health_reports_persistent_storage(self):
         res = self.client.get("/api/v1/health")
