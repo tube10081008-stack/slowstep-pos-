@@ -73,8 +73,10 @@ Vercel 프로젝트 → **Settings → Environment Variables** 에서 추가:
 | `DJANGO_ALLOWED_HOSTS` | `.vercel.app` |
 | `STORE_PIN` | 매장 PIN (예: `0812`) — POS·대시보드 잠금 |
 
-> 관리자(/admin) 로그인까지 쓰려면 `DJANGO_CSRF_TRUSTED_ORIGINS` 에
-> `https://<프로젝트>.vercel.app` 도 추가한다.
+> **관리자(/admin) 로그인을 쓰려면** `CSRF_TRUSTED_ORIGINS` 에
+> `https://<프로젝트>.vercel.app` 를 추가한다. (변수명에 `DJANGO_` 접두어가 **없다** —
+> settings.py가 `CSRF_TRUSTED_ORIGINS` 로 읽는다.)
+> 빠뜨리면 로그인 시 `CSRF verification failed` 로 막힌다.
 
 > **매장 PIN**: POS·대시보드는 첫 진입에 PIN을 묻고, 통과하면 그 기기는 30일간
 > 기억한다(고객 멤버십 페이지는 공개 유지). `STORE_PIN`을 설정하지 않으면
@@ -119,6 +121,8 @@ Vercel 프로젝트 → **Settings → Environment Variables** 에서 추가:
 
 | 증상 | 확인 |
 | --- | --- |
+| **`/api/v1/health` 가 `sqlite`·`persistent:false`** | `DATABASE_URL` 미반영. 환경변수 저장 후 **Redeploy** 했는지(환경변수는 재배포해야 적용), 값에 `-pooler` 와 `?sslmode=require` 가 있는지 |
+| **admin 로그인 시 CSRF 오류** | `CSRF_TRUSTED_ORIGINS`(접두어 `DJANGO_` 없음)에 `https://<프로젝트>.vercel.app` 추가 |
 | 404 / 빈 화면 | **Root Directory가 저장소 루트(`./`)** 인지, 배포 브랜치가 `main` 인지 |
 | 빌드가 파이썬 버전으로 실패 | Django 5는 Python 3.10+ 필요. Vercel **Settings → General → Python Version** 을 3.12로 지정 |
 | 500 에러 | Vercel **Deployments → Functions 로그** 확인. `DATABASE_URL` 형식·`sslmode=require` 여부 |
