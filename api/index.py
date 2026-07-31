@@ -62,6 +62,13 @@ def _ensure_database() -> None:
                 call_command("seed_marketing")
             except Exception as exc:  # 시드 실패는 치명적이지 않음
                 log.warning("seed skipped: %s", exc)
+
+        # 관리자 계정(메뉴·원가 관리용): 환경변수가 있고 아직 없으면 생성.
+        # 서버리스엔 셸이 없어 createsuperuser를 못 돌리므로 여기서 보장한다.
+        try:
+            call_command("ensure_admin")
+        except Exception as exc:  # 관리자 생성 실패도 서비스는 계속
+            log.warning("ensure_admin skipped: %s", exc)
     finally:
         if is_pg:
             try:

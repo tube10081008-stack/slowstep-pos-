@@ -417,6 +417,53 @@ class StorePinAuthTests(TestCase):
         self.assertEqual(res.status_code, 403)
 
 
+class EnsureAdminTests(TestCase):
+    """서버리스에서 셸 없이 관리자 계정을 보장하는 명령."""
+
+    def _run(self, **env):
+        from io import StringIO
+        from unittest import mock
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        with mock.patch.dict("os.environ", env, clear=False):
+            call_command("ensure_admin", stdout=out)
+        return out.getvalue()
+
+    def test_creates_superuser_from_env(self):
+        from django.contrib.auth import get_user_model
+
+        self._run(
+            DJANGO_SUPERUSER_USERNAME="owner",
+            DJANGO_SUPERUSER_PASSWORD="s1owstep!pw",
+            DJANGO_SUPERUSER_EMAIL="owner@example.com",
+        )
+        u = get_user_model().objects.get(username="owner")
+        self.assertTrue(u.is_superuser and u.is_staff)
+        self.assertTrue(u.check_password("s1owstep!pw"))
+
+    def test_existing_admin_password_not_overwritten(self):
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        User.objects.create_superuser(username="owner", password="original-pw")
+        self._run(
+            DJANGO_SUPERUSER_USERNAME="owner",
+            DJANGO_SUPERUSER_PASSWORD="different-pw",
+        )
+        u = User.objects.get(username="owner")
+        # 재배포마다 비밀번호가 되돌아가면 안 됨
+        self.assertTrue(u.check_password("original-pw"))
+
+    def test_noop_without_env(self):
+        from django.contrib.auth import get_user_model
+
+        out = self._run(DJANGO_SUPERUSER_USERNAME="", DJANGO_SUPERUSER_PASSWORD="")
+        self.assertIn("건너뜀", out)
+        self.assertEqual(get_user_model().objects.count(), 0)
+
+
 class HealthEndpointTests(TestCase):
     def test_health_reports_persistent_storage(self):
         res = self.client.get("/api/v1/health")

@@ -87,13 +87,22 @@ Vercel 프로젝트 → **Settings → Environment Variables** 에서 추가:
 - 첫 접속 시 자동으로 테이블 생성(migrate) + 데모 데이터 시드가 1회 실행된다.
 - 이후부터 입력한 데이터가 **영구 보존**된다.
 
-### 4. (선택) 관리자 계정
-서버리스라 셸이 없으므로, 로컬에서 같은 `DATABASE_URL` 로 한 번만 만든다.
-(파이썬 가능 PC에서) `backend/` 에서:
-```bash
-set DATABASE_URL=postgresql://...   # Windows
-python manage.py createsuperuser
-```
+### 4. 관리자 계정 (메뉴·원가 관리에 필요)
+
+환경변수만 넣으면 **다음 배포 때 자동 생성**된다(셸 불필요).
+
+| Key | Value |
+| --- | --- |
+| `DJANGO_SUPERUSER_USERNAME` | 예: `owner` |
+| `DJANGO_SUPERUSER_PASSWORD` | 길고 추측 어려운 비밀번호 |
+| `DJANGO_SUPERUSER_EMAIL` | (선택) |
+
+- 이미 같은 아이디가 있으면 **건너뛴다** — 관리자에서 비밀번호를 바꿔도
+  재배포 때 되돌아가지 않는다.
+- 계정 생성 후에는 환경변수의 비밀번호를 지워도 로그인에 문제 없다.
+
+> 파이썬이 있는 PC라면 기존 방식도 그대로 쓸 수 있다:
+> `set DATABASE_URL=postgresql://...` 후 `python manage.py createsuperuser`
 
 ---
 
