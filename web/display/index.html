@@ -61,15 +61,45 @@
   .row.total .v { font-size:clamp(30px,4.4vw,58px); font-weight:800; color:var(--brand); letter-spacing:-.03em; }
   .disc .k, .disc .v { color:var(--gold); }
 
-  /* ── 결제 안내 ── */
-  #pay { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2.4vh; }
-  #pay .lbl { font-size:clamp(15px,1.7vw,22px); color:var(--muted); font-weight:600; }
-  #pay .amt { font-size:clamp(52px,10vw,132px); font-weight:800; color:var(--brand);
-    letter-spacing:-.045em; line-height:1; }
-  #pay .ask { margin-top:1.4vh; background:var(--brand-soft); border:1px solid #dfe4ff;
-    color:var(--brand-dk); border-radius:16px; padding:2.2vh 3vw; font-size:clamp(16px,1.9vw,26px);
+  /* ── 결제: 손님 터치 입력 ── */
+  #pay { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1.4vh; }
+  .pay-top { display:flex; align-items:baseline; gap:16px; }
+  .pay-top .lbl { font-size:clamp(14px,1.5vw,20px); color:var(--muted); font-weight:600; }
+  .pay-top .amt { font-size:clamp(34px,5.6vw,72px); font-weight:800; color:var(--brand);
+    letter-spacing:-.04em; line-height:1; }
+  .ask-sm { font-size:clamp(15px,1.8vw,24px); font-weight:700; margin-top:.6vh; }
+  .ask-sm b { color:var(--brand); }
+  .phone-disp { font-size:clamp(28px,4.4vw,54px); font-weight:800; letter-spacing:.06em;
+    background:var(--card); border:2px solid var(--line); border-radius:16px;
+    padding:1.5vh 3vw; min-width:min(88vw,520px); text-align:center; box-shadow:var(--shadow); }
+  .phone-disp .ph { color:#c8cdd8; }
+  /* 터치 대상은 크게 — 손님이 서서 누른다 */
+  .pad { display:grid; grid-template-columns:repeat(3,1fr); gap:1.1vh 1.1vw;
+    width:min(88vw,520px); margin-top:.6vh; }
+  .pad button { font-family:inherit; font-size:clamp(24px,3.4vw,40px); font-weight:700;
+    padding:1.9vh 0; border-radius:16px; border:1px solid var(--line); background:var(--card);
+    color:var(--txt); cursor:pointer; box-shadow:0 1px 2px rgba(16,24,40,.05);
+    -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
+  .pad button:active { background:var(--brand-soft); border-color:var(--brand); transform:scale(.96); }
+  .pad-act { display:flex; gap:1.1vw; width:min(88vw,520px); margin-top:.4vh; }
+  .pad-act button { flex:1; font-family:inherit; font-size:clamp(16px,2vw,26px); font-weight:700;
+    padding:2vh 0; border-radius:16px; cursor:pointer; border:1px solid var(--line);
+    touch-action:manipulation; }
+  .pad-act .skip { background:var(--card); color:var(--muted); }
+  .pad-act .go { background:var(--brand); color:#fff; border-color:var(--brand); flex:1.7; }
+  .pad-act .go:disabled { opacity:.4; }
+  .pad-act button:active { transform:scale(.98); }
+  .hint { font-size:clamp(11px,1.1vw,14px); color:var(--muted); margin-top:.8vh; }
+  .hint.err { color:#ef4444; font-weight:700; }
+
+  /* ── 회원 인사 ── */
+  #greet { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1vh; }
+  #greet h1 { font-size:clamp(30px,4.6vw,58px); font-weight:800; letter-spacing:-.03em; }
+  .g-badge { font-size:clamp(13px,1.4vw,18px); font-weight:800; padding:7px 20px; border-radius:999px;
+    background:var(--brand-soft); color:var(--brand-dk); border:1px solid #dfe4ff; }
+  #pay .ask, #greet .ask { background:var(--brand-soft); border:1px solid #dfe4ff;
+    color:var(--brand-dk); border-radius:16px; padding:1.8vh 3vw; font-size:clamp(15px,1.8vw,24px);
     font-weight:700; text-align:center; line-height:1.5; }
-  #pay .ask small { display:block; font-size:.68em; color:var(--muted); font-weight:500; margin-top:6px; }
 
   /* ── 완료 화면 ── */
   #done { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2vh; }
@@ -120,11 +150,29 @@
     </div>
   </div>
 
-  <!-- 결제 -->
+  <!-- 결제: 손님이 직접 연락처 입력 (터치) -->
   <div id="pay" class="hidden">
-    <div class="lbl">결제하실 금액</div>
-    <div class="amt" id="payAmt">0원</div>
-    <div class="ask">연락처를 알려주시면 포인트를 적립해 드려요<small>가입하지 않으셔도 결제는 가능합니다</small></div>
+    <div class="pay-top">
+      <span class="lbl">결제 금액</span>
+      <span class="amt" id="payAmt">0원</span>
+    </div>
+    <div class="ask-sm">적립하실 <b>휴대폰 번호</b>를 눌러주세요</div>
+    <div class="phone-disp" id="phoneDisp"><span class="ph">010-0000-0000</span></div>
+    <div class="pad" id="pad"></div>
+    <div class="pad-act">
+      <button class="skip" id="skipBtn">적립 안 함</button>
+      <button class="go" id="okBtn" disabled>확인</button>
+    </div>
+    <div class="hint" id="payHint">번호는 적립에만 사용됩니다</div>
+  </div>
+
+  <!-- 회원 확인 (입력 후) -->
+  <div id="greet" class="hidden">
+    <div class="g-badge" id="gTier"></div>
+    <h1 id="gName"></h1>
+    <div class="who" id="gInfo"></div>
+    <div class="stats" id="gStats"></div>
+    <div class="ask" style="margin-top:1.6vh">직원에게 결제를 진행해 주세요</div>
   </div>
 
   <!-- 완료 -->
@@ -150,7 +198,7 @@
    */
   const $ = (id) => document.getElementById(id);
   const won = (n) => (n||0).toLocaleString("ko-KR") + "원";
-  const VIEWS = ["idle","order","pay","done"];
+  const VIEWS = ["idle","order","pay","greet","done"];
 
   function show(view){
     VIEWS.forEach(v => $(v).classList.toggle("hidden", v !== view));
@@ -198,10 +246,63 @@
   }
 
   const ch = new BroadcastChannel("slowstep-pos");
+
+  // ── 손님이 직접 누르는 연락처 입력 ──
+  let buf = "";
+  function fmt(p){
+    return p.replace(/(\d{3})(\d{0,4})(\d{0,4})/, (m,a,b,c)=>[a,b,c].filter(Boolean).join("-"));
+  }
+  function paintPhone(){
+    $("phoneDisp").innerHTML = buf ? fmt(buf) : '<span class="ph">010-0000-0000</span>';
+    $("okBtn").disabled = buf.length < 10;
+    // 직원 화면에도 입력 상황을 그대로 비춰준다(손님이 헤매면 도와줄 수 있게)
+    ch.postMessage({ type:"phone_input", phone: buf });
+  }
+  function hint(msg, isErr){
+    const h = $("payHint");
+    h.textContent = msg || "번호는 적립에만 사용됩니다";
+    h.className = "hint" + (isErr ? " err" : "");
+  }
+  function resetPad(){ buf = ""; paintPhone(); hint(""); }
+
+  (function buildPad(){
+    const pad = $("pad");
+    const mk = (label, fn, cls) => {
+      const b = document.createElement("button");
+      b.textContent = label; if(cls) b.className = cls;
+      b.onclick = fn; pad.appendChild(b);
+    };
+    for(let i=1;i<=9;i++) mk(String(i), ()=>{ if(buf.length<11){ buf+=String(i); paintPhone(); } });
+    mk("←", ()=>{ buf = buf.slice(0,-1); paintPhone(); });
+    mk("0", ()=>{ if(buf.length<11){ buf+="0"; paintPhone(); } });
+    mk("전체지움", ()=>{ buf=""; paintPhone(); }, "sm");
+  })();
+
+  $("okBtn").onclick = ()=>{
+    if(buf.length < 10) return;
+    hint("확인 중이에요…");
+    ch.postMessage({ type:"phone_submit", phone: buf });
+  };
+  $("skipBtn").onclick = ()=>{ ch.postMessage({ type:"guest" }); };
+
+  function renderGreet(m){
+    $("gTier").textContent = m.tier_display || m.tier || "회원";
+    $("gName").textContent = `${m.name} 님, 반갑습니다`;
+    $("gInfo").textContent = `방문 ${m.visit_count}회 · 스탬프 ${m.stamps}/${m.stamp_goal}`;
+    $("gStats").innerHTML = `
+      <div class="stat"><div class="k">보유 포인트</div><div class="v p">${(m.points||0).toLocaleString("ko-KR")}P</div></div>`;
+    show("greet");
+  }
+
   ch.onmessage = (e) => {
     const d = e.data || {};
     if(d.type === "cart")      renderOrder(d);
-    else if(d.type === "pay")  { $("payAmt").textContent = won(d.total); show("pay"); }
+    else if(d.type === "pay")  { $("payAmt").textContent = won(d.total); resetPad(); show("pay"); }
+    else if(d.type === "greet")   renderGreet(d.member);
+    else if(d.type === "guest_ok"){ show("greet"); $("gTier").textContent="비회원";
+      $("gName").textContent="결제를 진행해 주세요"; $("gInfo").textContent="";
+      $("gStats").innerHTML=""; }
+    else if(d.type === "lookup_fail"){ hint(d.message || "등록되지 않은 번호예요. 직원에게 문의해 주세요.", true); }
     else if(d.type === "done") renderDone(d);
     else if(d.type === "idle") show("idle");
   };

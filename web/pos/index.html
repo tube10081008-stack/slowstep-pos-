@@ -420,8 +420,17 @@
   }
 
   if(disp) disp.onmessage = (e)=>{
+    const d = e.data || {};
     // 고객 화면이 새로 열리면 현재 상태를 다시 보내준다.
-    if(e.data && e.data.type === "hello") disp.postMessage(lastState);
+    if(d.type === "hello") { disp.postMessage(lastState); return; }
+    // ── 손님이 고객화면(터치)에서 조작한 것 ──
+    if(d.type === "phone_input"){        // 입력 중 — 직원 화면에 그대로 비춤
+      phone = (d.phone || "").slice(0,11); renderPhone();
+    } else if(d.type === "phone_submit"){
+      phone = (d.phone || "").slice(0,11); renderPhone(); lookupMember();
+    } else if(d.type === "guest"){
+      guestPay();
+    }
   };
   async function api(path, opts){
     opts = opts || {};
@@ -642,7 +651,8 @@
   function backToOrder(){ $("payView").classList.add("hidden"); $("orderView").classList.remove("hidden");
     sendDisplay(Object.keys(cart).length ? cartSnapshot() : { type:"idle" }); }
   function resetPhone(){ member=null; phone=""; renderPhone();
-    $("phoneStep").classList.remove("hidden"); $("confirmStep").classList.add("hidden"); }
+    $("phoneStep").classList.remove("hidden"); $("confirmStep").classList.add("hidden");
+    sendDisplay({ type:"pay", total: finalTotal() }); }
 
   async function lookupMember(){
     if(phone.length<10) return;
@@ -650,7 +660,8 @@
       member = await api("/api/v1/members/lookup?phone="+encodeURIComponent(phone));
       showConfirm();
     } catch(e){
-      // 미등록 → 즉시 가입 후 진행
+      // 미등록 → 손님 화면에 안내하고, 가입 여부는 직원이 자기 화면에서 결정
+      sendDisplay({ type:"lookup_fail" });
       if(confirm("미등록 번호입니다. 신규 회원으로 가입하고 적립할까요?")){
         const name = prompt("고객 이름을 입력하세요") || "신규회원";
         try { member = await api("/api/v1/members", { method:"POST",
@@ -675,6 +686,7 @@
     $("usePoints").value="0";
     $("approvalNo").value="";
     recalcPay();
+    sendDisplay(member ? { type:"greet", member } : { type:"guest_ok" });
   }
 
   function useAll(){ if(member){ $("usePoints").value = Math.min(member.points, finalTotal()); recalcPay(); } }
