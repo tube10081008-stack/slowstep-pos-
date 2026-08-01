@@ -34,13 +34,7 @@ from .auth import (
 )
 from .ai_order import OrderParseError, parse_order
 from .imports import CsvImportError, import_members_csv
-from .member_qr import (
-    MemberTokenError,
-    issue_device_token,
-    member_url,
-    qr_svg,
-    resolve_member_token,
-)
+from .member_qr import member_url, qr_svg
 from .margins import margin_summary, menu_item_margins, to_supply
 from .profile import build_member_dashboard
 from .services import CheckoutError, build_quote, cancel_transaction, checkout
@@ -222,6 +216,17 @@ class OrderParseView(APIView):
             return Response({"detail": str(exc)}, status=400)
 
 
+class MemberQrView(APIView):
+    """
+    멤버십 페이지로 가는 QR(공개). 모든 손님에게 동일한 고정 주소만 담는다 —
+    개인정보도 토큰도 들어가지 않으므로 인쇄해 붙여도 된다.
+    """
+
+    def get(self, request):
+        url = member_url(request.build_absolute_uri("/"))
+        return Response({"url": url, "svg": qr_svg(url)})
+
+
 class MarginView(APIView):
     """
     원가·마진 분석: 기간 기여이익 + 메뉴별 마진 순위.
@@ -247,7 +252,7 @@ class MemberViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post"]
 
     # 고객이 본인 멤버십을 보는 경로만 공개. 명단 검색·가입·일괄등록은 매장 전용.
-    PUBLIC_ACTIONS = {"lookup", "dashboard", "missions", "points", "by_token"}
+    PUBLIC_ACTIONS = {"lookup", "dashboard", "missions", "points"}
 
     def get_permissions(self):
         if self.action in self.PUBLIC_ACTIONS:
@@ -313,26 +318,6 @@ class MemberViewSet(viewsets.ModelViewSet):
         member = self.get_object()
         qs = member.member_missions.select_related("mission").all()
         return Response(MemberMissionSerializer(qs, many=True).data)
-
-    @action(detail=False, methods=["get"], url_path="by-token")
-    def by_token(self, request):
-        """QR 토큰으로 본인 조회(공개). 연락처 없이 열리는 경로."""
-        try:
-            member = resolve_member_token(request.query_params.get("t", ""))
-        except MemberTokenError as exc:
-            return Response({"detail": str(exc)}, status=404)
-        data = MemberSerializer(member).data
-        # 홈 화면에 추가(PWA)한 기기가 다음부터 스스로 열 수 있도록 장기 토큰을 함께 준다.
-        data["device_token"] = issue_device_token(member)
-        return Response(data)
-
-    @action(detail=True, methods=["get"])
-    def qr(self, request, pk=None):
-        """결제 완료 화면에 띄울 멤버십 QR(매장 전용). 연락처는 담기지 않는다."""
-        member = self.get_object()
-        base = request.build_absolute_uri("/")
-        url = member_url(member, base)
-        return Response({"url": url, "svg": qr_svg(url)})
 
     @action(detail=True, methods=["get"])
     def dashboard(self, request, pk=None):

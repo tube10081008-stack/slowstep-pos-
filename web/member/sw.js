@@ -1,44 +1,14 @@
 /**
  * 멤버십 앱(PWA) 서비스워커 — 범위는 /member/ 뿐.
  *
- * 원칙: **적립 정보는 절대 캐시하지 않는다.** 포인트·스탬프는 매장에서 수시로
- * 바뀌므로, 오래된 숫자를 보여주면 손님이 잘못 알게 된다. 따라서 API 응답은
- * 항상 네트워크로 가져오고, 캐시는 화면 껍데기(HTML·아이콘)에만 쓴다.
+ * **아무것도 캐시하지 않는다.** 포인트·스탬프는 매장에서 수시로 바뀌므로
+ * 오래된 값을 보여주면 안 되고, 데이터는 어차피 서버에 있다. 오프라인에서
+ * 껍데기만 열어봐야 보여줄 게 없으므로 캐시할 이유가 없다.
+ *
+ * 이 파일이 존재하는 이유는 하나 — 브라우저가 '홈 화면에 추가'를 제안하려면
+ * 등록된 서비스워커를 요구하는 경우가 있어서다. 요청은 그대로 통과시킨다.
  */
-const CACHE = "slowstep-member-v1";
-const SHELL = ["./", "./index.html", "../assets/icon-192.png", "../assets/logo-mark.png"];
-
-self.addEventListener("install", (e) => {
-  e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())
-  );
-});
-
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
-});
-
-self.addEventListener("fetch", (e) => {
-  const req = e.request;
-  if (req.method !== "GET") return;
-
-  // API(적립 정보)는 캐시하지 않는다 — 항상 최신을 받아온다.
-  if (req.url.includes("/api/")) return;
-
-  // 화면 껍데기: 네트워크 우선, 실패하면 캐시(비행기모드·지하 등에서도 열리게)
-  e.respondWith(
-    fetch(req)
-      .then((res) => {
-        if (res && res.ok && new URL(req.url).origin === location.origin) {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
-        }
-        return res;
-      })
-      .catch(() => caches.match(req).then((hit) => hit || caches.match("./")))
-  );
-});
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
+// fetch 핸들러는 두되 가로채지 않는다(설치 조건 충족 + 항상 최신 데이터).
+self.addEventListener("fetch", () => {});

@@ -230,7 +230,8 @@
       <div id="missions"></div>
     </div>
 
-    <p class="muted center">결제 시 QR(연락처)을 제시하면 자동으로 적립됩니다.</p>
+    <p class="muted center">결제 시 연락처를 알려주시면 자동으로 적립됩니다.<br/>
+      <a href="#" onclick="forgetMine();return false" style="color:var(--muted)">다른 번호로 조회</a></p>
   </div>
 </div>
 
@@ -269,8 +270,12 @@
     try {
       const m = await api("/api/v1/members/lookup?phone=" + encodeURIComponent(phone));
       const d = await api("/api/v1/members/" + m.id + "/dashboard");
+      saveMine(phone);          // 이 기기에서 다음부터 바로 열리도록
       render(d);
-    } catch(e){ $("err").textContent = "❌ " + e.message; }
+    } catch(e){
+      $("err").innerHTML = "❌ " + e.message +
+        '<div class="muted" style="margin-top:6px">번호를 다시 확인해 주세요.</div>';
+    }
   }
 
   function render(d){
@@ -358,37 +363,18 @@
     }).join("");
   }
 
-  // ── 기기 기억 ──
-  // QR로 처음 들어오면 서버가 장기 토큰을 함께 주는데, 그걸 저장해 두면
-  // 홈 화면에 추가한 뒤로는 주소에 아무것도 없어도 바로 내 화면이 열린다.
-  // (연락처가 아니라 서명 토큰이라 기기에 번호가 남지 않는다)
-  const DEV_KEY = "slowstep.member.device";
-  const saveDevice = (t) => { try { localStorage.setItem(DEV_KEY, t); } catch(e){} };
-  const readDevice = () => { try { return localStorage.getItem(DEV_KEY) || ""; } catch(e){ return ""; } };
-  function forgetDevice(){ try { localStorage.removeItem(DEV_KEY); } catch(e){} location.search = ""; }
-
-  async function loadByToken(t, silent){
-    try {
-      const m = await api("/api/v1/members/by-token?t=" + encodeURIComponent(t));
-      if(m.device_token) saveDevice(m.device_token);
-      render(await api("/api/v1/members/" + m.id + "/dashboard"));
-      return true;
-    } catch(e){
-      if(!silent){
-        $("err").innerHTML = "❌ " + e.message +
-          '<div class="muted" style="margin-top:8px">아래에 연락처를 입력해 조회하실 수 있어요.</div>';
-      }
-      return false;
-    }
-  }
+  // ── 이 기기 기억 ──
+  // 손님이 자기 폰에서 자기 번호를 한 번 넣으면 그대로 저장해, 다음부터는
+  // (홈 화면에 추가한 앱을 열든 주소로 들어오든) 바로 자기 화면이 열린다.
+  // 서버에 토큰을 만들 필요가 없다 — 자기 기기에 자기 번호가 남을 뿐이다.
+  const MY_KEY = "slowstep.member.phone";
+  const readMine = () => { try { return localStorage.getItem(MY_KEY) || ""; } catch(e){ return ""; } };
+  const saveMine = (p) => { try { localStorage.setItem(MY_KEY, p); } catch(e){} };
+  function forgetMine(){ try { localStorage.removeItem(MY_KEY); } catch(e){} location.href = "./"; }
 
   const params = new URLSearchParams(location.search);
-  const token = params.get("t"), phone = params.get("phone");
-  (async () => {
-    if(token){ await loadByToken(token); }
-    else if(phone){ await load(phone); }
-    else if(readDevice()){ await loadByToken(readDevice(), true); }  // 설치한 앱으로 재방문
-  })();
+  const phone = params.get("phone") || readMine();
+  if(phone) load(phone);
 
   // ── PWA: 서비스워커 + 홈 화면에 추가 ──
   if("serviceWorker" in navigator){

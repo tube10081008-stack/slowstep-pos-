@@ -24,7 +24,7 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 | 구분 | 엔드포인트 |
 | --- | --- |
 | 🔒 **매장 전용** | `transactions*` · `sales/summary` · `margins/summary` · `dashboard/stats` · `store/session` · `members`(목록·가입·`import`) · `segments*` · `campaigns*` |
-| 🌐 **공개** | `health` · `menu` · `store` · `missions` · `members/lookup` · `members/by-token` · `members/{id}/dashboard`·`missions`·`points` |
+| 🌐 **공개** | `health` · `menu` · `store` · `missions` · `member-qr` · `members/lookup` · `members/{id}/dashboard`·`missions`·`points` |
 
 > 토큰 없이 매장 전용 API 호출 시 **403**.
 
@@ -68,19 +68,12 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 400 { "detail": "헤더에서 이름·연락처 열을 찾을 수 없습니다. ..." }
 ```
 
-### `GET /api/v1/members/{id}/qr`  🔒
-결제 완료 화면에 띄울 **멤버십 QR**. `{ "url": "...", "svg": "<svg …>" }`.
-- 링크는 `/member/?t=<서명 토큰>` — **연락처를 담지 않는다.** `?phone=`을 그대로
-  인코딩하면 계산대 화면을 촬영하는 것만으로 남의 연락처를 수집할 수 있기 때문.
-- 토큰은 `SECRET_KEY` 서명 + **유효기간 1시간** → 사진이 남아도 곧 무효가 된다.
-- SVG 문자열로 주므로 고객 화면은 서버를 호출하지 않고 그대로 그린다(POS가 전달).
-
-### `GET /api/v1/members/by-token?t=...`
-QR 토큰으로 **본인 조회**(공개). 손님 폰에서 PIN 없이 열려야 하므로 공개 경로다.
-만료·위조 토큰은 404와 함께 사유를 반환하고, 멤버십 페이지는 연락처 입력으로 안내한다.
-- 응답에 **`device_token`**(180일)을 함께 준다. 홈 화면에 추가한 앱(PWA)이 주소에
-  아무 것도 없이 실행돼도 이 토큰으로 본인 화면을 연다. 기기에는 연락처가 아니라
-  서명 토큰만 남는다. QR 토큰(1시간)과 소금이 분리돼 짧은 토큰이 오래 쓰이지 않는다.
+### `GET /api/v1/member-qr`
+멤버십 페이지로 가는 **QR**(공개). `{ "url": ".../member/", "svg": "<svg …>" }`.
+- **개인정보도 토큰도 담지 않는다.** 모든 손님에게 동일한 고정 주소만 인코딩하고,
+  조회는 손님이 자기 폰에서 자기 번호를 입력해 한다.
+  → 계산대 화면을 촬영해도 얻을 게 없고, 만료가 없어 **인쇄해 붙여도** 동작한다.
+- SVG 문자열이라 고객 화면은 서버를 호출하지 않고 그대로 그린다(POS가 1회 받아 전달).
 
 ### `GET /api/v1/members/{id}`
 회원 상세 + 진행 중 미션 + 최근 적립 내역.

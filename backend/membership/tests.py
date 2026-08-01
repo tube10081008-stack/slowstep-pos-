@@ -708,96 +708,41 @@ class NicknameTests(TestCase):
 
 
 class MemberQrTests(TestCase):
-    """멤버십 QR — 연락처를 담지 않는 단기 토큰 링크."""
+    """멤버십 QR — 개인정보도 토큰도 담지 않는 고정 주소."""
 
     def setUp(self):
         self.store = make_store()
         self.member = Member.objects.create(
             store=self.store, phone="01012349999", name="느긋한 수달", points=500
         )
-        authenticate(self.client)
 
-    def test_qr_endpoint_returns_svg_without_phone(self):
-        res = self.client.get(f"/api/v1/members/{self.member.id}/qr")
+    def test_qr_is_public_and_static(self):
+        # 손님 폰에서 열리는 화면이므로 PIN 없이 접근 가능해야 한다
+        res = self.client.get("/api/v1/member-qr")
         self.assertEqual(res.status_code, 200)
         body = res.json()
         self.assertIn("<svg", body["svg"])
-        self.assertIn("/member/?t=", body["url"])
-        # 연락처가 링크에도 QR에도 들어가면 안 된다(화면 촬영 시 유출 방지)
+        self.assertTrue(body["url"].endswith("/member/"))
+
+    def test_qr_contains_no_personal_data(self):
+        body = self.client.get("/api/v1/member-qr").json()
+        # 어떤 회원 정보도 담기지 않는다 — 화면을 찍어도 얻을 게 없다
         self.assertNotIn("01012349999", body["url"])
         self.assertNotIn("01012349999", body["svg"])
+        self.assertNotIn("t=", body["url"])
+        self.assertNotIn("phone", body["url"])
 
-    def test_qr_requires_store_pin(self):
-        anon = self.client_class()
-        self.assertEqual(
-            anon.get(f"/api/v1/members/{self.member.id}/qr").status_code, 403
-        )
+    def test_same_qr_for_everyone(self):
+        Member.objects.create(store=self.store, phone="01088887777", name="졸린 판다")
+        a = self.client.get("/api/v1/member-qr").json()["url"]
+        b = self.client.get("/api/v1/member-qr").json()["url"]
+        self.assertEqual(a, b)   # 고정이므로 인쇄해 붙여도 된다
 
-    def test_token_resolves_to_member_publicly(self):
-        from .member_qr import issue_member_token
-
-        token = issue_member_token(self.member)
-        anon = self.client_class()          # 손님 폰 — PIN 없음
-        res = anon.get(f"/api/v1/members/by-token?t={token}")
+    def test_member_page_lookup_still_public(self):
+        # 손님이 자기 번호로 조회하는 경로가 열려 있어야 한다
+        res = self.client.get("/api/v1/members/lookup?phone=01012349999")
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json()["id"], self.member.id)
         self.assertEqual(res.json()["name"], "느긋한 수달")
-
-    def test_tampered_token_rejected(self):
-        from .member_qr import issue_member_token
-
-        token = issue_member_token(self.member) + "x"
-        res = self.client_class().get(f"/api/v1/members/by-token?t={token}")
-        self.assertEqual(res.status_code, 404)
-
-    def test_expired_token_rejected(self):
-        from unittest import mock
-
-        from .member_qr import issue_member_token
-
-        token = issue_member_token(self.member)
-        with mock.patch("membership.member_qr.TOKEN_MAX_AGE", -1):
-            res = self.client_class().get(f"/api/v1/members/by-token?t={token}")
-        self.assertEqual(res.status_code, 404)
-        self.assertIn("유효시간", res.json()["detail"])
-
-    def test_by_token_returns_device_token_for_pwa(self):
-        """설치형 앱이 다음부터 스스로 열 수 있도록 장기 토큰을 함께 준다."""
-        from .member_qr import issue_member_token
-
-        res = self.client_class().get(
-            f"/api/v1/members/by-token?t={issue_member_token(self.member)}"
-        )
-        dev = res.json()["device_token"]
-        self.assertTrue(dev)
-        # 그 토큰만으로 재조회가 되어야 한다(주소에 아무것도 없이 앱 실행)
-        again = self.client_class().get(f"/api/v1/members/by-token?t={dev}")
-        self.assertEqual(again.status_code, 200)
-        self.assertEqual(again.json()["id"], self.member.id)
-        # 기기에 남는 값에 연락처가 들어 있으면 안 된다
-        self.assertNotIn("01012349999", dev)
-
-    def test_qr_token_does_not_outlive_its_window(self):
-        """짧은 QR 토큰이 기기 토큰 취급을 받아 오래 쓰이면 안 된다."""
-        from unittest import mock
-
-        from .member_qr import issue_member_token
-
-        token = issue_member_token(self.member)
-        with mock.patch("membership.member_qr.TOKEN_MAX_AGE", -1):
-            res = self.client_class().get(f"/api/v1/members/by-token?t={token}")
-        self.assertEqual(res.status_code, 404)
-
-    def test_token_of_other_member_does_not_leak(self):
-        from .member_qr import issue_member_token
-
-        other = Member.objects.create(
-            store=self.store, phone="01088887777", name="졸린 판다"
-        )
-        res = self.client_class().get(
-            f"/api/v1/members/by-token?t={issue_member_token(other)}"
-        )
-        self.assertEqual(res.json()["id"], other.id)
 
 
 class HealthEndpointTests(TestCase):

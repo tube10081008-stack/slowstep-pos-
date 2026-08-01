@@ -403,6 +403,14 @@
   function sendDisplay(msg){ lastState = msg; if(disp) disp.postMessage(msg); }
   // 상태로 남기지 않는 일회성 신호(재전송·동기화로 되풀이되면 안 되는 것)
   function sendEvent(msg){ if(disp) disp.postMessage(msg); }
+
+  // 멤버십 QR(고정 주소) — 최초 1회만 받아 캐시
+  let _qr = null;
+  async function memberQr(){
+    if(_qr !== null) return _qr;
+    try { _qr = (await api("/api/v1/member-qr")).svg; } catch(e){ _qr = ""; }
+    return _qr;
+  }
   function cartSnapshot(){
     return {
       type: "cart",
@@ -756,12 +764,8 @@
       if(res.member.stamps!==undefined) rw += `<div class="reward">스탬프 ${res.member.stamps}/${res.member.stamp_goal}</div>`;
       $("doneRewards").innerHTML = rw;
     } else { $("doneSub").textContent = "비회원 결제 완료"; $("doneRewards").innerHTML=""; }
-    // 회원이면 멤버십 QR을 받아 고객 화면에 함께 전달(고객 화면은 서버를 호출하지 않음)
-    if(res.member && res.member.id){
-      api(`/api/v1/members/${res.member.id}/qr`)
-        .then(q => sendEvent({ type:"done_qr", svg:q.svg }))
-        .catch(()=>{});
-    }
+    // 멤버십 QR은 모든 손님에게 같은 고정 주소라 한 번만 받아 재사용한다.
+    if(res.member) memberQr().then(svg => svg && sendEvent({ type:"done_qr", svg })).catch(()=>{});
     sendDisplay({ type:"done", member:res.member||null, earned:res.points_earned,
                   net:res.net_amount, rewards:res.rewards||[] });
   }

@@ -1,15 +1,12 @@
 """
-멤버십 QR — 결제 완료 화면에서 손님이 스캔해 본인 페이지로 가는 링크.
+멤버십 QR — 결제 완료 화면에서 손님이 스캔해 멤버십 페이지로 가는 링크.
 
-**연락처를 QR에 넣지 않는다.**
-`/member/?phone=010...` 를 그대로 인코딩하면, 매장 화면을 옆에서 사진 찍는 것만으로
-남의 연락처를 수집할 수 있다(계산대 화면은 다음 손님에게도 보인다).
-그래서 서명된 **단기 토큰**을 담는다:
+**QR에는 개인정보도 토큰도 담지 않는다.** 모든 손님에게 동일한 고정 주소
+(`/member/`)만 인코딩하고, 조회는 손님이 자기 폰에서 자기 번호를 입력해 한다.
 
-- 토큰은 SECRET_KEY로 서명(TimestampSigner) → 위조 불가, 서버에 저장 불필요
-- 유효기간이 짧아(기본 1시간) 사진이 남아도 곧 무용지물이 된다
-- 만료되면 멤버십 페이지에서 연락처로 조회하면 된다(기존 경로 유지)
-- SECRET_KEY를 교체하면 발급된 모든 토큰이 즉시 무효화된다
+- 계산대 화면을 촬영해도 얻을 게 없다(고정 주소뿐).
+- 만료가 없으므로 인쇄해서 카운터에 붙여도 그대로 동작한다.
+- 서버가 토큰을 발급·검증할 일이 없어 구조가 단순하다.
 """
 from __future__ import annotations
 
@@ -17,66 +14,11 @@ import io
 
 import qrcode
 import qrcode.image.svg
-from django.core import signing
-
-TOKEN_SALT = "slowstep.member.qr"
-TOKEN_MAX_AGE = 60 * 60  # 1시간 — 화면에 떠 있는 QR용
-
-# 손님 기기(홈 화면에 추가한 앱)에 저장돼 계속 쓰이는 토큰.
-# QR 토큰과 소금을 분리해, 짧은 QR 토큰이 길게 쓰이는 일이 없도록 한다.
-DEVICE_SALT = "slowstep.member.device"
-DEVICE_MAX_AGE = 60 * 60 * 24 * 180  # 180일
 
 
-class MemberTokenError(Exception):
-    """토큰이 위조됐거나 만료됨."""
-
-
-def _signer(salt: str = TOKEN_SALT) -> signing.TimestampSigner:
-    return signing.TimestampSigner(salt=salt)
-
-
-def issue_member_token(member) -> str:
-    """QR에 담는 단기 토큰."""
-    return _signer().sign(str(member.pk))
-
-
-def issue_device_token(member) -> str:
-    """손님 기기에 저장해 두는 장기 토큰(설치형 앱이 매번 조회할 때 사용)."""
-    return _signer(DEVICE_SALT).sign(str(member.pk))
-
-
-def resolve_member_token(token: str):
-    """QR·기기 토큰 모두 허용. 실패 시 MemberTokenError."""
-    from .models import Member
-
-    if not token:
-        raise MemberTokenError("링크가 올바르지 않습니다.")
-    expired = False
-    raw = None
-    for salt, age in ((TOKEN_SALT, TOKEN_MAX_AGE), (DEVICE_SALT, DEVICE_MAX_AGE)):
-        try:
-            raw = _signer(salt).unsign(token, max_age=age)
-            break
-        except signing.SignatureExpired:
-            expired = True
-        except signing.BadSignature:
-            continue
-    if raw is None:
-        raise MemberTokenError(
-            "링크 유효시간이 지났습니다. 연락처로 조회해 주세요."
-            if expired
-            else "링크가 올바르지 않습니다."
-        )
-    member = Member.objects.filter(pk=raw).select_related("store").first()
-    if member is None:
-        raise MemberTokenError("회원을 찾을 수 없습니다.")
-    return member
-
-
-def member_url(member, base: str) -> str:
+def member_url(base: str) -> str:
     """스캔했을 때 열릴 주소. base 예: https://slowstep-pos.vercel.app"""
-    return f"{base.rstrip('/')}/member/?t={issue_member_token(member)}"
+    return f"{base.rstrip('/')}/member/"
 
 
 def qr_svg(data: str, box_size: int = 10, border: int = 2) -> str:
@@ -94,6 +36,5 @@ def qr_svg(data: str, box_size: int = 10, border: int = 2) -> str:
     buf = io.BytesIO()
     q.make_image(image_factory=qrcode.image.svg.SvgPathImage).save(buf)
     svg = buf.getvalue().decode()
-    # XML 선언은 인라인 삽입 시 불필요하고, 크기는 CSS로 제어한다.
     svg = svg.split("?>", 1)[-1].strip()
     return svg.replace('width="', 'data-w="', 1).replace('height="', 'data-h="', 1)
