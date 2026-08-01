@@ -32,6 +32,7 @@ from .auth import (
     issue_token,
     request_authorized,
 )
+from .ai_order import OrderParseError, parse_order
 from .imports import CsvImportError, import_members_csv
 from .margins import margin_summary, menu_item_margins, to_supply
 from .profile import build_member_dashboard
@@ -194,6 +195,24 @@ class SalesSummaryView(APIView):
                 "margin_rate": round(contribution / supply * 100, 1) if supply else 0.0,
             },
         })
+
+
+class OrderParseView(APIView):
+    """
+    자연어 주문 → 장바구니 항목. POS 상단 입력창이 호출.
+
+    POST {"text": "아아 두 잔이랑 라떼 하나 따뜻하게"}
+    → {"items": [...], "source": "gemini"|"rule"}
+    키(GEMINI_API_KEY) 미설정 시 규칙 기반으로 자동 폴백.
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def post(self, request):
+        try:
+            return Response(parse_order(request.data.get("text", "")))
+        except OrderParseError as exc:
+            return Response({"detail": str(exc)}, status=400)
 
 
 class MarginView(APIView):

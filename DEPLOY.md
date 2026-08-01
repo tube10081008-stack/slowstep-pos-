@@ -72,6 +72,7 @@ Vercel 프로젝트 → **Settings → Environment Variables** 에서 추가:
 | `DJANGO_SECURE_SSL_REDIRECT` | `False` |
 | `DJANGO_ALLOWED_HOSTS` | `.vercel.app` |
 | `STORE_PIN` | 매장 PIN (예: `0812`) — POS·대시보드 잠금 |
+| `GEMINI_API_KEY` | (선택) 자연어 주문 인식 정확도 향상. 없으면 규칙 기반으로 동작 |
 
 > **관리자(/admin) 로그인을 쓰려면** `CSRF_TRUSTED_ORIGINS` 에
 > `https://<프로젝트>.vercel.app` 를 추가한다. (변수명에 `DJANGO_` 접두어가 **없다** —

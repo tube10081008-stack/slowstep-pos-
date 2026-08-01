@@ -91,6 +91,21 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 - `decaf_available`(커피류)·`oatmilk_available`(라떼류): 옵션 추가 시 각 +`option_price`(기본 500원)
 - 세트 할인: 커피(음료)+디저트 동시 주문 시 `min(음료수, 디저트수) × set_discount_amount`(기본 500원)
 
+### `POST /api/v1/orders/parse`  🔒
+**자연어 주문 → 장바구니 항목.** POS 상단 입력창이 호출한다.
+```json
+요청 { "text": "아아 두 잔이랑 라떼 하나 따뜻하게, 휘낭시에 2개" }
+200  { "source": "gemini",
+       "items": [ { "menu_item_id": 1, "name": "아메리카노", "quantity": 2,
+                    "temperature": "ice", "decaf": false, "oatmilk": false, "shot": false }, ... ] }
+400  { "detail": "주문에서 메뉴를 찾지 못했습니다. ..." }
+```
+- **2단 구조**: `GEMINI_API_KEY` 설정 시 **Gemini**(`gemini-3.5-flash-lite`),
+  키가 없거나 호출 실패면 **규칙 기반 폴백**(`source: "rule"`). 키 없이도 동작한다.
+- **모델 출력을 신뢰하지 않는다**: 반환된 `menu_item_id`가 실제 판매 중인 메뉴인지,
+  옵션이 그 메뉴에 허용되는지, 수량이 1~20인지 서버가 전부 재검증한다. 품절 메뉴는 제외.
+- 금액은 계산하지 않는다 — 결제 시 `POST /transactions`가 서버 가격으로 계산.
+
 ---
 
 ## 거래 / 결제 (Transaction)

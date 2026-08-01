@@ -42,9 +42,20 @@
     cursor:pointer; text-align:center; position:relative; }
   .mi:active { transform:scale(.97); }
   .mi.sel { border-color:var(--brand); box-shadow:0 0 0 1px var(--brand) inset; }
-  .mi .emo { font-size:28px; }
-  .mi .nm { font-size:13px; font-weight:600; margin-top:6px; line-height:1.3; }
-  .mi .pr { font-size:12px; color:var(--brand); margin-top:4px; font-weight:700; }
+  .mi .nm { font-size:15px; font-weight:700; line-height:1.35; letter-spacing:-.01em;
+    min-height:40px; display:flex; align-items:center; justify-content:center; }
+  .mi .pr { font-size:15px; color:var(--brand); margin-top:8px; font-weight:800; letter-spacing:-.02em; }
+  /* 옵션·상태를 한눈에 — 이모지 대신 텍스트 배지 */
+  .mi .tags { display:flex; gap:3px; justify-content:center; flex-wrap:wrap; margin-top:8px; min-height:17px; }
+  .mi .tg { font-size:9px; font-weight:700; padding:2px 5px; border-radius:4px;
+    background:var(--card2); color:var(--muted); border:1px solid var(--line); letter-spacing:.02em; }
+  .mi .tg.hot { background:#fff1f0; color:#c2410c; border-color:#fed7cc; }
+  .mi .tg.ice { background:#eff8ff; color:#0369a1; border-color:#cfe8fb; }
+  .mi .stk { position:absolute; top:7px; left:8px; font-size:10px; color:var(--amber); font-weight:700; }
+  /* 카테고리 색 띠 — 종류 구분을 즉시 */
+  .mi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
+    border-radius:14px 0 0 14px; background:var(--c, transparent); }
+  .mi.soldout::before { background:var(--line); }
   .mi .qty { position:absolute; top:-8px; right:-8px; background:var(--brand); color:#fff;
     font-size:12px; font-weight:800; min-width:22px; height:22px; border-radius:999px;
     display:flex; align-items:center; justify-content:center; padding:0 5px; box-shadow:0 2px 8px rgba(59,91,255,.4); }
@@ -184,6 +195,16 @@
   button:not(:disabled):active { transform:translateY(1px); }
   .mi:hover { border-color:#c7d0ff; box-shadow:0 6px 16px rgba(16,24,40,.08); transform:translateY(-2px); }
   .cat:hover, .pill:hover { border-color:#c7d0ff; }
+
+  /* ── 자연어 주문 입력 ── */
+  .aibar { margin-bottom:14px; padding:14px 16px; }
+  .ai-row { display:flex; gap:9px; align-items:center; }
+  .ai-row input { flex:1; font-size:15px; padding:13px 14px; }
+  .ai-row button { flex:0 0 92px; padding:13px 0; font-size:15px; }
+  .ai-row button:disabled { opacity:.5; }
+  .ai-msg { margin-top:9px; font-size:12px; line-height:1.5; }
+  .ai-msg.ok { color:var(--green); font-weight:600; }
+  .ai-msg.err { color:var(--red); font-weight:600; }
 </style>
 <script src="../pin.js"></script>
 </head>
@@ -205,6 +226,16 @@
   <div id="tabOrder" class="tab">
   <!-- ① 주문 화면 -->
   <div id="orderView">
+    <!-- 말한 대로 담기 — 자연어 주문 입력 -->
+    <div class="card aibar">
+      <div class="ai-row">
+        <input id="aiText" placeholder="예) 아아 두 잔이랑 라떼 하나 따뜻하게, 휘낭시에 1개"
+               autocomplete="off" onkeydown="if(event.key==='Enter')aiParse()" />
+        <button class="confirm" id="aiBtn" onclick="aiParse()">담기</button>
+      </div>
+      <div class="ai-msg muted" id="aiMsg">주문을 말하듯 입력하면 장바구니에 자동으로 담깁니다.</div>
+    </div>
+
     <div class="order">
       <div class="card">
         <div class="cats" id="cats"></div>
@@ -418,20 +449,69 @@
   const itemQty = (id)=> Object.values(cart).filter(c=>c.item.id===id).reduce((s,c)=>s+c.qty,0);
   const needsOptions = (m)=> m.temp_option==="hotice" || m.decaf_available || m.oatmilk_available || m.shot_available;
 
+  // 카테고리별 구분 색 (이모지 대신 색 띠로 종류를 구분)
+  const CAT_COLOR = { coffee:"#8b5cf6", coldbrew:"#0ea5e9", ade:"#f59e0b",
+                      noncoffee:"#ec4899", tea:"#10b981", dessert:"#f43f5e" };
+
   function renderMenu(){
     const items = menu.filter(m => cat==="all" || m.category===cat);
     $("menu").innerHTML = items.map(m=>{
       const q = itemQty(m.id);
-      if(m.sold_out) return `<div class="mi soldout">
-        <div class="emo">${m.emoji||"◆"}</div><div class="nm">${m.name}</div>
-        <div class="pr" style="color:var(--muted)">품절</div></div>`;
-      return `<div class="mi ${q?"sel":""}" onclick="tapItem(${m.id})">
+      const color = CAT_COLOR[m.category] || "var(--line)";
+      if(m.sold_out) return `<div class="mi soldout" style="--c:${color}">
+        <div class="nm">${m.name}</div>
+        <div class="pr" style="color:var(--muted)">품절</div>
+        <div class="tags"></div></div>`;
+
+      // 선택 가능한 옵션을 배지로 노출 → 누르기 전에 뭘 고를 수 있는지 보임
+      const tags = [];
+      if(m.temp_option==="hotice"){ tags.push('<span class="tg hot">HOT</span>','<span class="tg ice">ICE</span>'); }
+      else if(m.temp_option==="ice"){ tags.push('<span class="tg ice">ICE</span>'); }
+      if(m.decaf_available) tags.push('<span class="tg">디카페인</span>');
+      if(m.oatmilk_available) tags.push('<span class="tg">오트</span>');
+      if(m.shot_available) tags.push('<span class="tg">샷</span>');
+
+      return `<div class="mi ${q?"sel":""}" style="--c:${color}" onclick="tapItem(${m.id})">
         ${q?`<span class="qty">${q}</span>`:""}
-        <div class="emo">${m.emoji||"◆"}</div>
-        <div class="nm">${m.name}${m.stock!=null?` <span class="muted" style="font-size:10px">(${m.stock})</span>`:""}</div>
+        ${m.stock!=null?`<span class="stk">${m.stock}개</span>`:""}
+        <div class="nm">${m.name}</div>
         <div class="pr">${won(m.price)}</div>
+        <div class="tags">${tags.join("")}</div>
       </div>`;
     }).join("");
+  }
+
+  // ── 자연어 주문 → 장바구니 ──
+  async function aiParse(){
+    const text = $("aiText").value.trim();
+    if(!text) return;
+    const btn = $("aiBtn"), msg = $("aiMsg");
+    btn.disabled = true; btn.textContent = "담는 중";
+    msg.className = "ai-msg muted"; msg.textContent = "주문을 읽는 중…";
+    try {
+      const r = await api("/api/v1/orders/parse", { method:"POST", body: JSON.stringify({ text }) });
+      let added = 0;
+      r.items.forEach(it=>{
+        const m = menu.find(x=>x.id===it.menu_item_id);
+        if(!m) return;
+        for(let i=0;i<it.quantity;i++) addLine(m, it.temperature, it.decaf, it.oatmilk, it.shot);
+        added += it.quantity;
+      });
+      if(!added){ msg.className="ai-msg err"; msg.textContent="담을 메뉴를 찾지 못했습니다."; return; }
+      const summary = r.items.map(it=>{
+        const opt = [it.temperature==="hot"?"HOT":(it.temperature==="ice"?"ICE":""),
+                     it.decaf?"디카페인":"", it.oatmilk?"오트":"", it.shot?"샷":""].filter(Boolean).join("·");
+        return `${it.name}${opt?`(${opt})`:""} ${it.quantity}`;
+      }).join(", ");
+      msg.className = "ai-msg ok";
+      msg.textContent = `담았습니다 — ${summary}` + (r.source==="rule" ? "  ·  간이 인식" : "");
+      $("aiText").value = "";
+    } catch(e){
+      msg.className = "ai-msg err";
+      msg.textContent = e.message || "인식하지 못했습니다.";
+    } finally {
+      btn.disabled = false; btn.textContent = "담기"; $("aiText").focus();
+    }
   }
 
   function tapItem(id){

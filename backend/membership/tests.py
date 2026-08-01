@@ -532,6 +532,108 @@ class PurgeDemoTests(TestCase):
         self.assertIn("건너뜀", out)
 
 
+class AiOrderParseTests(TestCase):
+    """자연어 주문 파싱 — 규칙 폴백(키 없이 동작) + 안전 검증."""
+
+    def setUp(self):
+        self.store = make_store()
+        self.amer = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000,
+            category=MenuItem.Category.COFFEE, temp_option=MenuItem.Temp.HOTICE,
+            decaf_available=True, shot_available=True,
+        )
+        self.latte = MenuItem.objects.create(
+            store=self.store, name="카페 라떼", price=4500,
+            category=MenuItem.Category.COFFEE, temp_option=MenuItem.Temp.HOTICE,
+            decaf_available=True, oatmilk_available=True, shot_available=True,
+        )
+        self.fin = MenuItem.objects.create(
+            store=self.store, name="플레인 휘낭시에", price=2500,
+            category=MenuItem.Category.DESSERT, temp_option=MenuItem.Temp.NONE,
+        )
+        authenticate(self.client)
+
+    def _parse(self, text):
+        from .ai_order import parse_order
+
+        return parse_order(text)
+
+    def test_abbreviation_and_quantity(self):
+        r = self._parse("아아 두 잔")
+        self.assertEqual(r["source"], "rule")  # 키 없음 → 폴백
+        (it,) = r["items"]
+        self.assertEqual(it["menu_item_id"], self.amer.id)
+        self.assertEqual(it["quantity"], 2)
+        self.assertEqual(it["temperature"], "ice")  # 아아 = 아이스
+
+    def test_hot_keyword_and_multi_item(self):
+        r = self._parse("라떼 하나 따뜻하게, 휘낭시에 2개")
+        by_id = {i["menu_item_id"]: i for i in r["items"]}
+        self.assertEqual(by_id[self.latte.id]["temperature"], "hot")
+        self.assertEqual(by_id[self.latte.id]["quantity"], 1)
+        self.assertEqual(by_id[self.fin.id]["quantity"], 2)
+        # 디저트는 온도 옵션 없음
+        self.assertEqual(by_id[self.fin.id]["temperature"], "")
+
+    def test_options_only_when_allowed(self):
+        r = self._parse("아메리카노 디카페인 오트밀크 한 잔")
+        (it,) = r["items"]
+        self.assertTrue(it["decaf"])
+        # 아메리카노엔 오트밀크 옵션이 없으므로 무시돼야 함
+        self.assertFalse(it["oatmilk"])
+
+    def test_sold_out_excluded(self):
+        self.latte.stock = 0
+        self.latte.save(update_fields=["stock"])
+        with self.assertRaises(Exception):
+            self._parse("라떼 한 잔")  # 품절 → 담을 항목 없음
+
+    def test_unknown_menu_rejected(self):
+        from .ai_order import OrderParseError
+
+        with self.assertRaises(OrderParseError):
+            self._parse("피자 한 판")
+
+    def test_model_output_is_sanitized(self):
+        """모델이 엉뚱한 id·과한 수량·허용 안 된 옵션을 줘도 서버가 걸러낸다."""
+        from .ai_order import _sanitize
+
+        raw = [
+            {"menu_item_id": 999999, "quantity": 1},               # 없는 메뉴
+            {"menu_item_id": self.amer.id, "quantity": 9999,       # 수량 폭주
+             "oatmilk": True, "temperature": "미지근"},             # 허용 안 된 옵션·온도
+        ]
+        clean = _sanitize(raw, [self.amer, self.latte, self.fin])
+        self.assertEqual(len(clean), 1)
+        self.assertEqual(clean[0]["quantity"], 20)      # MAX_QTY로 제한
+        self.assertFalse(clean[0]["oatmilk"])           # 아메리카노는 오트 불가
+        self.assertEqual(clean[0]["temperature"], "ice")  # 잘못된 값 → 기본 아이스
+
+    def test_endpoint_requires_pin(self):
+        anon = self.client_class()
+        res = anon.post(
+            "/api/v1/orders/parse",
+            data={"text": "아아 하나"}, content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_endpoint_returns_items(self):
+        res = self.client.post(
+            "/api/v1/orders/parse",
+            data={"text": "아아 세 잔"}, content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["items"][0]["quantity"], 3)
+        self.assertEqual(body["items"][0]["name"], "아메리카노")
+
+    def test_empty_input_rejected(self):
+        res = self.client.post(
+            "/api/v1/orders/parse", data={"text": "  "}, content_type="application/json"
+        )
+        self.assertEqual(res.status_code, 400)
+
+
 class HealthEndpointTests(TestCase):
     def test_health_reports_persistent_storage(self):
         res = self.client.get("/api/v1/health")
