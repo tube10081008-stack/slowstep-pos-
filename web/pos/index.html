@@ -437,7 +437,11 @@
     const d = e.data || {};
     markDisplay();
     // 고객 화면이 열려 있는지 확인차 보내는 신호 → 현재 상태로 응답
-    if(d.type === "hello") { disp.postMessage(lastState); return; }
+    if(d.type === "hello") {
+      // 주기적인 연결 확인 — 현재 상태만 알려주고, 입력 초기화는 시키지 않는다.
+      const sync = Object.assign({}, lastState); delete sync.reset;
+      disp.postMessage(sync); return;
+    }
     // ── 손님이 고객화면(터치)에서 조작한 것 ──
     if(d.type === "phone_input"){        // 입력 중 — 직원 화면에 그대로 비춤
       phone = (d.phone || "").slice(0,11); renderPhone();
@@ -658,7 +662,7 @@
     orderId = newOrderId();
     member=null; phone=""; renderPhone();
     $("termAmt").textContent = won(finalTotal());
-    sendDisplay({ type:"pay", total: finalTotal() });
+    sendDisplay({ type:"pay", total: finalTotal(), reset:true });
     $("orderView").classList.add("hidden"); $("doneView").classList.add("hidden");
     $("payView").classList.remove("hidden");
     $("phoneStep").classList.remove("hidden"); $("confirmStep").classList.add("hidden");
@@ -667,7 +671,7 @@
     sendDisplay(Object.keys(cart).length ? cartSnapshot() : { type:"idle" }); }
   function resetPhone(){ member=null; phone=""; renderPhone();
     $("phoneStep").classList.remove("hidden"); $("confirmStep").classList.add("hidden");
-    sendDisplay({ type:"pay", total: finalTotal() }); }
+    sendDisplay({ type:"pay", total: finalTotal(), reset:true }); }
 
   async function lookupMember(){
     if(phone.length<10) return;

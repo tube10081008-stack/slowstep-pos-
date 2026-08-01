@@ -345,7 +345,14 @@
     markSeen();
     if(["greet","guest_ok","lookup_fail"].includes(d.type)) clearTimeout(ackTimer);
     if(d.type === "cart")      renderOrder(d);
-    else if(d.type === "pay")  { $("payAmt").textContent = won(d.total); resetPad(); show("pay"); }
+    else if(d.type === "pay"){
+      $("payAmt").textContent = won(d.total);
+      // 입력 중에는 절대 지우지 않는다. 결제 화면에 새로 들어올 때나
+      // POS가 '다시 입력'을 눌렀을 때(reset)만 초기화한다.
+      // (4초마다 오는 연결 확인 응답에 초기화되면 손님이 누르던 번호가 사라진다)
+      if($("pay").classList.contains("hidden") || d.reset) resetPad();
+      show("pay");
+    }
     else if(d.type === "greet")   renderGreet(d.member);
     else if(d.type === "guest_ok"){ show("greet"); $("gTier").textContent="적립 없이 결제";
       $("gName").textContent="결제를 도와드릴게요"; $("gInfo").textContent="다음에 번호를 남겨주시면 적립해 드릴게요";
