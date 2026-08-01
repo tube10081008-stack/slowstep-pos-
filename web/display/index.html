@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>슬로우스텝 · 고객 화면</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap');
+  :root {
+    --bg:#f4f6f9; --card:#fff; --card2:#f8fafc; --line:#e6e9ef; --txt:#161a25;
+    --muted:#6b7280; --brand:#3b5bff; --brand-dk:#2846e6; --brand-soft:#eef2ff;
+    --green:#16a34a; --gold:#f59e0b;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 10px 30px rgba(16,24,40,.07);
+    --sans:"Inter","Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; }
+  html, body { height:100%; }
+  body { background:var(--bg); color:var(--txt); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; overflow:hidden; }
+  .screen { height:100vh; display:flex; flex-direction:column; padding:3vh 3vw; }
+  .hidden { display:none !important; }
+
+  /* 상단 브랜드 */
+  .brand { display:flex; align-items:center; gap:14px; flex:0 0 auto; }
+  .logo { width:44px; height:44px; border-radius:12px; color:#fff; font-weight:800; font-size:24px;
+    background:linear-gradient(135deg,#5b76ff,var(--brand)); display:flex; align-items:center;
+    justify-content:center; box-shadow:0 6px 16px rgba(59,91,255,.3); }
+  .wm { font-weight:800; font-size:22px; letter-spacing:-.02em; }
+  .wm small { display:block; font-size:12px; color:var(--muted); font-weight:500; margin-top:2px; }
+
+  /* ── 대기 화면 ── */
+  #idle { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; }
+  #idle .big { font-size:clamp(34px,5.5vw,64px); font-weight:800; letter-spacing:-.03em; }
+  #idle .sub { font-size:clamp(15px,1.7vw,22px); color:var(--muted); }
+  #idle .mark { width:96px; height:96px; border-radius:26px; font-size:52px;
+    background:linear-gradient(135deg,#5b76ff,var(--brand)); color:#fff; font-weight:800;
+    display:flex; align-items:center; justify-content:center; box-shadow:0 14px 34px rgba(59,91,255,.32); }
+
+  /* ── 주문 화면 ── */
+  #order { flex:1; display:flex; flex-direction:column; margin-top:2.4vh; min-height:0; }
+  .ttl { font-size:clamp(15px,1.5vw,19px); font-weight:700; color:var(--muted); margin-bottom:12px; }
+  .list { flex:1; overflow-y:auto; background:var(--card); border:1px solid var(--line);
+    border-radius:18px; padding:10px 22px; box-shadow:var(--shadow); }
+  .li { display:flex; align-items:center; gap:14px; padding:2.1vh 0; border-bottom:1px solid var(--line); }
+  .li:last-child { border-bottom:0; }
+  .li .nm { flex:1; font-size:clamp(17px,2vw,26px); font-weight:700; letter-spacing:-.01em; }
+  .li .nm em { font-style:normal; font-size:.62em; color:var(--muted); font-weight:600; margin-left:8px; }
+  .li .qt { font-size:clamp(16px,1.8vw,23px); font-weight:800; color:var(--brand);
+    min-width:2.6em; text-align:center; }
+  .li .amt { font-size:clamp(16px,1.8vw,23px); font-weight:700; min-width:5.2em; text-align:right; }
+  .empty { display:flex; height:100%; align-items:center; justify-content:center;
+    color:var(--muted); font-size:clamp(16px,1.8vw,22px); }
+
+  .sum { flex:0 0 auto; margin-top:2vh; background:var(--card); border:1px solid var(--line);
+    border-radius:18px; padding:2.2vh 22px; box-shadow:var(--shadow); }
+  .row { display:flex; justify-content:space-between; align-items:baseline; }
+  .row + .row { margin-top:9px; }
+  .row .k { font-size:clamp(14px,1.4vw,18px); color:var(--muted); font-weight:600; }
+  .row .v { font-size:clamp(15px,1.5vw,20px); font-weight:700; }
+  .row.total .k { font-size:clamp(17px,1.8vw,24px); color:var(--txt); font-weight:800; }
+  .row.total .v { font-size:clamp(30px,4.4vw,58px); font-weight:800; color:var(--brand); letter-spacing:-.03em; }
+  .disc .k, .disc .v { color:var(--gold); }
+
+  /* ── 결제 안내 ── */
+  #pay { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2.4vh; }
+  #pay .lbl { font-size:clamp(15px,1.7vw,22px); color:var(--muted); font-weight:600; }
+  #pay .amt { font-size:clamp(52px,10vw,132px); font-weight:800; color:var(--brand);
+    letter-spacing:-.045em; line-height:1; }
+  #pay .ask { margin-top:1.4vh; background:var(--brand-soft); border:1px solid #dfe4ff;
+    color:var(--brand-dk); border-radius:16px; padding:2.2vh 3vw; font-size:clamp(16px,1.9vw,26px);
+    font-weight:700; text-align:center; line-height:1.5; }
+  #pay .ask small { display:block; font-size:.68em; color:var(--muted); font-weight:500; margin-top:6px; }
+
+  /* ── 완료 화면 ── */
+  #done { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2vh; }
+  #done .check { width:104px; height:104px; border-radius:50%; background:#dcfce7; color:var(--green);
+    display:flex; align-items:center; justify-content:center; font-size:56px; font-weight:800; }
+  #done h1 { font-size:clamp(28px,4vw,50px); font-weight:800; letter-spacing:-.03em; }
+  #done .who { font-size:clamp(16px,1.9vw,26px); color:var(--muted); font-weight:600; }
+  .stats { display:flex; gap:2vw; margin-top:1.6vh; flex-wrap:wrap; justify-content:center; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:18px;
+    padding:2.2vh 3vw; text-align:center; min-width:150px; box-shadow:var(--shadow); }
+  .stat .k { font-size:clamp(12px,1.2vw,15px); color:var(--muted); font-weight:600; }
+  .stat .v { font-size:clamp(24px,3.2vw,42px); font-weight:800; margin-top:6px; letter-spacing:-.02em; }
+  .stat .v.p { color:var(--brand); }
+  .stat .v.g { color:var(--green); }
+  .rewards { display:flex; flex-direction:column; gap:9px; margin-top:1.4vh; align-items:center; }
+  .rw { background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:999px;
+    padding:11px 24px; font-size:clamp(14px,1.6vw,20px); font-weight:700; }
+  .stamp-row { display:flex; gap:7px; margin-top:1.2vh; flex-wrap:wrap; justify-content:center; }
+  .sd { width:26px; height:26px; border-radius:50%; background:var(--card2); border:1px solid var(--line); }
+  .sd.on { background:var(--brand); border-color:var(--brand); }
+
+  .foot { flex:0 0 auto; text-align:center; color:var(--muted); font-size:12px; margin-top:1.6vh; }
+  @keyframes pop { from{ opacity:0; transform:scale(.96);} to{ opacity:1; transform:none;} }
+  .screen > div { animation:pop .28s ease both; }
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="brand">
+    <span class="logo">S</span>
+    <div class="wm">Slowstep<small>슬로우스텝</small></div>
+  </div>
+
+  <!-- 대기 -->
+  <div id="idle">
+    <div class="mark">S</div>
+    <div class="big">어서 오세요</div>
+    <div class="sub">천천히, 기분 좋은 한 잔</div>
+  </div>
+
+  <!-- 주문 중 -->
+  <div id="order" class="hidden">
+    <div class="ttl">주문 내역</div>
+    <div class="list" id="list"></div>
+    <div class="sum">
+      <div class="row disc hidden" id="discRow"><span class="k">세트 할인</span><span class="v" id="disc">-0원</span></div>
+      <div class="row total"><span class="k">합계</span><span class="v" id="total">0원</span></div>
+    </div>
+  </div>
+
+  <!-- 결제 -->
+  <div id="pay" class="hidden">
+    <div class="lbl">결제하실 금액</div>
+    <div class="amt" id="payAmt">0원</div>
+    <div class="ask">연락처를 알려주시면 포인트를 적립해 드려요<small>가입하지 않으셔도 결제는 가능합니다</small></div>
+  </div>
+
+  <!-- 완료 -->
+  <div id="done" class="hidden">
+    <div class="check">✓</div>
+    <h1>결제 완료</h1>
+    <div class="who" id="doneWho"></div>
+    <div class="stats" id="doneStats"></div>
+    <div class="rewards" id="doneRw"></div>
+    <div class="stamp-row" id="doneStamps"></div>
+  </div>
+
+  <div class="foot" id="foot">슬로우스텝 멤버십 · 방문할수록 혜택이 커집니다</div>
+</div>
+
+<script>
+  /**
+   * 고객 표시 화면.
+   *
+   * POS(직원 화면)와 **BroadcastChannel** 로만 통신한다 — 서버 API를 전혀 호출하지
+   * 않으므로 PIN도 필요 없고, 이 페이지만으로는 어떤 고객 정보도 조회할 수 없다.
+   * 같은 PC·같은 브라우저의 다른 창에서만 신호가 오므로 외부 노출 위험이 없다.
+   */
+  const $ = (id) => document.getElementById(id);
+  const won = (n) => (n||0).toLocaleString("ko-KR") + "원";
+  const VIEWS = ["idle","order","pay","done"];
+
+  function show(view){
+    VIEWS.forEach(v => $(v).classList.toggle("hidden", v !== view));
+    $("foot").classList.toggle("hidden", view === "done");
+  }
+
+  function tempLabel(t){ return t==="hot" ? "HOT" : (t==="ice" ? "ICE" : ""); }
+
+  function renderOrder(d){
+    const items = d.items || [];
+    if(!items.length){ show("idle"); return; }
+    $("list").innerHTML = items.map(i=>{
+      const opts = [tempLabel(i.temp), i.decaf?"디카페인":"", i.oat?"오트밀크":"", i.shot?"샷추가":""]
+        .filter(Boolean).join(" · ");
+      return `<div class="li">
+        <span class="nm">${i.name}${opts?`<em>${opts}</em>`:""}</span>
+        <span class="qt">${i.qty}</span>
+        <span class="amt">${won(i.total)}</span>
+      </div>`;
+    }).join("");
+    $("discRow").classList.toggle("hidden", !(d.discount > 0));
+    $("disc").textContent = "-" + won(d.discount);
+    $("total").textContent = won(d.total);
+    show("order");
+  }
+
+  function renderDone(d){
+    const m = d.member;
+    if(m){
+      $("doneWho").textContent = `${m.name} 님, 감사합니다`;
+      $("doneStats").innerHTML = `
+        <div class="stat"><div class="k">이번 적립</div><div class="v p">+${(d.earned||0).toLocaleString("ko-KR")}P</div></div>
+        <div class="stat"><div class="k">보유 포인트</div><div class="v">${(m.points||0).toLocaleString("ko-KR")}P</div></div>
+        <div class="stat"><div class="k">등급</div><div class="v g">${m.tier_display||m.tier||""}</div></div>`;
+      $("doneRw").innerHTML = (d.rewards||[]).map(r=>`<div class="rw">${r.title} +${r.points}P</div>`).join("");
+      const goal = m.stamp_goal || 10, on = m.stamps || 0;
+      $("doneStamps").innerHTML = Array.from({length:goal},(_,i)=>
+        `<span class="sd ${i<on?"on":""}"></span>`).join("");
+    } else {
+      $("doneWho").textContent = "감사합니다";
+      $("doneStats").innerHTML = `<div class="stat"><div class="k">결제 금액</div><div class="v">${won(d.net)}</div></div>`;
+      $("doneRw").innerHTML = ""; $("doneStamps").innerHTML = "";
+    }
+    show("done");
+  }
+
+  const ch = new BroadcastChannel("slowstep-pos");
+  ch.onmessage = (e) => {
+    const d = e.data || {};
+    if(d.type === "cart")      renderOrder(d);
+    else if(d.type === "pay")  { $("payAmt").textContent = won(d.total); show("pay"); }
+    else if(d.type === "done") renderDone(d);
+    else if(d.type === "idle") show("idle");
+  };
+  // POS가 이미 켜져 있으면 현재 상태를 다시 보내달라고 요청
+  ch.postMessage({ type: "hello" });
+  show("idle");
+</script>
+</body>
+</html>

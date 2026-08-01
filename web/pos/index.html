@@ -52,10 +52,6 @@
   .mi .tg.hot { background:#fff1f0; color:#c2410c; border-color:#fed7cc; }
   .mi .tg.ice { background:#eff8ff; color:#0369a1; border-color:#cfe8fb; }
   .mi .stk { position:absolute; top:7px; left:8px; font-size:10px; color:var(--amber); font-weight:700; }
-  /* 카테고리 색 띠 — 종류 구분을 즉시 */
-  .mi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
-    border-radius:14px 0 0 14px; background:var(--c, transparent); }
-  .mi.soldout::before { background:var(--line); }
   .mi .qty { position:absolute; top:-8px; right:-8px; background:var(--brand); color:#fff;
     font-size:12px; font-weight:800; min-width:22px; height:22px; border-radius:999px;
     display:flex; align-items:center; justify-content:center; padding:0 5px; box-shadow:0 2px 8px rgba(59,91,255,.4); }
@@ -216,7 +212,10 @@
       <div><span class="wm">Slowstep</span><span class="wm-sub">주문 · POS</span></div>
     </div>
     <span class="tag" id="storeTag">로딩…</span>
-    <nav><a href="../dashboard/">대시보드 ↗</a><a href="../member/">멤버십 ↗</a></nav>
+    <nav>
+      <a href="#" onclick="openDisplay();return false" title="외부 모니터로 옮겨 전체화면(F11)으로 두세요">고객화면 열기 ↗</a>
+      <a href="../dashboard/">대시보드 ↗</a><a href="../member/">멤버십 ↗</a>
+    </nav>
   </header>
   <!-- 저장소 상태 경고 (임시 저장 모드/DB 오류 시 /api/v1/health 결과로 표시) -->
   <div id="storageBanner" style="display:none;margin:8px 0;padding:10px 14px;border-radius:10px;
@@ -394,6 +393,36 @@
 
   function toast(m){ const t=$("toast"); t.textContent=m; t.style.display="block";
     clearTimeout(t._t); t._t=setTimeout(()=>t.style.display="none",2400); }
+
+  // ── 고객 표시 화면(/display/) 동기화 ──
+  // 같은 브라우저의 다른 창으로만 전달된다(서버 경유 없음).
+  // 직원 화면에서 무엇을 하든 고객 화면엔 아래로 보낸 것만 뜬다.
+  const disp = ("BroadcastChannel" in window) ? new BroadcastChannel("slowstep-pos") : null;
+  let lastState = { type:"idle" };
+  function sendDisplay(msg){ lastState = msg; if(disp) disp.postMessage(msg); }
+  function cartSnapshot(){
+    return {
+      type: "cart",
+      items: Object.values(cart).map(c=>({
+        name:c.item.name, qty:c.qty, total:c.unit*c.qty,
+        temp:c.temp, decaf:c.decaf, oat:c.oat, shot:c.shot,
+      })),
+      discount: discountTotal(),
+      total: finalTotal(),
+    };
+  }
+  function openDisplay(){
+    // 새 창으로 띄운다 → 외부 모니터로 끌어다 놓고 F11(전체화면)
+    const w = window.open("../display/", "slowstep-display", "width=1280,height=800");
+    if(!w) return toast("팝업이 차단됐어요. 주소창의 팝업 허용을 켜주세요.");
+    setTimeout(()=>sendDisplay(lastState), 600);  // 현재 상태 즉시 반영
+    toast("고객화면을 외부 모니터로 옮기고 F11을 누르세요");
+  }
+
+  if(disp) disp.onmessage = (e)=>{
+    // 고객 화면이 새로 열리면 현재 상태를 다시 보내준다.
+    if(e.data && e.data.type === "hello") disp.postMessage(lastState);
+  };
   async function api(path, opts){
     opts = opts || {};
     const r = await fetch(API_BASE+path, { ...opts,
@@ -449,29 +478,21 @@
   const itemQty = (id)=> Object.values(cart).filter(c=>c.item.id===id).reduce((s,c)=>s+c.qty,0);
   const needsOptions = (m)=> m.temp_option==="hotice" || m.decaf_available || m.oatmilk_available || m.shot_available;
 
-  // 카테고리별 구분 색 (이모지 대신 색 띠로 종류를 구분)
-  const CAT_COLOR = { coffee:"#8b5cf6", coldbrew:"#0ea5e9", ade:"#f59e0b",
-                      noncoffee:"#ec4899", tea:"#10b981", dessert:"#f43f5e" };
-
   function renderMenu(){
     const items = menu.filter(m => cat==="all" || m.category===cat);
     $("menu").innerHTML = items.map(m=>{
       const q = itemQty(m.id);
-      const color = CAT_COLOR[m.category] || "var(--line)";
-      if(m.sold_out) return `<div class="mi soldout" style="--c:${color}">
+      if(m.sold_out) return `<div class="mi soldout">
         <div class="nm">${m.name}</div>
         <div class="pr" style="color:var(--muted)">품절</div>
         <div class="tags"></div></div>`;
 
-      // 선택 가능한 옵션을 배지로 노출 → 누르기 전에 뭘 고를 수 있는지 보임
+      // 온도만 표시. 디카페인·오트·샷은 눌렀을 때 옵션창에서 고른다.
       const tags = [];
       if(m.temp_option==="hotice"){ tags.push('<span class="tg hot">HOT</span>','<span class="tg ice">ICE</span>'); }
       else if(m.temp_option==="ice"){ tags.push('<span class="tg ice">ICE</span>'); }
-      if(m.decaf_available) tags.push('<span class="tg">디카페인</span>');
-      if(m.oatmilk_available) tags.push('<span class="tg">오트</span>');
-      if(m.shot_available) tags.push('<span class="tg">샷</span>');
 
-      return `<div class="mi ${q?"sel":""}" style="--c:${color}" onclick="tapItem(${m.id})">
+      return `<div class="mi ${q?"sel":""}" onclick="tapItem(${m.id})">
         ${q?`<span class="qty">${q}</span>`:""}
         ${m.stock!=null?`<span class="stk">${m.stock}개</span>`:""}
         <div class="nm">${m.name}</div>
@@ -586,6 +607,7 @@
     $("cartDiscount").textContent = "-" + won(disc);
     $("cartTotal").textContent = won(finalTotal());
     $("payBtn").disabled = entries.length===0;
+    sendDisplay(entries.length ? cartSnapshot() : { type:"idle" });
   }
 
   // ── 결제 단말 화면 ──
@@ -612,11 +634,13 @@
     orderId = newOrderId();
     member=null; phone=""; renderPhone();
     $("termAmt").textContent = won(finalTotal());
+    sendDisplay({ type:"pay", total: finalTotal() });
     $("orderView").classList.add("hidden"); $("doneView").classList.add("hidden");
     $("payView").classList.remove("hidden");
     $("phoneStep").classList.remove("hidden"); $("confirmStep").classList.add("hidden");
   }
-  function backToOrder(){ $("payView").classList.add("hidden"); $("orderView").classList.remove("hidden"); }
+  function backToOrder(){ $("payView").classList.add("hidden"); $("orderView").classList.remove("hidden");
+    sendDisplay(Object.keys(cart).length ? cartSnapshot() : { type:"idle" }); }
   function resetPhone(){ member=null; phone=""; renderPhone();
     $("phoneStep").classList.remove("hidden"); $("confirmStep").classList.add("hidden"); }
 
@@ -698,12 +722,15 @@
       if(res.member.stamps!==undefined) rw += `<div class="reward">스탬프 ${res.member.stamps}/${res.member.stamp_goal}</div>`;
       $("doneRewards").innerHTML = rw;
     } else { $("doneSub").textContent = "비회원 결제 완료"; $("doneRewards").innerHTML=""; }
+    sendDisplay({ type:"done", member:res.member||null, earned:res.points_earned,
+                  net:res.net_amount, rewards:res.rewards||[] });
   }
 
   async function newOrder(){ cart={}; member=null; orderId=null;
     try { menu = await api("/api/v1/menu"); } catch(e){}  // 재고 반영
     renderMenu(); renderCart();
-    $("doneView").classList.add("hidden"); $("orderView").classList.remove("hidden"); }
+    $("doneView").classList.add("hidden"); $("orderView").classList.remove("hidden");
+    sendDisplay({ type:"idle" }); }
 
   // ── 하단 탭 전환 ──
   let lastOrder=null, storeState=null;
