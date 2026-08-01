@@ -212,6 +212,7 @@
       <div><span class="wm">Slowstep</span><span class="wm-sub">주문 · POS</span></div>
     </div>
     <span class="tag" id="storeTag">로딩…</span>
+    <span class="tag" id="dispTag" style="color:var(--muted)">고객화면 미연결</span>
     <nav>
       <a href="#" onclick="openDisplay();return false" title="외부 모니터로 옮겨 전체화면(F11)으로 두세요">고객화면 열기 ↗</a>
       <a href="../dashboard/">대시보드 ↗</a><a href="../member/">멤버십 ↗</a>
@@ -419,9 +420,23 @@
     toast("고객화면을 외부 모니터로 옮기고 F11을 누르세요");
   }
 
+  let dispSeen = 0;
+  function markDisplay(){
+    dispSeen = Date.now();
+    const el = $("dispTag");
+    if(el){ el.textContent = "고객화면 연결됨"; el.style.color = "var(--green)"; }
+  }
+  setInterval(()=>{   // 12초 넘게 소식 없으면 연결 끊김으로 표시
+    const el = $("dispTag");
+    if(el && dispSeen && Date.now()-dispSeen > 12000){
+      el.textContent = "고객화면 연결 끊김"; el.style.color = "var(--red)";
+    }
+  }, 4000);
+
   if(disp) disp.onmessage = (e)=>{
     const d = e.data || {};
-    // 고객 화면이 새로 열리면 현재 상태를 다시 보내준다.
+    markDisplay();
+    // 고객 화면이 열려 있는지 확인차 보내는 신호 → 현재 상태로 응답
     if(d.type === "hello") { disp.postMessage(lastState); return; }
     // ── 손님이 고객화면(터치)에서 조작한 것 ──
     if(d.type === "phone_input"){        // 입력 중 — 직원 화면에 그대로 비춤

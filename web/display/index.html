@@ -27,6 +27,10 @@
     justify-content:center; box-shadow:0 6px 16px rgba(59,91,255,.3); }
   .wm { font-weight:800; font-size:22px; letter-spacing:-.02em; }
   .wm small { display:block; font-size:12px; color:var(--muted); font-weight:500; margin-top:2px; }
+  .link { margin-left:auto; font-size:11px; font-weight:600; padding:5px 12px; border-radius:999px;
+    background:var(--card2); color:var(--muted); border:1px solid var(--line); letter-spacing:.01em; }
+  .link.on { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
+  .link.off { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
 
   /* ── 대기 화면 ── */
   #idle { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; }
@@ -135,6 +139,7 @@
   <div class="brand">
     <span class="logo">S</span>
     <div class="wm">Slowstep<small>슬로우스텝</small></div>
+    <span class="link" id="link">연결 확인 중…</span>
   </div>
 
   <!-- 대기 -->
@@ -252,6 +257,24 @@
 
   const ch = new BroadcastChannel("slowstep-pos");
 
+  // ── 직원 화면(POS)과의 연결 감시 ──
+  // 연결이 끊긴 채 손님이 '확인'을 눌러도 아무 반응이 없으면 안 되므로,
+  // 상태를 표시하고 응답이 없으면 즉시 알린다.
+  let paired = false, lastSeen = 0, ackTimer = null;
+  function setLink(){
+    const el = $("link");
+    el.textContent = paired ? "직원 화면 연결됨" : "직원 화면 연결 안 됨";
+    el.className = "link " + (paired ? "on" : "off");
+  }
+  function markSeen(){ paired = true; lastSeen = Date.now(); setLink(); }
+  setInterval(()=>{
+    ch.postMessage({ type:"hello" });                 // 살아있는지 물어봄
+    if(paired && Date.now() - lastSeen > 12000) paired = false;
+    setLink();
+  }, 4000);
+  // 첫 응답을 잠깐 기다린 뒤 상태를 확정한다(계속 '확인 중'에 머무르지 않도록)
+  setTimeout(()=>{ if(!paired) setLink(); }, 1800);
+
   // ── 손님이 직접 누르는 연락처 입력 ──
   const PREFIX = "010";   // 손님이 뒷자리만 누르면 되도록 미리 채워둔다
   const LEN = 11;
@@ -290,10 +313,16 @@
 
   $("okBtn").onclick = ()=>{
     if(buf.length < 10) return;
+    if(!paired){ hint("직원 화면과 연결되어 있지 않아요. 직원을 불러주세요.", true); return; }
     hint("확인 중이에요…");
     ch.postMessage({ type:"phone_submit", phone: buf });
+    clearTimeout(ackTimer);
+    ackTimer = setTimeout(()=> hint("응답이 없어요. 직원을 불러주세요.", true), 2500);
   };
-  $("skipBtn").onclick = ()=>{ ch.postMessage({ type:"guest" }); };
+  $("skipBtn").onclick = ()=>{
+    if(!paired){ hint("직원 화면과 연결되어 있지 않아요. 직원을 불러주세요.", true); return; }
+    ch.postMessage({ type:"guest" });
+  };
 
   function renderGreet(m){
     $("gTier").textContent = m.tier_display || m.tier || "회원";
@@ -308,6 +337,9 @@
 
   ch.onmessage = (e) => {
     const d = e.data || {};
+    if(d.type === "hello") return;      // 다른 고객 화면의 문의는 무시
+    markSeen();
+    if(["greet","guest_ok","lookup_fail"].includes(d.type)) clearTimeout(ackTimer);
     if(d.type === "cart")      renderOrder(d);
     else if(d.type === "pay")  { $("payAmt").textContent = won(d.total); resetPad(); show("pay"); }
     else if(d.type === "greet")   renderGreet(d.member);
