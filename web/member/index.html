@@ -331,8 +331,20 @@
     }).join("");
   }
 
-  const phone = new URLSearchParams(location.search).get("phone");
-  if(phone) load(phone);
+  // QR로 들어오면 ?t=토큰, 직접 조회면 ?phone=번호
+  async function loadByToken(t){
+    try {
+      const m = await api("/api/v1/members/by-token?t=" + encodeURIComponent(t));
+      render(await api("/api/v1/members/" + m.id + "/dashboard"));
+    } catch(e){
+      $("err").innerHTML = "❌ " + e.message +
+        '<div class="muted" style="margin-top:8px">아래에 연락처를 입력해 조회하실 수 있어요.</div>';
+    }
+  }
+  const params = new URLSearchParams(location.search);
+  const token = params.get("t"), phone = params.get("phone");
+  if(token) loadByToken(token);
+  else if(phone) load(phone);
 </script>
 </body>
 </html>

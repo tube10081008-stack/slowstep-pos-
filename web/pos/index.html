@@ -756,6 +756,12 @@
       if(res.member.stamps!==undefined) rw += `<div class="reward">스탬프 ${res.member.stamps}/${res.member.stamp_goal}</div>`;
       $("doneRewards").innerHTML = rw;
     } else { $("doneSub").textContent = "비회원 결제 완료"; $("doneRewards").innerHTML=""; }
+    // 회원이면 멤버십 QR을 받아 고객 화면에 함께 전달(고객 화면은 서버를 호출하지 않음)
+    if(res.member && res.member.id){
+      api(`/api/v1/members/${res.member.id}/qr`)
+        .then(q => sendEvent({ type:"done_qr", svg:q.svg }))
+        .catch(()=>{});
+    }
     sendDisplay({ type:"done", member:res.member||null, earned:res.points_earned,
                   net:res.net_amount, rewards:res.rewards||[] });
   }

@@ -121,6 +121,15 @@
   .rw { background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:999px;
     padding:10px 22px; font-size:clamp(13px,1.5vw,18px); font-weight:600; letter-spacing:-.01em; }
   .stamp-row { display:flex; gap:7px; margin-top:1.2vh; flex-wrap:wrap; justify-content:center; }
+  /* 멤버십 QR — 손님이 자기 폰으로 스캔 */
+  .qr-box { display:flex; align-items:center; gap:2vw; margin-top:1.8vh;
+    background:var(--card); border:1px solid var(--line); border-radius:18px;
+    padding:1.6vh 2.4vw; box-shadow:var(--shadow); }
+  .qr { width:clamp(88px,11vh,132px); height:clamp(88px,11vh,132px); display:block; }
+  .qr svg { width:100%; height:100%; display:block; }
+  .qr svg path { fill:var(--txt); }
+  .qr-cap { font-size:clamp(12px,1.4vw,18px); font-weight:600; line-height:1.5; text-align:left; }
+  .qr-cap b { color:var(--brand); }
   .sd { width:clamp(30px,3.2vw,42px); height:clamp(30px,3.2vw,42px); color:#cfd5e1; }
   .sd svg { width:100%; height:100%; display:block; }
   .sd .cup-fill { fill:transparent; }
@@ -196,6 +205,10 @@
     <div class="stats" id="doneStats"></div>
     <div class="rewards" id="doneRw"></div>
     <div class="stamp-row" id="doneStamps"></div>
+    <div class="qr-box hidden" id="qrBox">
+      <div class="qr" id="qr"></div>
+      <div class="qr-cap">휴대폰으로 찍으면<br/><b>내 적립 내역</b>을 볼 수 있어요</div>
+    </div>
   </div>
 
   <div class="foot" id="foot">SLOW&nbsp;&nbsp;STEP</div>
@@ -256,6 +269,7 @@
       $("doneStats").innerHTML = `<div class="stat"><div class="k">결제 금액</div><div class="v">${won(d.net)}</div></div>`;
       $("doneRw").innerHTML = ""; $("doneStamps").innerHTML = "";
     }
+    $("qrBox").classList.add("hidden"); $("qr").innerHTML = "";   // QR은 도착하면 표시
     show("done");
   }
 
@@ -366,6 +380,10 @@
       $("gStats").innerHTML=""; }
     else if(d.type === "lookup_fail"){ hint(d.message || "처음 오셨군요. 직원이 도와드릴게요.", true); }
     else if(d.type === "done") renderDone(d);
+    else if(d.type === "done_qr"){                 // 결제 직후 도착하는 멤버십 QR
+      $("qr").innerHTML = d.svg || "";
+      $("qrBox").classList.toggle("hidden", !d.svg);
+    }
     else if(d.type === "idle") show("idle");
   };
   // POS가 이미 켜져 있으면 현재 상태를 다시 보내달라고 요청
