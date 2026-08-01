@@ -31,14 +31,15 @@
   /* ── 대기 화면 ── */
   #idle { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; }
   #idle .big { font-size:clamp(34px,5.5vw,64px); font-weight:800; letter-spacing:-.03em; }
-  #idle .sub { font-size:clamp(15px,1.7vw,22px); color:var(--muted); }
+  #idle .sub { font-size:clamp(15px,1.7vw,21px); color:var(--muted); font-weight:500; letter-spacing:-.01em; }
   #idle .mark { width:96px; height:96px; border-radius:26px; font-size:52px;
     background:linear-gradient(135deg,#5b76ff,var(--brand)); color:#fff; font-weight:800;
     display:flex; align-items:center; justify-content:center; box-shadow:0 14px 34px rgba(59,91,255,.32); }
 
   /* ── 주문 화면 ── */
   #order { flex:1; display:flex; flex-direction:column; margin-top:2.4vh; min-height:0; }
-  .ttl { font-size:clamp(15px,1.5vw,19px); font-weight:700; color:var(--muted); margin-bottom:12px; }
+  .ttl { font-size:clamp(13px,1.3vw,16px); font-weight:600; color:var(--muted);
+    margin-bottom:12px; letter-spacing:.02em; }
   .list { flex:1; overflow-y:auto; background:var(--card); border:1px solid var(--line);
     border-radius:18px; padding:10px 22px; box-shadow:var(--shadow); }
   .li { display:flex; align-items:center; gap:14px; padding:2.1vh 0; border-bottom:1px solid var(--line); }
@@ -67,8 +68,8 @@
   .pay-top .lbl { font-size:clamp(14px,1.5vw,20px); color:var(--muted); font-weight:600; }
   .pay-top .amt { font-size:clamp(34px,5.6vw,72px); font-weight:800; color:var(--brand);
     letter-spacing:-.04em; line-height:1; }
-  .ask-sm { font-size:clamp(15px,1.8vw,24px); font-weight:700; margin-top:.6vh; }
-  .ask-sm b { color:var(--brand); }
+  .ask-sm { font-size:clamp(16px,1.9vw,25px); font-weight:600; margin-top:.8vh; letter-spacing:-.015em; }
+  .ask-sub { font-size:clamp(12px,1.3vw,16px); color:var(--muted); font-weight:500; margin-top:-.2vh; }
   .phone-disp { font-size:clamp(28px,4.4vw,54px); font-weight:800; letter-spacing:.06em;
     background:var(--card); border:2px solid var(--line); border-radius:16px;
     padding:1.5vh 3vw; min-width:min(88vw,520px); text-align:center; box-shadow:var(--shadow); }
@@ -81,6 +82,7 @@
     color:var(--txt); cursor:pointer; box-shadow:0 1px 2px rgba(16,24,40,.05);
     -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
   .pad button:active { background:var(--brand-soft); border-color:var(--brand); transform:scale(.96); }
+  .pad button.sm { font-size:clamp(13px,1.4vw,17px); font-weight:600; color:var(--muted); }
   .pad-act { display:flex; gap:1.1vw; width:min(88vw,520px); margin-top:.4vh; }
   .pad-act button { flex:1; font-family:inherit; font-size:clamp(16px,2vw,26px); font-weight:700;
     padding:2vh 0; border-radius:16px; cursor:pointer; border:1px solid var(--line);
@@ -89,14 +91,14 @@
   .pad-act .go { background:var(--brand); color:#fff; border-color:var(--brand); flex:1.7; }
   .pad-act .go:disabled { opacity:.4; }
   .pad-act button:active { transform:scale(.98); }
-  .hint { font-size:clamp(11px,1.1vw,14px); color:var(--muted); margin-top:.8vh; }
+  .hint { font-size:clamp(11px,1.1vw,13px); color:var(--muted); margin-top:1vh; font-weight:500; letter-spacing:.01em; }
   .hint.err { color:#ef4444; font-weight:700; }
 
   /* ── 회원 인사 ── */
   #greet { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1vh; }
   #greet h1 { font-size:clamp(30px,4.6vw,58px); font-weight:800; letter-spacing:-.03em; }
-  .g-badge { font-size:clamp(13px,1.4vw,18px); font-weight:800; padding:7px 20px; border-radius:999px;
-    background:var(--brand-soft); color:var(--brand-dk); border:1px solid #dfe4ff; }
+  .g-badge { font-size:clamp(11px,1.2vw,14px); font-weight:700; padding:7px 18px; border-radius:999px;
+    background:var(--brand-soft); color:var(--brand-dk); border:1px solid #dfe4ff; letter-spacing:.04em; }
   #pay .ask, #greet .ask { background:var(--brand-soft); border:1px solid #dfe4ff;
     color:var(--brand-dk); border-radius:16px; padding:1.8vh 3vw; font-size:clamp(15px,1.8vw,24px);
     font-weight:700; text-align:center; line-height:1.5; }
@@ -106,22 +108,23 @@
   #done .check { width:104px; height:104px; border-radius:50%; background:#dcfce7; color:var(--green);
     display:flex; align-items:center; justify-content:center; font-size:56px; font-weight:800; }
   #done h1 { font-size:clamp(28px,4vw,50px); font-weight:800; letter-spacing:-.03em; }
-  #done .who { font-size:clamp(16px,1.9vw,26px); color:var(--muted); font-weight:600; }
+  #done .who, #greet .who { font-size:clamp(15px,1.8vw,23px); color:var(--muted); font-weight:500; letter-spacing:-.01em; }
   .stats { display:flex; gap:2vw; margin-top:1.6vh; flex-wrap:wrap; justify-content:center; }
   .stat { background:var(--card); border:1px solid var(--line); border-radius:18px;
     padding:2.2vh 3vw; text-align:center; min-width:150px; box-shadow:var(--shadow); }
-  .stat .k { font-size:clamp(12px,1.2vw,15px); color:var(--muted); font-weight:600; }
+  .stat .k { font-size:clamp(11px,1.15vw,14px); color:var(--muted); font-weight:500; letter-spacing:.01em; }
   .stat .v { font-size:clamp(24px,3.2vw,42px); font-weight:800; margin-top:6px; letter-spacing:-.02em; }
   .stat .v.p { color:var(--brand); }
   .stat .v.g { color:var(--green); }
   .rewards { display:flex; flex-direction:column; gap:9px; margin-top:1.4vh; align-items:center; }
   .rw { background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:999px;
-    padding:11px 24px; font-size:clamp(14px,1.6vw,20px); font-weight:700; }
+    padding:10px 22px; font-size:clamp(13px,1.5vw,18px); font-weight:600; letter-spacing:-.01em; }
   .stamp-row { display:flex; gap:7px; margin-top:1.2vh; flex-wrap:wrap; justify-content:center; }
   .sd { width:26px; height:26px; border-radius:50%; background:var(--card2); border:1px solid var(--line); }
   .sd.on { background:var(--brand); border-color:var(--brand); }
 
-  .foot { flex:0 0 auto; text-align:center; color:var(--muted); font-size:12px; margin-top:1.6vh; }
+    .foot { flex:0 0 auto; text-align:center; color:#b9bfcc; font-size:11px; margin-top:1.6vh;
+    letter-spacing:.34em; font-weight:600; }
   @keyframes pop { from{ opacity:0; transform:scale(.96);} to{ opacity:1; transform:none;} }
   .screen > div { animation:pop .28s ease both; }
 </style>
@@ -137,12 +140,12 @@
   <div id="idle">
     <div class="mark">S</div>
     <div class="big">어서 오세요</div>
-    <div class="sub">천천히, 기분 좋은 한 잔</div>
+    <div class="sub">오늘도 천천히, 좋은 시간 되세요</div>
   </div>
 
   <!-- 주문 중 -->
   <div id="order" class="hidden">
-    <div class="ttl">주문 내역</div>
+    <div class="ttl">주문하신 메뉴</div>
     <div class="list" id="list"></div>
     <div class="sum">
       <div class="row disc hidden" id="discRow"><span class="k">세트 할인</span><span class="v" id="disc">-0원</span></div>
@@ -156,14 +159,15 @@
       <span class="lbl">결제 금액</span>
       <span class="amt" id="payAmt">0원</span>
     </div>
-    <div class="ask-sm">적립하실 <b>휴대폰 번호</b>를 눌러주세요</div>
+    <div class="ask-sm">휴대폰 번호를 입력해 주세요</div>
+    <div class="ask-sub">번호만 남기시면 포인트가 자동으로 쌓여요</div>
     <div class="phone-disp" id="phoneDisp"><span class="ph">010-0000-0000</span></div>
     <div class="pad" id="pad"></div>
     <div class="pad-act">
-      <button class="skip" id="skipBtn">적립 안 함</button>
+      <button class="skip" id="skipBtn">다음에 할게요</button>
       <button class="go" id="okBtn" disabled>확인</button>
     </div>
-    <div class="hint" id="payHint">번호는 적립에만 사용됩니다</div>
+    <div class="hint" id="payHint">적립 외의 용도로 사용하지 않습니다</div>
   </div>
 
   <!-- 회원 확인 (입력 후) -->
@@ -172,20 +176,20 @@
     <h1 id="gName"></h1>
     <div class="who" id="gInfo"></div>
     <div class="stats" id="gStats"></div>
-    <div class="ask" style="margin-top:1.6vh">직원에게 결제를 진행해 주세요</div>
+    <div class="ask" style="margin-top:1.6vh">이제 결제를 도와드릴게요</div>
   </div>
 
   <!-- 완료 -->
   <div id="done" class="hidden">
     <div class="check">✓</div>
-    <h1>결제 완료</h1>
+    <h1>감사합니다</h1>
     <div class="who" id="doneWho"></div>
     <div class="stats" id="doneStats"></div>
     <div class="rewards" id="doneRw"></div>
     <div class="stamp-row" id="doneStamps"></div>
   </div>
 
-  <div class="foot" id="foot">슬로우스텝 멤버십 · 방문할수록 혜택이 커집니다</div>
+  <div class="foot" id="foot">SLOW&nbsp;&nbsp;STEP</div>
 </div>
 
 <script>
@@ -228,17 +232,17 @@
   function renderDone(d){
     const m = d.member;
     if(m){
-      $("doneWho").textContent = `${m.name} 님, 감사합니다`;
+      $("doneWho").textContent = `${m.name} 님, 또 뵙겠습니다`;
       $("doneStats").innerHTML = `
         <div class="stat"><div class="k">이번 적립</div><div class="v p">+${(d.earned||0).toLocaleString("ko-KR")}P</div></div>
-        <div class="stat"><div class="k">보유 포인트</div><div class="v">${(m.points||0).toLocaleString("ko-KR")}P</div></div>
+        <div class="stat"><div class="k">모은 포인트</div><div class="v">${(m.points||0).toLocaleString("ko-KR")}P</div></div>
         <div class="stat"><div class="k">등급</div><div class="v g">${m.tier_display||m.tier||""}</div></div>`;
       $("doneRw").innerHTML = (d.rewards||[]).map(r=>`<div class="rw">${r.title} +${r.points}P</div>`).join("");
       const goal = m.stamp_goal || 10, on = m.stamps || 0;
       $("doneStamps").innerHTML = Array.from({length:goal},(_,i)=>
         `<span class="sd ${i<on?"on":""}"></span>`).join("");
     } else {
-      $("doneWho").textContent = "감사합니다";
+      $("doneWho").textContent = "안녕히 가세요";
       $("doneStats").innerHTML = `<div class="stat"><div class="k">결제 금액</div><div class="v">${won(d.net)}</div></div>`;
       $("doneRw").innerHTML = ""; $("doneStamps").innerHTML = "";
     }
@@ -260,7 +264,7 @@
   }
   function hint(msg, isErr){
     const h = $("payHint");
-    h.textContent = msg || "번호는 적립에만 사용됩니다";
+    h.textContent = msg || "적립 외의 용도로 사용하지 않습니다";
     h.className = "hint" + (isErr ? " err" : "");
   }
   function resetPad(){ buf = ""; paintPhone(); hint(""); }
@@ -275,7 +279,7 @@
     for(let i=1;i<=9;i++) mk(String(i), ()=>{ if(buf.length<11){ buf+=String(i); paintPhone(); } });
     mk("←", ()=>{ buf = buf.slice(0,-1); paintPhone(); });
     mk("0", ()=>{ if(buf.length<11){ buf+="0"; paintPhone(); } });
-    mk("전체지움", ()=>{ buf=""; paintPhone(); }, "sm");
+    mk("전체 지움", ()=>{ buf=""; paintPhone(); }, "sm");
   })();
 
   $("okBtn").onclick = ()=>{
@@ -288,9 +292,11 @@
   function renderGreet(m){
     $("gTier").textContent = m.tier_display || m.tier || "회원";
     $("gName").textContent = `${m.name} 님, 반갑습니다`;
-    $("gInfo").textContent = `방문 ${m.visit_count}회 · 스탬프 ${m.stamps}/${m.stamp_goal}`;
+    $("gInfo").textContent = m.visit_count > 0
+      ? `${m.visit_count}번 찾아주셨어요 · 스탬프 ${m.stamps}/${m.stamp_goal}`
+      : "첫 방문을 환영합니다";
     $("gStats").innerHTML = `
-      <div class="stat"><div class="k">보유 포인트</div><div class="v p">${(m.points||0).toLocaleString("ko-KR")}P</div></div>`;
+      <div class="stat"><div class="k">지금 쓸 수 있는 포인트</div><div class="v p">${(m.points||0).toLocaleString("ko-KR")}P</div></div>`;
     show("greet");
   }
 
@@ -299,10 +305,10 @@
     if(d.type === "cart")      renderOrder(d);
     else if(d.type === "pay")  { $("payAmt").textContent = won(d.total); resetPad(); show("pay"); }
     else if(d.type === "greet")   renderGreet(d.member);
-    else if(d.type === "guest_ok"){ show("greet"); $("gTier").textContent="비회원";
-      $("gName").textContent="결제를 진행해 주세요"; $("gInfo").textContent="";
+    else if(d.type === "guest_ok"){ show("greet"); $("gTier").textContent="적립 없이 결제";
+      $("gName").textContent="결제를 도와드릴게요"; $("gInfo").textContent="다음에 번호를 남겨주시면 적립해 드릴게요";
       $("gStats").innerHTML=""; }
-    else if(d.type === "lookup_fail"){ hint(d.message || "등록되지 않은 번호예요. 직원에게 문의해 주세요.", true); }
+    else if(d.type === "lookup_fail"){ hint(d.message || "처음 오셨군요. 직원이 도와드릴게요.", true); }
     else if(d.type === "done") renderDone(d);
     else if(d.type === "idle") show("idle");
   };
