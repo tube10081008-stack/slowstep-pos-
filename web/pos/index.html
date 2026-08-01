@@ -401,6 +401,8 @@
   const disp = ("BroadcastChannel" in window) ? new BroadcastChannel("slowstep-pos") : null;
   let lastState = { type:"idle" };
   function sendDisplay(msg){ lastState = msg; if(disp) disp.postMessage(msg); }
+  // 상태로 남기지 않는 일회성 신호(재전송·동기화로 되풀이되면 안 되는 것)
+  function sendEvent(msg){ if(disp) disp.postMessage(msg); }
   function cartSnapshot(){
     return {
       type: "cart",
@@ -439,8 +441,8 @@
     // 고객 화면이 열려 있는지 확인차 보내는 신호 → 현재 상태로 응답
     if(d.type === "hello") {
       // 주기적인 연결 확인 — 현재 상태만 알려주고, 입력 초기화는 시키지 않는다.
-      const sync = Object.assign({}, lastState); delete sync.reset;
-      disp.postMessage(sync); return;
+      // 상태에는 초기화 지시가 없으므로(일회성 이벤트로 분리) 재전송돼도 안전.
+      disp.postMessage(lastState); return;
     }
     // ── 손님이 고객화면(터치)에서 조작한 것 ──
     if(d.type === "phone_input"){        // 입력 중 — 직원 화면에 그대로 비춤
@@ -662,7 +664,7 @@
     orderId = newOrderId();
     member=null; phone=""; renderPhone();
     $("termAmt").textContent = won(finalTotal());
-    sendDisplay({ type:"pay", total: finalTotal(), reset:true });
+    sendDisplay({ type:"pay", total: finalTotal() });
     $("orderView").classList.add("hidden"); $("doneView").classList.add("hidden");
     $("payView").classList.remove("hidden");
     $("phoneStep").classList.remove("hidden"); $("confirmStep").classList.add("hidden");
@@ -671,7 +673,8 @@
     sendDisplay(Object.keys(cart).length ? cartSnapshot() : { type:"idle" }); }
   function resetPhone(){ member=null; phone=""; renderPhone();
     $("phoneStep").classList.remove("hidden"); $("confirmStep").classList.add("hidden");
-    sendDisplay({ type:"pay", total: finalTotal(), reset:true }); }
+    sendDisplay({ type:"pay", total: finalTotal() });
+    sendEvent({ type:"reset_input" }); }   // 직원이 명시적으로 다시 입력
 
   async function lookupMember(){
     if(phone.length<10) return;

@@ -300,7 +300,12 @@
     h.textContent = msg || "적립 외의 용도로 사용하지 않습니다";
     h.className = "hint" + (isErr ? " err" : "");
   }
-  function resetPad(){ buf = PREFIX; paintPhone(); hint(""); }
+  // 입력값은 손님이 누른 것 — 외부(POS) 신호로는 지우지 않는다.
+  // force=true 는 '결제 화면에 새로 진입' 또는 직원이 '다시 입력'을 누른 경우뿐.
+  function resetPad(force){
+    if(!force && buf.length > PREFIX.length) return;   // 입력 중이면 유지
+    buf = PREFIX; paintPhone(); hint("");
+  }
 
   (function buildPad(){
     const pad = $("pad");
@@ -350,10 +355,12 @@
       // 입력 중에는 절대 지우지 않는다. 결제 화면에 새로 들어올 때나
       // POS가 '다시 입력'을 눌렀을 때(reset)만 초기화한다.
       // (4초마다 오는 연결 확인 응답에 초기화되면 손님이 누르던 번호가 사라진다)
-      if($("pay").classList.contains("hidden") || d.reset) resetPad();
+      // 결제 화면에 처음 들어올 때만 초기화. 이미 떠 있으면(=입력 중) 손대지 않는다.
+      resetPad($("pay").classList.contains("hidden"));
       show("pay");
     }
     else if(d.type === "greet")   renderGreet(d.member);
+    else if(d.type === "reset_input"){ resetPad(true); show("pay"); }
     else if(d.type === "guest_ok"){ show("greet"); $("gTier").textContent="적립 없이 결제";
       $("gName").textContent="결제를 도와드릴게요"; $("gInfo").textContent="다음에 번호를 남겨주시면 적립해 드릴게요";
       $("gStats").innerHTML=""; }
