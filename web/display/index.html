@@ -22,9 +22,7 @@
 
   /* 상단 브랜드 */
   .brand { display:flex; align-items:center; gap:14px; flex:0 0 auto; }
-  .logo { width:44px; height:44px; border-radius:12px; color:#fff; font-weight:800; font-size:24px;
-    background:linear-gradient(135deg,#5b76ff,var(--brand)); display:flex; align-items:center;
-    justify-content:center; box-shadow:0 6px 16px rgba(59,91,255,.3); }
+  .logo { width:44px; height:auto; flex:0 0 auto; display:block; }
   .wm { font-weight:800; font-size:22px; letter-spacing:-.02em; }
   .wm small { display:block; font-size:12px; color:var(--muted); font-weight:500; margin-top:2px; }
   .link { margin-left:auto; font-size:11px; font-weight:600; padding:5px 12px; border-radius:999px;
@@ -36,9 +34,7 @@
   #idle { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; }
   #idle .big { font-size:clamp(34px,5.5vw,64px); font-weight:800; letter-spacing:-.03em; }
   #idle .sub { font-size:clamp(15px,1.7vw,21px); color:var(--muted); font-weight:500; letter-spacing:-.01em; }
-  #idle .mark { width:96px; height:96px; border-radius:26px; font-size:52px;
-    background:linear-gradient(135deg,#5b76ff,var(--brand)); color:#fff; font-weight:800;
-    display:flex; align-items:center; justify-content:center; box-shadow:0 14px 34px rgba(59,91,255,.32); }
+  #idle .mark { width:auto; height:min(42vh,340px); display:block; }
 
   /* ── 주문 화면 ── */
   #order { flex:1; display:flex; flex-direction:column; margin-top:2.4vh; min-height:0; }
@@ -138,18 +134,20 @@
   @keyframes pop { from{ opacity:0; transform:scale(.96);} to{ opacity:1; transform:none;} }
   .screen > div { animation:pop .28s ease both; }
 </style>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png" />
+<link rel="apple-touch-icon" href="../assets/favicon-180.png" />
 </head>
 <body>
 <div class="screen">
   <div class="brand">
-    <span class="logo">S</span>
+    <img class="logo" src="../assets/logo-mark.png" alt="슬로우스텝" />
     <div class="wm">Slowstep<small>슬로우스텝</small></div>
     <span class="link" id="link">연결 확인 중…</span>
   </div>
 
   <!-- 대기 -->
   <div id="idle">
-    <div class="mark">S</div>
+    <img class="mark" src="../assets/logo-lockup.png" alt="SLOW STEP · Roasting &amp; Baking" />
     <div class="big">어서 오세요</div>
     <div class="sub">오늘도 천천히, 좋은 시간 되세요</div>
   </div>

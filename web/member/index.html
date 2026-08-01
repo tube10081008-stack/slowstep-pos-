@@ -113,9 +113,7 @@
   /* ── 로고 · 인터랙션 ── */
   .topbrand { display:flex; align-items:center; justify-content:center; gap:10px; padding:2px 0 18px; }
   .brand { display:flex; align-items:center; gap:11px; }
-  .logo { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#5b76ff,var(--brand));
-    color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:19px;
-    flex:0 0 auto; box-shadow:0 4px 12px rgba(59,91,255,.3); }
+  .logo { width:38px; height:auto; flex:0 0 auto; display:block; }
   .wm { font-weight:800; font-size:19px; letter-spacing:-.01em; color:var(--txt); }
   .wm-sub { font-size:11px; color:var(--muted); display:block; margin-top:1px; font-weight:500; }
   @keyframes rise { from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none;} }
@@ -125,11 +123,13 @@
   button:not(:disabled):active { transform:translateY(1px); }
   .badge:hover { border-color:#d5dcff; }
 </style>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png" />
+<link rel="apple-touch-icon" href="../assets/favicon-180.png" />
 </head>
 <body>
 <div class="wrap">
   <div class="topbrand">
-    <span class="logo">S</span>
+    <img class="logo" src="../assets/logo-mark.png" alt="슬로우스텝" />
     <span class="wm">Slowstep</span>
   </div>
   <!-- 조회 폼 -->
