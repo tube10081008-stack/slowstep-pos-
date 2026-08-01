@@ -20,33 +20,54 @@ import qrcode.image.svg
 from django.core import signing
 
 TOKEN_SALT = "slowstep.member.qr"
-TOKEN_MAX_AGE = 60 * 60  # 1시간
+TOKEN_MAX_AGE = 60 * 60  # 1시간 — 화면에 떠 있는 QR용
+
+# 손님 기기(홈 화면에 추가한 앱)에 저장돼 계속 쓰이는 토큰.
+# QR 토큰과 소금을 분리해, 짧은 QR 토큰이 길게 쓰이는 일이 없도록 한다.
+DEVICE_SALT = "slowstep.member.device"
+DEVICE_MAX_AGE = 60 * 60 * 24 * 180  # 180일
 
 
 class MemberTokenError(Exception):
     """토큰이 위조됐거나 만료됨."""
 
 
-def _signer() -> signing.TimestampSigner:
-    return signing.TimestampSigner(salt=TOKEN_SALT)
+def _signer(salt: str = TOKEN_SALT) -> signing.TimestampSigner:
+    return signing.TimestampSigner(salt=salt)
 
 
 def issue_member_token(member) -> str:
+    """QR에 담는 단기 토큰."""
     return _signer().sign(str(member.pk))
 
 
+def issue_device_token(member) -> str:
+    """손님 기기에 저장해 두는 장기 토큰(설치형 앱이 매번 조회할 때 사용)."""
+    return _signer(DEVICE_SALT).sign(str(member.pk))
+
+
 def resolve_member_token(token: str):
-    """토큰 → Member. 실패 시 MemberTokenError."""
+    """QR·기기 토큰 모두 허용. 실패 시 MemberTokenError."""
     from .models import Member
 
     if not token:
         raise MemberTokenError("링크가 올바르지 않습니다.")
-    try:
-        raw = _signer().unsign(token, max_age=TOKEN_MAX_AGE)
-    except signing.SignatureExpired:
-        raise MemberTokenError("링크 유효시간이 지났습니다. 연락처로 조회해 주세요.")
-    except signing.BadSignature:
-        raise MemberTokenError("링크가 올바르지 않습니다.")
+    expired = False
+    raw = None
+    for salt, age in ((TOKEN_SALT, TOKEN_MAX_AGE), (DEVICE_SALT, DEVICE_MAX_AGE)):
+        try:
+            raw = _signer(salt).unsign(token, max_age=age)
+            break
+        except signing.SignatureExpired:
+            expired = True
+        except signing.BadSignature:
+            continue
+    if raw is None:
+        raise MemberTokenError(
+            "링크 유효시간이 지났습니다. 연락처로 조회해 주세요."
+            if expired
+            else "링크가 올바르지 않습니다."
+        )
     member = Member.objects.filter(pk=raw).select_related("store").first()
     if member is None:
         raise MemberTokenError("회원을 찾을 수 없습니다.")

@@ -761,6 +761,33 @@ class MemberQrTests(TestCase):
         self.assertEqual(res.status_code, 404)
         self.assertIn("유효시간", res.json()["detail"])
 
+    def test_by_token_returns_device_token_for_pwa(self):
+        """설치형 앱이 다음부터 스스로 열 수 있도록 장기 토큰을 함께 준다."""
+        from .member_qr import issue_member_token
+
+        res = self.client_class().get(
+            f"/api/v1/members/by-token?t={issue_member_token(self.member)}"
+        )
+        dev = res.json()["device_token"]
+        self.assertTrue(dev)
+        # 그 토큰만으로 재조회가 되어야 한다(주소에 아무것도 없이 앱 실행)
+        again = self.client_class().get(f"/api/v1/members/by-token?t={dev}")
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.json()["id"], self.member.id)
+        # 기기에 남는 값에 연락처가 들어 있으면 안 된다
+        self.assertNotIn("01012349999", dev)
+
+    def test_qr_token_does_not_outlive_its_window(self):
+        """짧은 QR 토큰이 기기 토큰 취급을 받아 오래 쓰이면 안 된다."""
+        from unittest import mock
+
+        from .member_qr import issue_member_token
+
+        token = issue_member_token(self.member)
+        with mock.patch("membership.member_qr.TOKEN_MAX_AGE", -1):
+            res = self.client_class().get(f"/api/v1/members/by-token?t={token}")
+        self.assertEqual(res.status_code, 404)
+
     def test_token_of_other_member_does_not_leak(self):
         from .member_qr import issue_member_token
 

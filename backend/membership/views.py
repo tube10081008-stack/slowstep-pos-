@@ -34,7 +34,13 @@ from .auth import (
 )
 from .ai_order import OrderParseError, parse_order
 from .imports import CsvImportError, import_members_csv
-from .member_qr import MemberTokenError, member_url, qr_svg, resolve_member_token
+from .member_qr import (
+    MemberTokenError,
+    issue_device_token,
+    member_url,
+    qr_svg,
+    resolve_member_token,
+)
 from .margins import margin_summary, menu_item_margins, to_supply
 from .profile import build_member_dashboard
 from .services import CheckoutError, build_quote, cancel_transaction, checkout
@@ -315,7 +321,10 @@ class MemberViewSet(viewsets.ModelViewSet):
             member = resolve_member_token(request.query_params.get("t", ""))
         except MemberTokenError as exc:
             return Response({"detail": str(exc)}, status=404)
-        return Response(MemberSerializer(member).data)
+        data = MemberSerializer(member).data
+        # 홈 화면에 추가(PWA)한 기기가 다음부터 스스로 열 수 있도록 장기 토큰을 함께 준다.
+        data["device_token"] = issue_device_token(member)
+        return Response(data)
 
     @action(detail=True, methods=["get"])
     def qr(self, request, pk=None):

@@ -119,12 +119,28 @@
   @keyframes rise { from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none;} }
   .card, .hero { animation:rise .4s ease both; }
   button, .lb-row, .badge, .stamp { transition:all .16s ease; }
+  /* 홈 화면에 추가 배너 */
+  .install { position:fixed; left:12px; right:12px; bottom:12px; z-index:20;
+    background:#fff; border:1px solid var(--line); border-radius:16px; padding:12px 14px;
+    display:flex; align-items:center; gap:12px; box-shadow:0 8px 28px rgba(16,24,40,.16); }
+  .install.hidden { display:none; }
+  .install img { width:40px; height:40px; border-radius:10px; border:1px solid var(--line); }
+  .install .it { flex:1; min-width:0; }
+  .install .it b { display:block; font-size:14px; }
+  .install .it span { display:block; font-size:12px; color:var(--muted); margin-top:2px; line-height:1.4; }
+  .install button { border:0; border-radius:10px; padding:10px 16px; font-weight:700;
+    background:var(--brand); color:#fff; font-size:14px; cursor:pointer; flex:0 0 auto; }
+  .install button.x { background:transparent; color:var(--muted); padding:6px 4px; font-size:15px; }
   button:not(:disabled):hover { filter:brightness(1.05); box-shadow:0 6px 16px rgba(59,91,255,.22); }
   button:not(:disabled):active { transform:translateY(1px); }
   .badge:hover { border-color:#d5dcff; }
 </style>
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png" />
 <link rel="apple-touch-icon" href="../assets/favicon-180.png" />
+<link rel="manifest" href="./manifest.json" />
+<meta name="theme-color" content="#3b5bff" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="슬로우스텝" />
 </head>
 <body>
 <div class="wrap">
@@ -216,6 +232,17 @@
 
     <p class="muted center">결제 시 QR(연락처)을 제시하면 자동으로 적립됩니다.</p>
   </div>
+</div>
+
+<!-- 홈 화면에 추가 안내 -->
+<div class="install hidden" id="install">
+  <img src="../assets/icon-192.png" alt="" />
+  <div class="it">
+    <b>홈 화면에 추가하기</b>
+    <span id="installMsg">앱처럼 한 번에 열어 적립을 확인하세요</span>
+  </div>
+  <button id="installBtn">추가</button>
+  <button class="x" id="installClose" aria-label="닫기">✕</button>
 </div>
 
 <script>
@@ -331,20 +358,77 @@
     }).join("");
   }
 
-  // QR로 들어오면 ?t=토큰, 직접 조회면 ?phone=번호
-  async function loadByToken(t){
+  // ── 기기 기억 ──
+  // QR로 처음 들어오면 서버가 장기 토큰을 함께 주는데, 그걸 저장해 두면
+  // 홈 화면에 추가한 뒤로는 주소에 아무것도 없어도 바로 내 화면이 열린다.
+  // (연락처가 아니라 서명 토큰이라 기기에 번호가 남지 않는다)
+  const DEV_KEY = "slowstep.member.device";
+  const saveDevice = (t) => { try { localStorage.setItem(DEV_KEY, t); } catch(e){} };
+  const readDevice = () => { try { return localStorage.getItem(DEV_KEY) || ""; } catch(e){ return ""; } };
+  function forgetDevice(){ try { localStorage.removeItem(DEV_KEY); } catch(e){} location.search = ""; }
+
+  async function loadByToken(t, silent){
     try {
       const m = await api("/api/v1/members/by-token?t=" + encodeURIComponent(t));
+      if(m.device_token) saveDevice(m.device_token);
       render(await api("/api/v1/members/" + m.id + "/dashboard"));
+      return true;
     } catch(e){
-      $("err").innerHTML = "❌ " + e.message +
-        '<div class="muted" style="margin-top:8px">아래에 연락처를 입력해 조회하실 수 있어요.</div>';
+      if(!silent){
+        $("err").innerHTML = "❌ " + e.message +
+          '<div class="muted" style="margin-top:8px">아래에 연락처를 입력해 조회하실 수 있어요.</div>';
+      }
+      return false;
     }
   }
+
   const params = new URLSearchParams(location.search);
   const token = params.get("t"), phone = params.get("phone");
-  if(token) loadByToken(token);
-  else if(phone) load(phone);
+  (async () => {
+    if(token){ await loadByToken(token); }
+    else if(phone){ await load(phone); }
+    else if(readDevice()){ await loadByToken(readDevice(), true); }  // 설치한 앱으로 재방문
+  })();
+
+  // ── PWA: 서비스워커 + 홈 화면에 추가 ──
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(()=>{}));
+  }
+  const standalone = window.matchMedia("(display-mode: standalone)").matches
+    || window.navigator.standalone === true;
+  const DISMISS = "slowstep.install.dismissed";
+  let deferredPrompt = null;
+
+  function showInstall(msg, withButton){
+    if(standalone) return;                                   // 이미 앱으로 열림
+    try { if(localStorage.getItem(DISMISS)) return; } catch(e){}
+    $("installMsg").textContent = msg;
+    $("installBtn").style.display = withButton ? "" : "none";
+    $("install").classList.remove("hidden");
+  }
+  $("installClose").onclick = () => {
+    $("install").classList.add("hidden");
+    try { localStorage.setItem(DISMISS, "1"); } catch(e){}
+  };
+  $("installBtn").onclick = async () => {
+    if(!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    $("install").classList.add("hidden");
+  };
+
+  // 안드로이드·크롬: 설치 가능 신호를 받으면 버튼을 보여준다
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault(); deferredPrompt = e;
+    showInstall("앱처럼 한 번에 열어 적립을 확인하세요", true);
+  });
+  window.addEventListener("appinstalled", () => $("install").classList.add("hidden"));
+
+  // iOS 사파리는 설치 프롬프트가 없어 방법을 알려준다
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isSafari = isIOS && !/crios|fxios|edgios/i.test(navigator.userAgent);
+  if(isSafari) setTimeout(() => showInstall("공유 버튼 → '홈 화면에 추가'를 누르세요", false), 1800);
 </script>
 </body>
 </html>
