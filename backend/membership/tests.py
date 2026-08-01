@@ -634,6 +634,79 @@ class AiOrderParseTests(TestCase):
         self.assertEqual(res.status_code, 400)
 
 
+class NicknameTests(TestCase):
+    """실명 대신 '행동 + 동물' 닉네임 자동 부여."""
+
+    def setUp(self):
+        self.store = make_store()
+        authenticate(self.client)
+
+    def test_generated_format(self):
+        from .nickname import ACTIONS, ANIMALS, generate_nickname
+
+        name = generate_nickname(existing=set())
+        action, animal = name.split(" ", 1)
+        self.assertIn(action, ACTIONS)
+        self.assertIn(animal, ANIMALS)
+
+    def test_avoids_existing_names(self):
+        from .nickname import ACTIONS, ANIMALS, generate_nickname
+
+        # 한 조합만 남기고 전부 사용 중이면 그 하나가 나와야 한다
+        everything = {f"{a} {b}" for a in ACTIONS for b in ANIMALS}
+        target = f"{ACTIONS[0]} {ANIMALS[0]}"
+        everything.remove(target)
+        self.assertEqual(generate_nickname(existing=everything), target)
+
+    def test_exhausted_pool_appends_number(self):
+        from .nickname import ACTIONS, ANIMALS, generate_nickname
+
+        everything = {f"{a} {b}" for a in ACTIONS for b in ANIMALS}
+        name = generate_nickname(existing=everything)
+        self.assertNotIn(name, everything)
+        self.assertTrue(name.rstrip("0123456789 ") != name)  # 숫자 접미사
+
+    def test_signup_without_name_gets_nickname(self):
+        res = self.client.post(
+            "/api/v1/members",
+            data={"phone": "01044443333", "marketing_opt_in": True},
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 201)
+        name = res.json()["name"]
+        self.assertIn(" ", name)              # "행동 동물"
+        self.assertEqual(Member.objects.get(phone="01044443333").name, name)
+
+    def test_explicit_name_still_respected(self):
+        # 이관된 기존 고객처럼 이름이 주어지면 그대로 쓴다
+        res = self.client.post(
+            "/api/v1/members",
+            data={"phone": "01044445555", "name": "김단골"},
+            content_type="application/json",
+        )
+        self.assertEqual(res.json()["name"], "김단골")
+
+    def test_signups_do_not_collide(self):
+        names = set()
+        for i in range(25):
+            res = self.client.post(
+                "/api/v1/members",
+                data={"phone": f"0105555{i:04d}"},
+                content_type="application/json",
+            )
+            names.add(res.json()["name"])
+        self.assertEqual(len(names), 25)   # 25명 모두 서로 다른 닉네임
+
+    def test_csv_import_blank_name_gets_nickname(self):
+        from .imports import import_members_csv
+
+        r = import_members_csv(csv_text="이름,연락처\n,01066667777\n")
+        self.assertEqual(r["created"], 1)
+        name = Member.objects.get(phone="01066667777").name
+        self.assertIn(" ", name)
+        self.assertNotIn("고객", name)
+
+
 class HealthEndpointTests(TestCase):
     def test_health_reports_persistent_storage(self):
         res = self.client.get("/api/v1/health")

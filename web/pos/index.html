@@ -678,10 +678,10 @@
       // 미등록 → 손님 화면에 안내하고, 가입 여부는 직원이 자기 화면에서 결정
       sendDisplay({ type:"lookup_fail" });
       if(confirm("미등록 번호입니다. 신규 회원으로 가입하고 적립할까요?")){
-        const name = prompt("고객 이름을 입력하세요") || "신규회원";
+        // 실명은 받지 않는다 — 서버가 '행동 + 동물' 닉네임을 자동으로 붙여준다.
         try { member = await api("/api/v1/members", { method:"POST",
-          body: JSON.stringify({ phone, name, marketing_opt_in:true }) });
-          toast("가입 완료 🎉"); showConfirm();
+          body: JSON.stringify({ phone, marketing_opt_in:true }) });
+          toast(`가입 완료 · ${member.name}`); showConfirm();
         } catch(err){ toast(err.message); }
       }
     }

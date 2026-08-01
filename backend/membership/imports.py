@@ -181,6 +181,8 @@ def import_members_csv(
     results: list[dict] = []
     to_create: list[dict] = []
     seen: set[str] = set()
+    # 닉네임 자동 부여 시 기존 회원·같은 파일 내 이름과 겹치지 않게 추적
+    known_names: set[str] = set(Member.objects.values_list("name", flat=True))
 
     for row, phone in normalized:
         name = row.get("name", "").strip()
@@ -200,7 +202,11 @@ def import_members_csv(
         seen.add(phone)
 
         if not name:
-            name = f"고객{phone[-4:]}"  # 이름 없는 행도 이관은 가능하게
+            # 이름이 비어 있으면 닉네임을 부여(이관 중 중복되지 않게 seen_names 관리)
+            from .nickname import generate_nickname
+
+            name = generate_nickname(existing=known_names)
+            known_names.add(name)
             entry["name"] = name
         data = {
             "phone": phone,

@@ -125,8 +125,13 @@
   .rw { background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:999px;
     padding:10px 22px; font-size:clamp(13px,1.5vw,18px); font-weight:600; letter-spacing:-.01em; }
   .stamp-row { display:flex; gap:7px; margin-top:1.2vh; flex-wrap:wrap; justify-content:center; }
-  .sd { width:26px; height:26px; border-radius:50%; background:var(--card2); border:1px solid var(--line); }
-  .sd.on { background:var(--brand); border-color:var(--brand); }
+  .sd { width:clamp(30px,3.2vw,42px); height:clamp(30px,3.2vw,42px); color:#cfd5e1; }
+  .sd svg { width:100%; height:100%; display:block; }
+  .sd .cup-fill { fill:transparent; }
+  .sd .steam { opacity:0; }
+  .sd.on { color:var(--brand); }
+  .sd.on .cup-fill { fill:var(--brand-soft); }
+  .sd.on .steam { opacity:.85; }
 
     .foot { flex:0 0 auto; text-align:center; color:#b9bfcc; font-size:11px; margin-top:1.6vh;
     letter-spacing:.34em; font-weight:600; }
@@ -207,6 +212,7 @@
    * 같은 PC·같은 브라우저의 다른 창에서만 신호가 오므로 외부 노출 위험이 없다.
    */
   const $ = (id) => document.getElementById(id);
+  const CUP = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="cup-fill" d="M4.5 7.5h11v5.5a5.5 5.5 0 0 1-11 0V7.5Z"/><path d="M15.5 9h1.3a2.6 2.6 0 0 1 0 5.2h-1.3"/><path d="M3.5 19.5h13"/><path class="steam" d="M8.5 4.6c.5-.7.2-1.3 0-1.8M12 4.6c.5-.7.2-1.3 0-1.8"/></svg>`;
   const won = (n) => (n||0).toLocaleString("ko-KR") + "원";
   const VIEWS = ["idle","order","pay","greet","done"];
 
@@ -246,7 +252,7 @@
       $("doneRw").innerHTML = (d.rewards||[]).map(r=>`<div class="rw">${r.title} +${r.points}P</div>`).join("");
       const goal = m.stamp_goal || 10, on = m.stamps || 0;
       $("doneStamps").innerHTML = Array.from({length:goal},(_,i)=>
-        `<span class="sd ${i<on?"on":""}"></span>`).join("");
+        `<span class="sd ${i<on?"on":""}">${CUP}</span>`).join("");
     } else {
       $("doneWho").textContent = "안녕히 가세요";
       $("doneStats").innerHTML = `<div class="stat"><div class="k">결제 금액</div><div class="v">${won(d.net)}</div></div>`;

@@ -43,11 +43,13 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 404 { "detail": "회원을 찾을 수 없습니다." }
 ```
 
-### `POST /api/v1/members`
-회원 가입(이름·연락처).
+### `POST /api/v1/members`  🔒
+회원 가입. **이름은 선택** — 비우면 서버가 '행동 + 동물' 닉네임을 자동 부여한다
+(예: `느긋한 수달`). 연락처만으로 식별되므로 실명은 수집하지 않는 것이 기본이며,
+개인정보 최소 수집 원칙에 맞춘 설계다. 이관된 기존 고객처럼 이름을 주면 그대로 쓴다.
 ```json
-요청 { "phone": "01012345678", "name": "김슬로우", "marketing_opt_in": true }
-201  { "id": 1, "phone": "...", "name": "...", "points": 0, "tier": "BRONZE", ... }
+요청 { "phone": "01012345678", "marketing_opt_in": true }
+201  { "id": 1, "phone": "...", "name": "느긋한 수달", "points": 0, "tier": "BRONZE", ... }
 ```
 
 ### `POST /api/v1/members/import`
