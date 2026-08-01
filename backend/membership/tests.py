@@ -745,6 +745,55 @@ class MemberQrTests(TestCase):
         self.assertEqual(res.json()["name"], "느긋한 수달")
 
 
+class DeploymentDepsTests(TestCase):
+    """
+    배포 의존성 목록이 어긋나는 사고 방지.
+
+    Vercel은 **저장소 루트의 requirements.txt** 를 설치한다. backend/ 쪽에만
+    패키지를 추가하면 배포에서 ImportError가 나고, 그 임포트가 views 체인에
+    걸려 있으면 API 전체가 500이 된다(실제로 qrcode 누락으로 발생).
+    """
+
+    def _names(self, path):
+        import re
+        from pathlib import Path
+
+        names = set()
+        for line in Path(path).read_text(encoding="utf-8").splitlines():
+            line = line.split("#", 1)[0].strip()
+            if not line or line.startswith("-"):
+                continue
+            names.add(re.split(r"[<>=\[]", line, 1)[0].strip().lower())
+        return names
+
+    def test_root_requirements_cover_backend(self):
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[2]
+        backend_deps = self._names(root / "backend" / "requirements.txt")
+        root_deps = self._names(root / "requirements.txt")
+        missing = backend_deps - root_deps
+        self.assertEqual(
+            missing,
+            set(),
+            f"루트 requirements.txt에 빠진 배포 의존성: {sorted(missing)} "
+            "— Vercel이 설치하지 못해 배포에서 500이 납니다.",
+        )
+
+    def test_qr_endpoint_degrades_without_library(self):
+        """QR 라이브러리가 없어도 나머지 API는 살아 있어야 한다."""
+        from unittest import mock
+
+        make_store()
+        with mock.patch("membership.member_qr.QR_AVAILABLE", False):
+            res = self.client.get("/api/v1/member-qr")
+            self.assertEqual(res.status_code, 503)
+            self.assertIn("/member/", res.json()["url"])   # 주소는 여전히 안내
+            # 결제·조회 경로는 정상
+            self.assertEqual(self.client.get("/api/v1/menu").status_code, 200)
+            self.assertEqual(self.client.get("/api/v1/health").status_code, 200)
+
+
 class HealthEndpointTests(TestCase):
     def test_health_reports_persistent_storage(self):
         res = self.client.get("/api/v1/health")

@@ -34,7 +34,7 @@ from .auth import (
 )
 from .ai_order import OrderParseError, parse_order
 from .imports import CsvImportError, import_members_csv
-from .member_qr import member_url, qr_svg
+from .member_qr import QrUnavailable, member_url, qr_svg
 from .margins import margin_summary, menu_item_margins, to_supply
 from .profile import build_member_dashboard
 from .services import CheckoutError, build_quote, cancel_transaction, checkout
@@ -224,7 +224,12 @@ class MemberQrView(APIView):
 
     def get(self, request):
         url = member_url(request.build_absolute_uri("/"))
-        return Response({"url": url, "svg": qr_svg(url)})
+        try:
+            svg = qr_svg(url)
+        except QrUnavailable as exc:
+            # QR만 못 그릴 뿐, 주소는 알려준다(직접 입력·인쇄로 대체 가능).
+            return Response({"url": url, "detail": str(exc)}, status=503)
+        return Response({"url": url, "svg": svg})
 
 
 class MarginView(APIView):

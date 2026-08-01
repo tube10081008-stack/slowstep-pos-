@@ -12,8 +12,21 @@ from __future__ import annotations
 
 import io
 
-import qrcode
-import qrcode.image.svg
+# QR은 부가 기능이다. 이 라이브러리가 없다고 해서 주문·결제까지 멈추면 안 되므로
+# 임포트 실패를 앱 전체로 번지게 하지 않는다(실제로 배포 의존성 목록 누락으로
+# API 전체가 500이 된 적이 있다). 없으면 QR 요청만 503으로 답한다.
+try:
+    import qrcode
+    import qrcode.image.svg
+
+    QR_AVAILABLE = True
+except ImportError:  # pragma: no cover - 의존성 누락 시에만
+    qrcode = None
+    QR_AVAILABLE = False
+
+
+class QrUnavailable(Exception):
+    """QR 라이브러리(qrcode) 미설치."""
 
 
 def member_url(base: str) -> str:
@@ -26,6 +39,8 @@ def qr_svg(data: str, box_size: int = 10, border: int = 2) -> str:
     QR을 SVG 문자열로. 이미지 요청 없이 화면에 바로 넣을 수 있어,
     고객 화면이 서버를 호출하지 않아도 된다(POS가 받아 전달).
     """
+    if not QR_AVAILABLE:
+        raise QrUnavailable("QR 생성 라이브러리(qrcode)가 설치되지 않았습니다.")
     q = qrcode.QRCode(
         error_correction=qrcode.constants.ERROR_CORRECT_M,
         box_size=box_size,
