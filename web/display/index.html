@@ -73,7 +73,8 @@
   .phone-disp { font-size:clamp(28px,4.4vw,54px); font-weight:800; letter-spacing:.06em;
     background:var(--card); border:2px solid var(--line); border-radius:16px;
     padding:1.5vh 3vw; min-width:min(88vw,520px); text-align:center; box-shadow:var(--shadow); }
-  .phone-disp .ph { color:#c8cdd8; }
+  .phone-disp .ph { color:#d4d9e3; }
+  .phone-disp .sep { color:#d4d9e3; margin:0 .1em; }
   /* 터치 대상은 크게 — 손님이 서서 누른다 */
   .pad { display:grid; grid-template-columns:repeat(3,1fr); gap:1.1vh 1.1vw;
     width:min(88vw,520px); margin-top:.6vh; }
@@ -252,12 +253,17 @@
   const ch = new BroadcastChannel("slowstep-pos");
 
   // ── 손님이 직접 누르는 연락처 입력 ──
-  let buf = "";
-  function fmt(p){
-    return p.replace(/(\d{3})(\d{0,4})(\d{0,4})/, (m,a,b,c)=>[a,b,c].filter(Boolean).join("-"));
-  }
+  const PREFIX = "010";   // 손님이 뒷자리만 누르면 되도록 미리 채워둔다
+  const LEN = 11;
+  let buf = PREFIX;
   function paintPhone(){
-    $("phoneDisp").innerHTML = buf ? fmt(buf) : '<span class="ph">010-0000-0000</span>';
+    // 남은 자리를 회색 자리표시로 보여줘 몇 자리 더 눌러야 하는지 알 수 있게
+    let html = "";
+    for(let i=0;i<LEN;i++){
+      if(i===3 || i===7) html += '<span class="sep">-</span>';
+      html += i < buf.length ? buf[i] : '<span class="ph">·</span>';
+    }
+    $("phoneDisp").innerHTML = html;
     $("okBtn").disabled = buf.length < 10;
     // 직원 화면에도 입력 상황을 그대로 비춰준다(손님이 헤매면 도와줄 수 있게)
     ch.postMessage({ type:"phone_input", phone: buf });
@@ -267,7 +273,7 @@
     h.textContent = msg || "적립 외의 용도로 사용하지 않습니다";
     h.className = "hint" + (isErr ? " err" : "");
   }
-  function resetPad(){ buf = ""; paintPhone(); hint(""); }
+  function resetPad(){ buf = PREFIX; paintPhone(); hint(""); }
 
   (function buildPad(){
     const pad = $("pad");
@@ -279,7 +285,7 @@
     for(let i=1;i<=9;i++) mk(String(i), ()=>{ if(buf.length<11){ buf+=String(i); paintPhone(); } });
     mk("←", ()=>{ buf = buf.slice(0,-1); paintPhone(); });
     mk("0", ()=>{ if(buf.length<11){ buf+="0"; paintPhone(); } });
-    mk("전체 지움", ()=>{ buf=""; paintPhone(); }, "sm");
+    mk("전체 지움", ()=>{ buf=PREFIX; paintPhone(); }, "sm");
   })();
 
   $("okBtn").onclick = ()=>{
