@@ -80,9 +80,14 @@
 
   /* 스탬프 */
   .stamps { display:grid; grid-template-columns:repeat(5,1fr); gap:9px; }
-  .stamp { aspect-ratio:1; border-radius:50%; border:1.5px solid var(--line); display:flex; align-items:center;
-    justify-content:center; font-size:15px; color:var(--muted); font-weight:600; }
-  .stamp.on { background:var(--brand-soft); border:1.5px solid var(--brand); color:var(--brand); }
+  .stamp { aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+    color:#cfd5e1; padding:4px; }
+  .stamp svg { width:100%; height:100%; display:block; }
+  .stamp .cup-fill { fill:transparent; }
+  .stamp .steam { opacity:0; }
+  .stamp.on { color:var(--brand); }
+  .stamp.on .cup-fill { fill:var(--brand-soft); }
+  .stamp.on .steam { opacity:.85; }
 
   /* 타임라인 */
   .tl { position:relative; padding-left:22px; }
@@ -108,23 +113,73 @@
   /* ── 로고 · 인터랙션 ── */
   .topbrand { display:flex; align-items:center; justify-content:center; gap:10px; padding:2px 0 18px; }
   .brand { display:flex; align-items:center; gap:11px; }
-  .logo { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,#5b76ff,var(--brand));
-    color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:19px;
-    flex:0 0 auto; box-shadow:0 4px 12px rgba(59,91,255,.3); }
+  .logo { width:38px; height:auto; flex:0 0 auto; display:block; }
   .wm { font-weight:800; font-size:19px; letter-spacing:-.01em; color:var(--txt); }
   .wm-sub { font-size:11px; color:var(--muted); display:block; margin-top:1px; font-weight:500; }
   @keyframes rise { from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none;} }
   .card, .hero { animation:rise .4s ease both; }
   button, .lb-row, .badge, .stamp { transition:all .16s ease; }
+  /* 스트릭 */
+  .streak { display:flex; align-items:center; gap:14px; }
+  .s-fire { font-size:34px; line-height:1; filter:grayscale(1); opacity:.35; }
+  .streak.on .s-fire { filter:none; opacity:1; }
+  .s-txt b { display:block; font-size:17px; font-weight:800; }
+  .s-txt span { display:block; font-size:12px; color:var(--muted); margin-top:3px; }
+  /* 취향 */
+  .fav { display:flex; align-items:baseline; gap:8px; margin-bottom:14px; }
+  .fav-k { font-size:11px; color:var(--muted); border:1px solid var(--line);
+    padding:2px 8px; border-radius:999px; }
+  .fav b { font-size:19px; font-weight:800; }
+  .fav-q { font-size:13px; color:var(--brand); font-weight:700; }
+  .catbar { display:flex; height:12px; border-radius:6px; overflow:hidden; background:var(--card2); }
+  .catbar i { display:block; height:100%; }
+  .catleg { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; font-size:12px; color:var(--muted); }
+  .catleg span i { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
+  /* 컬렉션 */
+  .coll { margin-bottom:12px; }
+  .coll:last-child { margin-bottom:0; }
+  .coll .top { display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; }
+  .coll .top b { font-weight:700; }
+  .coll .bar { height:7px; background:var(--card2); border-radius:4px; overflow:hidden; }
+  .coll .bar i { display:block; height:100%; background:var(--brand); }
+  .coll .next { font-size:11px; color:var(--muted); margin-top:4px; }
+  /* 초대 */
+  .refcode { font-size:26px; font-weight:800; letter-spacing:.16em; text-align:center;
+    background:var(--card2); border:1px dashed var(--line); border-radius:12px; padding:14px; }
+  /* 이달의 단골 */
+  .hof { display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line); }
+  .hof:last-child { border-bottom:0; }
+  .hof .r { font-size:16px; width:28px; text-align:center; }
+  .hof .n { flex:1; font-weight:600; font-size:14px; }
+  .hof .v { font-size:13px; color:var(--muted); }
+  .hof.me { background:var(--brand-soft); border-radius:8px; padding-left:8px; padding-right:8px; }
+  /* 홈 화면에 추가 배너 */
+  .install { position:fixed; left:12px; right:12px; bottom:12px; z-index:20;
+    background:#fff; border:1px solid var(--line); border-radius:16px; padding:12px 14px;
+    display:flex; align-items:center; gap:12px; box-shadow:0 8px 28px rgba(16,24,40,.16); }
+  .install.hidden { display:none; }
+  .install img { width:40px; height:40px; border-radius:10px; border:1px solid var(--line); }
+  .install .it { flex:1; min-width:0; }
+  .install .it b { display:block; font-size:14px; }
+  .install .it span { display:block; font-size:12px; color:var(--muted); margin-top:2px; line-height:1.4; }
+  .install button { border:0; border-radius:10px; padding:10px 16px; font-weight:700;
+    background:var(--brand); color:#fff; font-size:14px; cursor:pointer; flex:0 0 auto; }
+  .install button.x { background:transparent; color:var(--muted); padding:6px 4px; font-size:15px; }
   button:not(:disabled):hover { filter:brightness(1.05); box-shadow:0 6px 16px rgba(59,91,255,.22); }
   button:not(:disabled):active { transform:translateY(1px); }
   .badge:hover { border-color:#d5dcff; }
 </style>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png" />
+<link rel="apple-touch-icon" href="../assets/favicon-180.png" />
+<link rel="manifest" href="./manifest.json" />
+<meta name="theme-color" content="#3b5bff" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="슬로우스텝" />
 </head>
 <body>
 <div class="wrap">
   <div class="topbrand">
-    <span class="logo">S</span>
+    <img class="logo" src="../assets/logo-mark.png" alt="슬로우스텝" />
     <span class="wm">Slowstep</span>
   </div>
   <!-- 조회 폼 -->
@@ -197,6 +252,49 @@
       <p class="muted" style="margin-top:10px;" id="stampHint"></p>
     </div>
 
+    <!-- 연속 방문 스트릭 -->
+    <div class="card streak" id="streakCard" style="display:none">
+      <div class="s-fire" id="sFire">🔥</div>
+      <div class="s-txt"><b id="sWeeks"></b><span id="sHint"></span></div>
+    </div>
+
+    <!-- 취향 프로필 -->
+    <div class="card" id="tasteCard" style="display:none">
+      <h3>내 취향</h3>
+      <div class="fav"><span class="fav-k">최애</span>
+        <b id="favName"></b><span class="fav-q" id="favQty"></span></div>
+      <div class="catbar" id="catBar"></div>
+      <div class="catleg" id="catLeg"></div>
+    </div>
+
+    <!-- 메뉴 도장깨기 -->
+    <div class="card" id="collCard" style="display:none">
+      <h3>메뉴 도장깨기 <span class="muted" id="collSum"></span></h3>
+      <div id="collList"></div>
+    </div>
+
+    <!-- 친구 초대 -->
+    <div class="card" id="refCard" style="display:none">
+      <h3>친구 초대</h3>
+      <p class="muted" id="refDesc"></p>
+      <div class="refcode" id="refCode"></div>
+      <div id="refInput" style="margin-top:14px;display:none">
+        <label class="muted" style="font-size:12px">친구 코드가 있다면</label>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <input id="refIn" placeholder="예: 7K2M9Q" maxlength="8"
+                 style="text-transform:uppercase" />
+          <button class="go" style="flex:0 0 92px" onclick="useReferral()">적용</button>
+        </div>
+      </div>
+      <p class="muted" id="refMsg" style="margin-top:10px"></p>
+    </div>
+
+    <!-- 이달의 단골 -->
+    <div class="card" id="hofCard" style="display:none">
+      <h3>이달의 단골</h3>
+      <div id="hofList"></div>
+    </div>
+
     <!-- 방문 기록 타임라인 -->
     <div class="card">
       <h3>방문 기록</h3>
@@ -209,18 +307,31 @@
       <div id="missions"></div>
     </div>
 
-    <p class="muted center">결제 시 QR(연락처)을 제시하면 자동으로 적립됩니다.</p>
+    <p class="muted center">결제 시 연락처를 알려주시면 자동으로 적립됩니다.<br/>
+      <a href="#" onclick="forgetMine();return false" style="color:var(--muted)">다른 번호로 조회</a></p>
   </div>
+</div>
+
+<!-- 홈 화면에 추가 안내 -->
+<div class="install hidden" id="install">
+  <img src="../assets/icon-192.png" alt="" />
+  <div class="it">
+    <b>홈 화면에 추가하기</b>
+    <span id="installMsg">앱처럼 한 번에 열어 적립을 확인하세요</span>
+  </div>
+  <button id="installBtn">추가</button>
+  <button class="x" id="installClose" aria-label="닫기">✕</button>
 </div>
 
 <script>
   const API_BASE = location.origin.includes(":5500") ? "http://localhost:8000" : location.origin;
   const $ = (id) => document.getElementById(id);
+  const CUP = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="cup-fill" d="M4.5 7.5h11v5.5a5.5 5.5 0 0 1-11 0V7.5Z"/><path d="M15.5 9h1.3a2.6 2.6 0 0 1 0 5.2h-1.3"/><path d="M3.5 19.5h13"/><path class="steam" d="M8.5 4.6c.5-.7.2-1.3 0-1.8M12 4.6c.5-.7.2-1.3 0-1.8"/></svg>`;
   const won = (n) => (n||0).toLocaleString("ko-KR");
   const METHOD = { CARD:"카드", NAVERPAY:"네이버페이", EASYPAY:"간편결제", CASH:"현금", TOSS_CARD:"카드", TOSS_EASY:"간편결제" };
 
-  async function api(path){
-    const r = await fetch(API_BASE + path);
+  async function api(path, opts){
+    const r = await fetch(API_BASE + path, opts || {});
     const b = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(b.detail || ("오류 "+r.status));
     return b;
@@ -232,16 +343,36 @@
     location.search = "?phone=" + encodeURIComponent(p);
   }
 
+  let currentMemberId = null;
+  async function useReferral(){
+    const code = ($("refIn").value||"").trim().toUpperCase();
+    if(!code || !currentMemberId) return;
+    $("refMsg").textContent = "확인 중…";
+    try {
+      const r = await api(`/api/v1/members/${currentMemberId}/referral`,
+        { method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ code }) });
+      $("refMsg").innerHTML = `🎉 <b>${won(r.reward)}P</b> 적립! (${r.host}님도 함께 받았어요)`;
+      $("refInput").style.display = "none";
+      setTimeout(()=>location.reload(), 2600);
+    } catch(e){ $("refMsg").textContent = "❌ " + e.message; }
+  }
+
   async function load(phone){
     try {
       const m = await api("/api/v1/members/lookup?phone=" + encodeURIComponent(phone));
       const d = await api("/api/v1/members/" + m.id + "/dashboard");
+      saveMine(phone);          // 이 기기에서 다음부터 바로 열리도록
       render(d);
-    } catch(e){ $("err").textContent = "❌ " + e.message; }
+    } catch(e){
+      $("err").innerHTML = "❌ " + e.message +
+        '<div class="muted" style="margin-top:6px">번호를 다시 확인해 주세요.</div>';
+    }
   }
 
   function render(d){
     const m = d.member;
+    currentMemberId = m.id;
     $("loginCard").classList.add("hidden");
     $("view").classList.remove("hidden");
 
@@ -293,7 +424,7 @@
     const goal = m.stamp_goal || 10;
     $("stampLabel").textContent = m.stamps + " / " + goal;
     let sh = "";
-    for(let i=0;i<goal;i++) sh += `<div class="stamp ${i<m.stamps?"on":""}">${i<m.stamps?"◆":i+1}</div>`;
+    for(let i=0;i<goal;i++) sh += `<div class="stamp ${i<m.stamps?"on":""}">${CUP}</div>`;
     $("stamps").innerHTML = sh;
     $("stampHint").textContent = goal-m.stamps>0 ? `${goal-m.stamps}잔 더 모으면 보상 포인트가 적립됩니다.` : "보상 적립이 완료되었습니다.";
 
@@ -312,6 +443,67 @@
       }).join("");
     }
 
+    // ── 스트릭 ──
+    const st = d.streak || {};
+    if(st.weeks > 0){
+      $("streakCard").style.display = "flex";
+      $("streakCard").classList.toggle("on", !!st.alive);
+      $("sWeeks").textContent = `${st.weeks}주 연속 방문 중`;
+      $("sHint").textContent = st.visited_this_week
+        ? "이번 주 방문 완료! 다음 주에도 오시면 계속 이어져요"
+        : "이번 주 안에 오시면 연속 기록이 이어져요";
+    }
+
+    // ── 취향 ──
+    const t = d.taste || {};
+    if(t.favorite){
+      $("tasteCard").style.display = "";
+      $("favName").textContent = t.favorite;
+      $("favQty").textContent = `${t.favorite_qty}잔`;
+      const COLORS = ["#3b5bff","#8b5cf6","#0ea5e9","#f59e0b","#ec4899","#10b981"];
+      $("catBar").innerHTML = t.categories.map((c,i)=>
+        `<i style="width:${c.pct}%;background:${COLORS[i%6]}" title="${c.label} ${c.pct}%"></i>`).join("");
+      $("catLeg").innerHTML = t.categories.map((c,i)=>
+        `<span><i style="background:${COLORS[i%6]}"></i>${c.label} ${c.pct}%</span>`).join("");
+    }
+
+    // ── 도장깨기 ──
+    const col = d.collection || {};
+    if(col.total){
+      $("collCard").style.display = "";
+      $("collSum").textContent = `${col.tried}/${col.total}종 · ${col.pct}%`;
+      $("collList").innerHTML = col.categories.map(c=>`
+        <div class="coll">
+          <div class="top"><span>${c.label}</span><b>${c.tried}/${c.total}</b></div>
+          <div class="bar"><i style="width:${c.total?Math.round(c.tried/c.total*100):0}%"></i></div>
+          ${c.next?`<div class="next">다음 도전: ${c.next}</div>`:'<div class="next">모두 정복!</div>'}
+        </div>`).join("");
+    }
+
+    // ── 친구 초대 ──
+    const rf = d.referral || {};
+    if(rf.code){
+      $("refCard").style.display = "";
+      $("refDesc").textContent =
+        `친구가 아래 코드를 입력하면 둘 다 ${won(rf.reward)}P를 받아요` +
+        (rf.invited ? ` · 지금까지 ${rf.invited}명 초대` : "");
+      $("refCode").textContent = rf.code;
+      $("refInput").style.display = rf.referred ? "none" : "";
+    }
+
+    // ── 이달의 단골 ──
+    const hof = d.hall_of_fame || {};
+    if(hof.top && hof.top.length){
+      $("hofCard").style.display = "";
+      const medal = ["🥇","🥈","🥉"];
+      $("hofList").innerHTML = hof.top.map(x=>
+        `<div class="hof ${x.member_id===m.id?"me":""}">
+           <span class="r">${medal[x.rank-1]||x.rank}</span>
+           <span class="n">${x.nickname}${x.member_id===m.id?" (나)":""}</span>
+           <span class="v">${x.visits}회</span>
+         </div>`).join("");
+    }
+
     // 미션
     if(!d.missions.length){ $("missions").innerHTML = '<p class="muted">진행 중인 미션이 없습니다.</p>'; }
     else $("missions").innerHTML = d.missions.map(x=>{
@@ -325,8 +517,58 @@
     }).join("");
   }
 
-  const phone = new URLSearchParams(location.search).get("phone");
+  // ── 이 기기 기억 ──
+  // 손님이 자기 폰에서 자기 번호를 한 번 넣으면 그대로 저장해, 다음부터는
+  // (홈 화면에 추가한 앱을 열든 주소로 들어오든) 바로 자기 화면이 열린다.
+  // 서버에 토큰을 만들 필요가 없다 — 자기 기기에 자기 번호가 남을 뿐이다.
+  const MY_KEY = "slowstep.member.phone";
+  const readMine = () => { try { return localStorage.getItem(MY_KEY) || ""; } catch(e){ return ""; } };
+  const saveMine = (p) => { try { localStorage.setItem(MY_KEY, p); } catch(e){} };
+  function forgetMine(){ try { localStorage.removeItem(MY_KEY); } catch(e){} location.href = "./"; }
+
+  const params = new URLSearchParams(location.search);
+  const phone = params.get("phone") || readMine();
   if(phone) load(phone);
+
+  // ── PWA: 서비스워커 + 홈 화면에 추가 ──
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(()=>{}));
+  }
+  const standalone = window.matchMedia("(display-mode: standalone)").matches
+    || window.navigator.standalone === true;
+  const DISMISS = "slowstep.install.dismissed";
+  let deferredPrompt = null;
+
+  function showInstall(msg, withButton){
+    if(standalone) return;                                   // 이미 앱으로 열림
+    try { if(localStorage.getItem(DISMISS)) return; } catch(e){}
+    $("installMsg").textContent = msg;
+    $("installBtn").style.display = withButton ? "" : "none";
+    $("install").classList.remove("hidden");
+  }
+  $("installClose").onclick = () => {
+    $("install").classList.add("hidden");
+    try { localStorage.setItem(DISMISS, "1"); } catch(e){}
+  };
+  $("installBtn").onclick = async () => {
+    if(!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    $("install").classList.add("hidden");
+  };
+
+  // 안드로이드·크롬: 설치 가능 신호를 받으면 버튼을 보여준다
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault(); deferredPrompt = e;
+    showInstall("앱처럼 한 번에 열어 적립을 확인하세요", true);
+  });
+  window.addEventListener("appinstalled", () => $("install").classList.add("hidden"));
+
+  // iOS 사파리는 설치 프롬프트가 없어 방법을 알려준다
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isSafari = isIOS && !/crios|fxios|edgios/i.test(navigator.userAgent);
+  if(isSafari) setTimeout(() => showInstall("공유 버튼 → '홈 화면에 추가'를 누르세요", false), 1800);
 </script>
 </body>
 </html>

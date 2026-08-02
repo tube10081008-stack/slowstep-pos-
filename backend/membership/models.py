@@ -23,6 +23,19 @@ class Store(models.Model):
     set_discount_amount = models.IntegerField("세트 할인액", default=500)
     # 디카페인·오트밀크 등 옵션 추가금
     option_price = models.IntegerField("옵션 추가금", default=500)
+    # 옵션 1개당 추가 재료원가(오트밀크·샷 등) — 마진 분석용
+    option_cost = models.IntegerField("옵션 추가 원가", default=0)
+    # 부가세율(마진은 공급가=매출÷(1+vat) 기준으로 계산)
+    vat_rate = models.DecimalField(
+        "부가세율", max_digits=4, decimal_places=3, default=0.10
+    )
+    # ── 해피아워: 한가한 시간대에 적립을 올려 피크를 분산한다 ──
+    # start==end 이면 비활성. 자정을 넘기는 구간(예: 21~1시)도 지원.
+    happy_start = models.PositiveSmallIntegerField("해피아워 시작(시)", default=0)
+    happy_end = models.PositiveSmallIntegerField("해피아워 종료(시)", default=0)
+    happy_multiplier = models.DecimalField(
+        "해피아워 적립 배수", max_digits=3, decimal_places=1, default=2.0
+    )
     # 영업 상태
     is_open = models.BooleanField("영업중", default=False)
     opened_at = models.DateTimeField("영업 시작 시각", null=True, blank=True)
@@ -34,6 +47,19 @@ class Store(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def happy_hour_active(self) -> bool:
+        return self.happy_start != self.happy_end
+
+    def is_happy_hour(self, when=None) -> bool:
+        """지금이 해피아워인가. 자정을 넘기는 구간도 처리."""
+        if not self.happy_hour_active:
+            return False
+        h = timezone.localtime(when or timezone.now()).hour
+        if self.happy_start < self.happy_end:
+            return self.happy_start <= h < self.happy_end
+        return h >= self.happy_start or h < self.happy_end   # 자정 넘김
 
 
 class Member(models.Model):
@@ -64,6 +90,14 @@ class Member(models.Model):
     )
     stamps = models.IntegerField("스탬프", default=0)
     marketing_opt_in = models.BooleanField("마케팅 수신 동의", default=False)
+    # 친구 초대: 내 코드로 친구가 등록하면 둘 다 보상
+    referral_code = models.CharField(
+        "초대 코드", max_length=12, unique=True, null=True, blank=True
+    )
+    referred_by = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="referrals", verbose_name="추천인",
+    )
     joined_at = models.DateTimeField("가입 시각", auto_now_add=True)
 
     class Meta:
@@ -73,6 +107,21 @@ class Member(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name}({self.phone})"
+
+    def ensure_referral_code(self) -> str:
+        """초대 코드가 없으면 만들어 저장(헷갈리는 0·O·1·I 제외)."""
+        if self.referral_code:
+            return self.referral_code
+        import random
+
+        alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+        for _ in range(30):
+            code = "".join(random.choice(alphabet) for _ in range(6))
+            if not Member.objects.filter(referral_code=code).exists():
+                self.referral_code = code
+                Member.objects.filter(pk=self.pk).update(referral_code=code)
+                return code
+        raise RuntimeError("초대 코드 생성 실패")
 
     def compute_tier(self) -> str:
         """누적 결제액으로 등급 계산."""
@@ -103,6 +152,8 @@ class MenuItem(models.Model):
     )
     name = models.CharField("메뉴명", max_length=100)
     price = models.IntegerField("가격")
+    # 재료원가(1잔·1개당). 마진 = 공급가 − 원가. 0이면 원가 미입력.
+    cost = models.IntegerField("재료원가", default=0)
     category = models.CharField(
         "카테고리", max_length=20, choices=Category.choices, default=Category.COFFEE
     )
@@ -190,6 +241,15 @@ class Transaction(models.Model):
         verbose_name = "거래"
         verbose_name_plural = "거래"
         ordering = ["-created_at"]
+        constraints = [
+            # 같은 order_id로 결제완료 거래는 1건만 — 재시도/동시요청의
+            # 중복 결제를 DB 레벨에서 차단(서비스 로직의 최후 방어선).
+            models.UniqueConstraint(
+                fields=["toss_order_id"],
+                condition=models.Q(status="paid") & ~models.Q(toss_order_id=""),
+                name="uniq_paid_toss_order_id",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"거래#{self.pk} {self.net_amount}원 [{self.status}]"
@@ -206,6 +266,8 @@ class OrderItem(models.Model):
     )
     name = models.CharField("메뉴명(스냅샷)", max_length=100)
     unit_price = models.IntegerField("단가(옵션 포함)")
+    # 결제 시점 재료원가 스냅샷(옵션 원가 포함). 원가 변경돼도 과거 마진 불변.
+    unit_cost = models.IntegerField("단가 원가(스냅샷)", default=0)
     quantity = models.PositiveIntegerField("수량", default=1)
     # 옵션 스냅샷
     temperature = models.CharField("온도", max_length=4, blank=True, default="")  # "", "ice", "hot"
@@ -220,6 +282,10 @@ class OrderItem(models.Model):
     @property
     def line_total(self) -> int:
         return self.unit_price * self.quantity
+
+    @property
+    def cost_total(self) -> int:
+        return self.unit_cost * self.quantity
 
     @property
     def option_label(self) -> str:
@@ -249,6 +315,7 @@ class PointEntry(models.Model):
         ADJUST = "adjust", "조정"
         MISSION = "mission", "미션 보상"
         STAMP = "stamp", "스탬프 보상"
+        REFERRAL = "referral", "초대 보상"
         CANCEL = "cancel", "취소 원복"
 
     member = models.ForeignKey(

@@ -47,6 +47,7 @@ class StoreSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "point_earn_rate", "stamp_goal", "stamp_reward_points",
             "set_discount_amount", "option_price", "is_open", "opened_at",
+            "happy_start", "happy_end", "happy_multiplier",
         ]
 
 
@@ -67,6 +68,10 @@ class MemberSerializer(serializers.ModelSerializer):
 
 
 class MemberCreateSerializer(serializers.ModelSerializer):
+    # 이름은 받지 않아도 된다 — 비우면 '행동 + 동물' 닉네임을 자동 부여한다.
+    # (연락처만으로 식별되므로 실명은 수집하지 않는 것이 기본)
+    name = serializers.CharField(required=False, allow_blank=True, max_length=50)
+
     class Meta:
         model = Member
         fields = ["phone", "name", "marketing_opt_in"]
@@ -75,6 +80,10 @@ class MemberCreateSerializer(serializers.ModelSerializer):
         store = Store.objects.first()
         if store is None:
             raise serializers.ValidationError("매장 설정이 없습니다.")
+        if not (validated_data.get("name") or "").strip():
+            from .nickname import generate_nickname
+
+            validated_data["name"] = generate_nickname()
         return Member.objects.create(store=store, **validated_data)
 
 

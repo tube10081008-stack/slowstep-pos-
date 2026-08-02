@@ -74,9 +74,7 @@
 
   /* ── 로고 · 인터랙션 ── */
   .brand { display:flex; align-items:center; gap:11px; }
-  .logo { width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#5b76ff,var(--brand));
-    color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:18px;
-    flex:0 0 auto; box-shadow:0 4px 12px rgba(59,91,255,.3); }
+  .logo { width:38px; height:auto; flex:0 0 auto; display:block; }
   .wm { font-weight:800; font-size:18px; letter-spacing:-.01em; color:var(--txt); }
   .wm-sub { font-size:11px; letter-spacing:.01em; color:var(--muted); display:block; margin-top:1px; font-weight:500; }
   @keyframes rise { from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none;} }
@@ -88,19 +86,26 @@
   .chip:hover { background:#e2e8ff; }
   tbody tr:hover { background:var(--card2); }
 </style>
+<script src="../pin.js"></script>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png" />
+<link rel="apple-touch-icon" href="../assets/favicon-180.png" />
 </head>
 <body>
 <div class="wrap">
   <header>
     <div class="brand">
-      <span class="logo">S</span>
+      <img class="logo" src="../assets/logo-mark.png" alt="슬로우스텝" />
       <div><span class="wm">Slowstep</span><span class="wm-sub">점주 대시보드</span></div>
     </div>
     <span class="sub" id="sub">고객 데이터는 우리 것 — payhere 동의 없이 직접 마케팅</span>
     <nav style="margin-left:auto">
       <a href="../pos/">POS ↗</a><a href="../member/">멤버십 ↗</a>
+      <a href="#" onclick="StorePin.lock();return false" title="이 기기의 PIN 인증 해제">🔒 잠금</a>
     </nav>
   </header>
+  <!-- 저장소 상태 경고 (임시 저장 모드/DB 오류 시 /api/v1/health 결과로 표시) -->
+  <div id="storageBanner" style="display:none;margin:8px 0;padding:10px 14px;border-radius:10px;
+       background:#fff3cd;color:#7a5b00;border:1px solid #ffe08a;font-size:13px;line-height:1.5"></div>
 
   <!-- KPI -->
   <div class="grid kpis" id="kpis"></div>
@@ -133,6 +138,33 @@
       <table><thead><tr><th>고객</th><th>결제</th><th>적립</th><th>수단</th></tr></thead>
       <tbody id="recentTx"></tbody></table>
     </div>
+  </div>
+
+  <!-- 원가·마진 분석 -->
+  <div class="card" style="margin-top:14px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <h3 style="margin:0;">원가·마진 분석 <span class="muted" style="font-weight:500">— 공급가(부가세 제외) 기준 기여이익</span></h3>
+      <select id="marginDays" onchange="loadMargins()" style="width:auto;padding:7px 10px;">
+        <option value="7">최근 7일</option>
+        <option value="30" selected>최근 30일</option>
+        <option value="90">최근 90일</option>
+      </select>
+    </div>
+    <div class="grid kpis" id="marginKpis" style="margin-top:14px;"></div>
+    <div style="margin-top:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h3 style="margin:0;font-size:14px;">메뉴별 마진</h3>
+        <span class="muted" id="marginNote"></span>
+      </div>
+      <table style="margin-top:10px;"><thead><tr>
+        <th>메뉴</th><th>판매</th><th>공급가 매출</th><th>재료원가</th><th>원가율</th><th>마진</th><th>마진율</th>
+      </tr></thead><tbody id="marginRows"></tbody></table>
+    </div>
+    <p class="muted" style="margin-top:12px;line-height:1.6">
+      매출은 <b>공급가(÷1.1)</b> 기준, 포인트·스탬프·미션 적립은 <b>적립 시점</b>에 비용으로 반영합니다.
+      인건비·임대료 등 고정비는 이번 분석 범위 밖(재료비 기준 기여이익)입니다.
+      원가는 <b>관리자 → 메뉴</b>에서 항목별로 입력하세요.
+    </p>
   </div>
 
   <!-- 마케팅 발송 -->
@@ -192,6 +224,33 @@
     </div>
   </div>
 
+  <!-- 고객 일괄 등록 (payhere 이관) -->
+  <div class="card" style="margin-top:14px;">
+    <h3>고객 일괄 등록 <span class="muted" style="font-weight:500">— payhere 등 기존 고객 CSV 이관</span></h3>
+    <div class="grid cols">
+      <div>
+        <p class="muted" style="margin:0 0 10px;line-height:1.6">
+          기존 결제사에서 내려받은 고객 명단을 CSV로 올리면 한 번에 등록됩니다.<br/>
+          필수 열: <b>이름, 연락처</b> · 선택 열: 포인트, 누적결제액, 방문횟수, 스탬프, 마케팅동의, 가입일<br/>
+          엑셀에서 "CSV로 저장"한 파일 그대로 올려도 됩니다(한글 인코딩 자동 인식).
+          이미 등록된 연락처는 건너뛰어 기존 데이터를 덮어쓰지 않아요.
+        </p>
+        <button class="ghost" onclick="downloadTemplate()">📄 템플릿 CSV 내려받기</button>
+        <label>CSV 파일 선택</label>
+        <input id="impFile" type="file" accept=".csv,text/csv" onchange="resetImport()" />
+        <div class="frow" style="margin-top:12px;">
+          <button class="ghost" id="impCheckBtn" onclick="runImport(true)">① 검증하기 (저장 안 함)</button>
+          <button id="impRunBtn" onclick="runImport(false)" disabled>② 등록 실행</button>
+        </div>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">결과</div>
+        <div class="preview-box" id="impSummary">파일을 선택하고 ① 검증하기를 눌러 주세요.</div>
+        <div class="result" id="impDetail"></div>
+      </div>
+    </div>
+  </div>
+
   <p class="muted" style="text-align:center;margin-top:18px;">
     알림톡 키 미설정 시 Mock 발송 — 세그먼트·치환·수신거부 로직 전체 검증 가능</p>
 </div>
@@ -211,9 +270,13 @@
     clearTimeout(t._t); t._t=setTimeout(()=>t.style.display="none",2600); }
 
   async function api(path, opts){
-    const r = await fetch(API_BASE+path, { headers:{"Content-Type":"application/json"}, ...opts });
+    opts = opts || {};
+    const r = await fetch(API_BASE+path, { ...opts,
+      headers:{"Content-Type":"application/json", ...StorePin.headers(), ...(opts.headers||{})} });
     const b = await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(b.detail || ("오류 "+r.status));
+    if(!r.ok){
+      const e = new Error(b.detail || ("오류 "+r.status)); e.status = r.status; throw e;
+    }
     return b;
   }
 
@@ -341,8 +404,124 @@
     finally { $("sendBtn").disabled=false; $("sendBtn").textContent="발송하기"; }
   }
 
+  // ── 원가·마진 분석 ──
+  const pct = (n) => (n==null?"—":n+"%");
+  function marginClass(rate){ return rate>=60?"ok":(rate>=35?"":"fail"); }
+
+  async function loadMargins(){
+    const days = $("marginDays").value;
+    let d;
+    try { d = await api("/api/v1/margins/summary?days="+days); }
+    catch(e){ $("marginKpis").innerHTML = `<div class="muted">마진 불러오기 실패: ${e.message}</div>`; return; }
+
+    $("marginKpis").innerHTML = [
+      ["공급가 매출", won(d.supply_revenue), `부가세 ${Math.round(d.vat_rate*100)}% 제외 · ${num(d.tx_count)}건`],
+      ["재료원가", won(d.material_cost), `원가율 ${pct(d.cost_rate)}`],
+      ["적립 비용", won(d.reward_cost), "포인트·스탬프·미션(적립 시점)"],
+      ["기여이익", won(d.contribution), `마진율 ${pct(d.margin_rate)}`],
+    ].map(([l,v,f],i)=>`<div class="card kpi"><div class="label">${l}</div>
+      <div class="val" ${i===3?`style="color:${d.margin_rate>=0?'var(--green)':'var(--red)'}"`:""}>${v}</div>
+      <div class="foot">${f}</div></div>`).join("");
+
+    const noCost = d.menu.filter(m=>!m.has_cost).length;
+    $("marginNote").textContent = noCost ? `⚠️ ${noCost}개 메뉴 원가 미입력` : "판매량 순";
+    $("marginRows").innerHTML = d.menu.length ? d.menu.map(m=>{
+      const cls = m.has_cost ? marginClass(m.margin_rate) : "";
+      return `<tr><td>${m.name}${m.has_cost?"":' <span class="muted">(원가 미입력)</span>'}</td>
+        <td>${num(m.qty)}</td><td>${won(m.supply_revenue)}</td>
+        <td>${won(m.material_cost)}</td><td>${m.has_cost?pct(m.cost_rate):"—"}</td>
+        <td>${won(m.margin)}</td>
+        <td class="${cls}"><b>${m.has_cost?pct(m.margin_rate):"—"}</b></td></tr>`;
+    }).join("") : `<tr><td colspan="7" class="muted">기간 내 판매 내역이 없습니다.</td></tr>`;
+  }
+
+  // ── 고객 일괄 등록 (CSV 이관) ──
+  function downloadTemplate(){
+    // ﻿ BOM — 엑셀에서 한글이 깨지지 않게
+    const csv = "﻿이름,연락처,포인트,누적결제액,방문횟수,스탬프,마케팅동의,가입일\n"
+      + "김슬로우,010-1234-5678,3200,84000,12,4,Y,2024-03-15\n"
+      + "이커피,01098765432,0,0,0,0,N,\n";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv;charset=utf-8"}));
+    a.download = "slowstep-고객이관-템플릿.csv";
+    a.click(); URL.revokeObjectURL(a.href);
+  }
+
+  function resetImport(){
+    // 파일이 바뀌면 검증부터 다시 — 검증 안 된 파일은 실행 금지
+    $("impRunBtn").disabled = true;
+    $("impSummary").textContent = "파일을 검증해 주세요.";
+    $("impDetail").innerHTML = "";
+  }
+
+  async function runImport(dryRun){
+    const file = $("impFile").files[0];
+    if(!file) return toast("CSV 파일을 먼저 선택하세요");
+    const btn = dryRun ? $("impCheckBtn") : $("impRunBtn");
+    btn.disabled = true;
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("dry_run", dryRun ? "true" : "false");
+      const r = await fetch(API_BASE+"/api/v1/members/import", { method:"POST", body: fd });
+      const b = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(b.detail || ("오류 "+r.status));
+
+      $("impSummary").innerHTML =
+        (dryRun ? "🔍 <b>검증 결과</b> (아직 저장 안 됨)" : "✅ <b>등록 완료</b>") +
+        `<div style="margin-top:8px">` +
+        `<span class="pill">전체 ${b.total}</span>` +
+        `<span class="pill ok">등록${dryRun?" 예정":""} ${b.created}</span>` +
+        `<span class="pill skip">건너뜀 ${b.skipped}</span>` +
+        `<span class="pill fail">오류 ${b.errors}</span></div>`;
+
+      const issues = b.results.filter(x=>x.status!=="created").slice(0,10);
+      $("impDetail").innerHTML = issues.length
+        ? `<table><thead><tr><th>행</th><th>이름</th><th>연락처</th><th>사유</th></tr></thead><tbody>` +
+          issues.map(x=>`<tr><td>${x.row}</td><td>${x.name||"—"}</td><td>${x.phone||"—"}</td>
+            <td class="${x.status==="error"?"fail":"skip"}">${x.reason}</td></tr>`).join("") +
+          `</tbody></table>` +
+          (b.results.length - b.created > 10 ? `<div class="muted" style="margin-top:6px">외 ${b.results.length-b.created-10}건</div>` : "")
+        : "";
+
+      if(dryRun){
+        $("impRunBtn").disabled = b.created === 0;
+        if(b.created > 0) toast(`검증 완료 — ${b.created}명 등록 가능`);
+      } else {
+        $("impRunBtn").disabled = true;
+        toast(`${b.created}명 등록 완료`);
+        loadDashboard();
+      }
+    } catch(e){
+      $("impSummary").textContent = "❌ "+e.message;
+    } finally {
+      $("impCheckBtn").disabled = false;
+      if(dryRun===false) $("impRunBtn").disabled = true;
+    }
+  }
+
+  async function checkStorage(){
+    // 저장소 상태 점검 — 임시 저장 모드(서버리스+무DB)면 점주에게 경고.
+    try {
+      const h = await api("/api/v1/health");
+      if(h.db && h.db.persistent === false){
+        const b = $("storageBanner");
+        b.innerHTML = "⚠️ <b>임시 저장 모드</b> — 주문·회원 데이터가 서버 재시작 시 초기화될 수 있어요. "
+          + "영구 저장하려면 Vercel에 <b>DATABASE_URL</b>(Neon 무료 DB)을 설정하세요. (DEPLOY.md 2단계)";
+        b.style.display = "block";
+      }
+    } catch(e){
+      const b = $("storageBanner");
+      b.innerHTML = "❌ <b>데이터베이스 연결 이상</b> — 지표가 실제와 다를 수 있습니다. 잠시 후 새로고침 해주세요.";
+      b.style.background = "#fdecea"; b.style.color = "#8a1f11"; b.style.borderColor = "#f5c6cb";
+      b.style.display = "block";
+    }
+  }
+
   (async ()=>{
-    try { await loadDashboard(); await loadSegments(); doPreview(); }
+    await StorePin.require("점주 대시보드");   // 원가·고객정보 노출 → PIN 필수
+    checkStorage();
+    try { await loadDashboard(); await loadMargins(); await loadSegments(); doPreview(); }
     catch(e){ $("sub").textContent = "백엔드 연결 안됨: "+e.message; }
   })();
 </script>

@@ -42,9 +42,16 @@
     cursor:pointer; text-align:center; position:relative; }
   .mi:active { transform:scale(.97); }
   .mi.sel { border-color:var(--brand); box-shadow:0 0 0 1px var(--brand) inset; }
-  .mi .emo { font-size:28px; }
-  .mi .nm { font-size:13px; font-weight:600; margin-top:6px; line-height:1.3; }
-  .mi .pr { font-size:12px; color:var(--brand); margin-top:4px; font-weight:700; }
+  .mi .nm { font-size:15px; font-weight:700; line-height:1.35; letter-spacing:-.01em;
+    min-height:40px; display:flex; align-items:center; justify-content:center; }
+  .mi .pr { font-size:15px; color:var(--brand); margin-top:8px; font-weight:800; letter-spacing:-.02em; }
+  /* 옵션·상태를 한눈에 — 이모지 대신 텍스트 배지 */
+  .mi .tags { display:flex; gap:3px; justify-content:center; flex-wrap:wrap; margin-top:8px; min-height:17px; }
+  .mi .tg { font-size:9px; font-weight:700; padding:2px 5px; border-radius:4px;
+    background:var(--card2); color:var(--muted); border:1px solid var(--line); letter-spacing:.02em; }
+  .mi .tg.hot { background:#fff1f0; color:#c2410c; border-color:#fed7cc; }
+  .mi .tg.ice { background:#eff8ff; color:#0369a1; border-color:#cfe8fb; }
+  .mi .stk { position:absolute; top:7px; left:8px; font-size:10px; color:var(--amber); font-weight:700; }
   .mi .qty { position:absolute; top:-8px; right:-8px; background:var(--brand); color:#fff;
     font-size:12px; font-weight:800; min-width:22px; height:22px; border-radius:999px;
     display:flex; align-items:center; justify-content:center; padding:0 5px; box-shadow:0 2px 8px rgba(59,91,255,.4); }
@@ -171,9 +178,7 @@
 
   /* ── 로고 · 인터랙션 ── */
   .brand { display:flex; align-items:center; gap:11px; }
-  .logo { width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#5b76ff,var(--brand));
-    color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:18px;
-    flex:0 0 auto; box-shadow:0 4px 12px rgba(59,91,255,.3); }
+  .logo { width:38px; height:auto; flex:0 0 auto; display:block; }
   .wm { font-weight:800; font-size:17px; letter-spacing:-.01em; color:var(--txt); }
   .wm-sub { font-size:11px; color:var(--muted); display:block; margin-top:1px; font-weight:500; }
   @keyframes rise { from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none;} }
@@ -184,23 +189,53 @@
   button:not(:disabled):active { transform:translateY(1px); }
   .mi:hover { border-color:#c7d0ff; box-shadow:0 6px 16px rgba(16,24,40,.08); transform:translateY(-2px); }
   .cat:hover, .pill:hover { border-color:#c7d0ff; }
+
+  /* ── 자연어 주문 입력 ── */
+  .aibar { margin-bottom:14px; padding:14px 16px; }
+  .ai-row { display:flex; gap:9px; align-items:center; }
+  .ai-row input { flex:1; font-size:15px; padding:13px 14px; }
+  .ai-row button { flex:0 0 92px; padding:13px 0; font-size:15px; }
+  .ai-row button:disabled { opacity:.5; }
+  .ai-msg { margin-top:9px; font-size:12px; line-height:1.5; }
+  .ai-msg.ok { color:var(--green); font-weight:600; }
+  .ai-msg.err { color:var(--red); font-weight:600; }
 </style>
+<script src="../pin.js"></script>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png" />
+<link rel="apple-touch-icon" href="../assets/favicon-180.png" />
 </head>
 <body>
 <div class="wrap">
   <header>
     <div class="brand">
-      <span class="logo">S</span>
+      <img class="logo" src="../assets/logo-mark.png" alt="슬로우스텝" />
       <div><span class="wm">Slowstep</span><span class="wm-sub">주문 · POS</span></div>
     </div>
     <span class="tag" id="storeTag">로딩…</span>
-    <nav><a href="../dashboard/">대시보드 ↗</a><a href="../member/">멤버십 ↗</a></nav>
+    <span class="tag" id="dispTag" style="color:var(--muted)">고객화면 미연결</span>
+    <nav>
+      <a href="#" onclick="openDisplay();return false" title="외부 모니터로 옮겨 전체화면(F11)으로 두세요">고객화면 열기 ↗</a>
+      <a href="../dashboard/">대시보드 ↗</a><a href="../member/">멤버십 ↗</a>
+    </nav>
   </header>
+  <!-- 저장소 상태 경고 (임시 저장 모드/DB 오류 시 /api/v1/health 결과로 표시) -->
+  <div id="storageBanner" style="display:none;margin:8px 0;padding:10px 14px;border-radius:10px;
+       background:#fff3cd;color:#7a5b00;border:1px solid #ffe08a;font-size:13px;line-height:1.5"></div>
 
   <!-- ===== 탭: 상품 주문 ===== -->
   <div id="tabOrder" class="tab">
   <!-- ① 주문 화면 -->
   <div id="orderView">
+    <!-- 말한 대로 담기 — 자연어 주문 입력 -->
+    <div class="card aibar">
+      <div class="ai-row">
+        <input id="aiText" placeholder="예) 아아 두 잔이랑 라떼 하나 따뜻하게, 휘낭시에 1개"
+               autocomplete="off" onkeydown="if(event.key==='Enter')aiParse()" />
+        <button class="confirm" id="aiBtn" onclick="aiParse()">담기</button>
+      </div>
+      <div class="ai-msg muted" id="aiMsg">주문을 말하듯 입력하면 장바구니에 자동으로 담깁니다.</div>
+    </div>
+
     <div class="order">
       <div class="card">
         <div class="cats" id="cats"></div>
@@ -225,7 +260,7 @@
 
       <!-- 2-1. 고객번호 입력 (단말기 시뮬레이션) -->
       <div id="phoneStep">
-        <div class="term-msg">고객님, 단말기에 <b>고객번호(연락처)</b>를 입력해 주세요</div>
+        <div class="term-msg">고객 화면에서 번호를 입력하는 중입니다<br><span class="muted" style="font-weight:400">직접 입력하셔도 됩니다</span></div>
         <div class="phone-disp" id="phoneDisp"><span class="ph">01000000000</span></div>
         <div class="keypad" id="keypad"></div>
         <div class="row">
@@ -253,9 +288,9 @@
           <span class="pill" data-m="CASH">현금</span>
         </div>
         <label style="margin-top:12px;">단말 승인번호 <span class="muted" style="font-weight:400">· 선택(정산용)</span></label>
-        <input id="approvalNo" inputmode="numeric" placeholder="네이버 커넥트 단말 승인번호" />
+        <input id="approvalNo" inputmode="numeric" placeholder="카드 단말에 표시된 승인번호" />
         <div class="total"><span class="muted">실결제액</span><b id="payNet">0원</b></div>
-        <p class="muted" style="margin:0 0 4px;">💳 네이버 커넥트 단말기에서 결제 후 아래 버튼을 눌러주세요.</p>
+        <p class="muted" style="margin:0 0 4px;">카드 단말에서 <b>승인이 완료된 뒤</b> 아래 버튼을 눌러주세요.</p>
         <button class="approve" id="approveBtn" onclick="approve()">결제 완료 확인</button>
         <button class="ghost" style="width:100%;margin-top:8px;" onclick="resetPhone()">← 다시 입력</button>
       </div>
@@ -359,14 +394,109 @@
 
   function toast(m){ const t=$("toast"); t.textContent=m; t.style.display="block";
     clearTimeout(t._t); t._t=setTimeout(()=>t.style.display="none",2400); }
+
+  // ── 고객 표시 화면(/display/) 동기화 ──
+  // 같은 브라우저의 다른 창으로만 전달된다(서버 경유 없음).
+  // 직원 화면에서 무엇을 하든 고객 화면엔 아래로 보낸 것만 뜬다.
+  const disp = ("BroadcastChannel" in window) ? new BroadcastChannel("slowstep-pos") : null;
+  let lastState = { type:"idle" };
+  function sendDisplay(msg){ lastState = msg; if(disp) disp.postMessage(msg); }
+  // 상태로 남기지 않는 일회성 신호(재전송·동기화로 되풀이되면 안 되는 것)
+  function sendEvent(msg){ if(disp) disp.postMessage(msg); }
+
+  // 멤버십 QR(고정 주소) — 최초 1회만 받아 캐시
+  let _qr = null;
+  async function memberQr(){
+    if(_qr !== null) return _qr;
+    try { _qr = (await api("/api/v1/member-qr")).svg; } catch(e){ _qr = ""; }
+    return _qr;
+  }
+  function cartSnapshot(){
+    return {
+      type: "cart",
+      items: Object.values(cart).map(c=>({
+        name:c.item.name, qty:c.qty, total:c.unit*c.qty,
+        temp:c.temp, decaf:c.decaf, oat:c.oat, shot:c.shot,
+      })),
+      discount: discountTotal(),
+      total: finalTotal(),
+    };
+  }
+  function openDisplay(){
+    // 새 창으로 띄운다 → 외부 모니터로 끌어다 놓고 F11(전체화면)
+    const w = window.open("../display/", "slowstep-display", "width=1280,height=800");
+    if(!w) return toast("팝업이 차단됐어요. 주소창의 팝업 허용을 켜주세요.");
+    setTimeout(()=>sendDisplay(lastState), 600);  // 현재 상태 즉시 반영
+    toast("고객화면을 외부 모니터로 옮기고 F11을 누르세요");
+  }
+
+  let dispSeen = 0;
+  function markDisplay(){
+    dispSeen = Date.now();
+    const el = $("dispTag");
+    if(el){ el.textContent = "고객화면 연결됨"; el.style.color = "var(--green)"; }
+  }
+  setInterval(()=>{   // 12초 넘게 소식 없으면 연결 끊김으로 표시
+    const el = $("dispTag");
+    if(el && dispSeen && Date.now()-dispSeen > 12000){
+      el.textContent = "고객화면 연결 끊김"; el.style.color = "var(--red)";
+    }
+  }, 4000);
+
+  if(disp) disp.onmessage = (e)=>{
+    const d = e.data || {};
+    markDisplay();
+    // 고객 화면이 열려 있는지 확인차 보내는 신호 → 현재 상태로 응답
+    if(d.type === "hello") {
+      // 주기적인 연결 확인 — 현재 상태만 알려주고, 입력 초기화는 시키지 않는다.
+      // 상태에는 초기화 지시가 없으므로(일회성 이벤트로 분리) 재전송돼도 안전.
+      disp.postMessage(lastState);
+      memberQr().then(svg => svg && disp.postMessage({ type:"member_qr", svg })).catch(()=>{});
+      return;
+    }
+    // ── 손님이 고객화면(터치)에서 조작한 것 ──
+    if(d.type === "phone_input"){        // 입력 중 — 직원 화면에 그대로 비춤
+      phone = (d.phone || "").slice(0,11); renderPhone();
+    } else if(d.type === "phone_submit"){
+      phone = (d.phone || "").slice(0,11); renderPhone(); lookupMember();
+    } else if(d.type === "guest"){
+      guestPay();
+    }
+  };
   async function api(path, opts){
-    const r = await fetch(API_BASE+path, { headers:{"Content-Type":"application/json"}, ...opts });
+    opts = opts || {};
+    const r = await fetch(API_BASE+path, { ...opts,
+      headers:{"Content-Type":"application/json", ...StorePin.headers(), ...(opts.headers||{})} });
     const b = await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(b.detail || ("오류 "+r.status));
+    if(!r.ok){
+      const e = new Error(b.detail || ("오류 "+r.status)); e.status = r.status; throw e;
+    }
     return b;
   }
 
+  async function checkStorage(){
+    // 저장소 상태 점검 — 임시 저장 모드(서버리스+무DB)면 점주에게 경고.
+    try {
+      const h = await api("/api/v1/health");
+      if(h.db && h.db.persistent === false){
+        const b = $("storageBanner");
+        b.innerHTML = "⚠️ <b>임시 저장 모드</b> — 주문·회원 데이터가 서버 재시작 시 초기화될 수 있어요. "
+          + "영구 저장하려면 Vercel에 <b>DATABASE_URL</b>(Neon 무료 DB)을 설정하세요. (DEPLOY.md 2단계)";
+        b.style.display = "block";
+      }
+    } catch(e){
+      const b = $("storageBanner");
+      b.innerHTML = "❌ <b>데이터베이스 연결 이상</b> — 주문이 저장되지 않을 수 있습니다. 잠시 후 새로고침 해주세요.";
+      b.style.background = "#fdecea"; b.style.color = "#8a1f11"; b.style.borderColor = "#f5c6cb";
+      b.style.display = "block";
+    }
+  }
+
   async function init(){
+    await StorePin.require("직원 POS");   // 매장 PIN 통과 후 로드
+    // 멤버십 QR은 고정 주소라 시작 시 한 번만 받아두고 고객 화면에 전달한다.
+    memberQr().then(svg => svg && sendEvent({ type:"member_qr", svg })).catch(()=>{});
+    checkStorage();
     try {
       store = await api("/api/v1/store");
       earnRate = Number(store.point_earn_rate);
@@ -395,15 +525,56 @@
     $("menu").innerHTML = items.map(m=>{
       const q = itemQty(m.id);
       if(m.sold_out) return `<div class="mi soldout">
-        <div class="emo">${m.emoji||"◆"}</div><div class="nm">${m.name}</div>
-        <div class="pr" style="color:var(--muted)">품절</div></div>`;
+        <div class="nm">${m.name}</div>
+        <div class="pr" style="color:var(--muted)">품절</div>
+        <div class="tags"></div></div>`;
+
+      // 온도만 표시. 디카페인·오트·샷은 눌렀을 때 옵션창에서 고른다.
+      const tags = [];
+      if(m.temp_option==="hotice"){ tags.push('<span class="tg hot">HOT</span>','<span class="tg ice">ICE</span>'); }
+      else if(m.temp_option==="ice"){ tags.push('<span class="tg ice">ICE</span>'); }
+
       return `<div class="mi ${q?"sel":""}" onclick="tapItem(${m.id})">
         ${q?`<span class="qty">${q}</span>`:""}
-        <div class="emo">${m.emoji||"◆"}</div>
-        <div class="nm">${m.name}${m.stock!=null?` <span class="muted" style="font-size:10px">(${m.stock})</span>`:""}</div>
+        ${m.stock!=null?`<span class="stk">${m.stock}개</span>`:""}
+        <div class="nm">${m.name}</div>
         <div class="pr">${won(m.price)}</div>
+        <div class="tags">${tags.join("")}</div>
       </div>`;
     }).join("");
+  }
+
+  // ── 자연어 주문 → 장바구니 ──
+  async function aiParse(){
+    const text = $("aiText").value.trim();
+    if(!text) return;
+    const btn = $("aiBtn"), msg = $("aiMsg");
+    btn.disabled = true; btn.textContent = "담는 중";
+    msg.className = "ai-msg muted"; msg.textContent = "주문을 읽는 중…";
+    try {
+      const r = await api("/api/v1/orders/parse", { method:"POST", body: JSON.stringify({ text }) });
+      let added = 0;
+      r.items.forEach(it=>{
+        const m = menu.find(x=>x.id===it.menu_item_id);
+        if(!m) return;
+        for(let i=0;i<it.quantity;i++) addLine(m, it.temperature, it.decaf, it.oatmilk, it.shot);
+        added += it.quantity;
+      });
+      if(!added){ msg.className="ai-msg err"; msg.textContent="담을 메뉴를 찾지 못했습니다."; return; }
+      const summary = r.items.map(it=>{
+        const opt = [it.temperature==="hot"?"HOT":(it.temperature==="ice"?"ICE":""),
+                     it.decaf?"디카페인":"", it.oatmilk?"오트":"", it.shot?"샷":""].filter(Boolean).join("·");
+        return `${it.name}${opt?`(${opt})`:""} ${it.quantity}`;
+      }).join(", ");
+      msg.className = "ai-msg ok";
+      msg.textContent = `담았습니다 — ${summary}` + (r.source==="rule" ? "  ·  간이 인식" : "");
+      $("aiText").value = "";
+    } catch(e){
+      msg.className = "ai-msg err";
+      msg.textContent = e.message || "인식하지 못했습니다.";
+    } finally {
+      btn.disabled = false; btn.textContent = "담기"; $("aiText").focus();
+    }
   }
 
   function tapItem(id){
@@ -478,6 +649,7 @@
     $("cartDiscount").textContent = "-" + won(disc);
     $("cartTotal").textContent = won(finalTotal());
     $("payBtn").disabled = entries.length===0;
+    sendDisplay(entries.length ? cartSnapshot() : { type:"idle" });
   }
 
   // ── 결제 단말 화면 ──
@@ -493,17 +665,28 @@
     $("lookupBtn").disabled = phone.length < 10;
   }
 
+  // 결제 시도 멱등키: 결제 화면 진입 시 1회 생성, 재시도에도 유지 →
+  // 네트워크 오류로 재전송해도 서버가 같은 주문으로 인식(중복 결제 방지).
+  let orderId = null;
+  const newOrderId = () => (crypto.randomUUID ? crypto.randomUUID()
+    : "pos-"+Date.now()+"-"+Math.random().toString(36).slice(2,10));
+
   function goPay(){
     if(!Object.keys(cart).length) return;
+    orderId = newOrderId();
     member=null; phone=""; renderPhone();
     $("termAmt").textContent = won(finalTotal());
+    sendDisplay({ type:"pay", total: finalTotal() });
     $("orderView").classList.add("hidden"); $("doneView").classList.add("hidden");
     $("payView").classList.remove("hidden");
     $("phoneStep").classList.remove("hidden"); $("confirmStep").classList.add("hidden");
   }
-  function backToOrder(){ $("payView").classList.add("hidden"); $("orderView").classList.remove("hidden"); }
+  function backToOrder(){ $("payView").classList.add("hidden"); $("orderView").classList.remove("hidden");
+    sendDisplay(Object.keys(cart).length ? cartSnapshot() : { type:"idle" }); }
   function resetPhone(){ member=null; phone=""; renderPhone();
-    $("phoneStep").classList.remove("hidden"); $("confirmStep").classList.add("hidden"); }
+    $("phoneStep").classList.remove("hidden"); $("confirmStep").classList.add("hidden");
+    sendDisplay({ type:"pay", total: finalTotal() });
+    sendEvent({ type:"reset_input" }); }   // 직원이 명시적으로 다시 입력
 
   async function lookupMember(){
     if(phone.length<10) return;
@@ -511,12 +694,13 @@
       member = await api("/api/v1/members/lookup?phone="+encodeURIComponent(phone));
       showConfirm();
     } catch(e){
-      // 미등록 → 즉시 가입 후 진행
+      // 미등록 → 손님 화면에 안내하고, 가입 여부는 직원이 자기 화면에서 결정
+      sendDisplay({ type:"lookup_fail" });
       if(confirm("미등록 번호입니다. 신규 회원으로 가입하고 적립할까요?")){
-        const name = prompt("고객 이름을 입력하세요") || "신규회원";
+        // 실명은 받지 않는다 — 서버가 '행동 + 동물' 닉네임을 자동으로 붙여준다.
         try { member = await api("/api/v1/members", { method:"POST",
-          body: JSON.stringify({ phone, name, marketing_opt_in:true }) });
-          toast("가입 완료 🎉"); showConfirm();
+          body: JSON.stringify({ phone, marketing_opt_in:true }) });
+          toast(`가입 완료 · ${member.name}`); showConfirm();
         } catch(err){ toast(err.message); }
       }
     }
@@ -536,6 +720,7 @@
     $("usePoints").value="0";
     $("approvalNo").value="";
     recalcPay();
+    sendDisplay(member ? { type:"greet", member } : { type:"guest_ok" });
   }
 
   function useAll(){ if(member){ $("usePoints").value = Math.min(member.points, finalTotal()); recalcPay(); } }
@@ -558,9 +743,10 @@
       const res = await api("/api/v1/transactions", { method:"POST", body: JSON.stringify({
         member_id: member?member.id:null, items, points_to_use:use,
         payment_method:method, approval_no:($("approvalNo").value||"").trim(),
-        toss_order_id:"kiosk-"+Date.now(),
+        toss_order_id: orderId || newOrderId(),
       })});
       lastOrder = res;
+      if(res.idempotent_replay) toast("이미 처리된 주문입니다 — 기존 결제를 표시합니다");
       showDone(res);
     } catch(e){ toast("❌ "+e.message); }
     finally { $("approveBtn").disabled=false; $("approveBtn").textContent="결제 완료 확인"; }
@@ -582,12 +768,16 @@
       if(res.member.stamps!==undefined) rw += `<div class="reward">스탬프 ${res.member.stamps}/${res.member.stamp_goal}</div>`;
       $("doneRewards").innerHTML = rw;
     } else { $("doneSub").textContent = "비회원 결제 완료"; $("doneRewards").innerHTML=""; }
+    // 멤버십 QR은 모든 손님에게 같은 고정 주소라 한 번만 받아 재사용한다.
+    sendDisplay({ type:"done", member:res.member||null, earned:res.points_earned,
+                  net:res.net_amount, rewards:res.rewards||[] });
   }
 
-  async function newOrder(){ cart={}; member=null;
+  async function newOrder(){ cart={}; member=null; orderId=null;
     try { menu = await api("/api/v1/menu"); } catch(e){}  // 재고 반영
     renderMenu(); renderCart();
-    $("doneView").classList.add("hidden"); $("orderView").classList.remove("hidden"); }
+    $("doneView").classList.add("hidden"); $("orderView").classList.remove("hidden");
+    sendDisplay({ type:"idle" }); }
 
   // ── 하단 탭 전환 ──
   let lastOrder=null, storeState=null;

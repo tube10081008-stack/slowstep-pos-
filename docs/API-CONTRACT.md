@@ -2,7 +2,31 @@
 
 Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 
-> P0 스캐폴드는 인증을 생략(데모). P1에서 직원 토큰/세션 인증 추가.
+## 인증 — 매장 PIN
+
+점주·직원 화면(POS·대시보드)의 API는 **매장 PIN 토큰**이 필요하다.
+고객 멤버십 조회는 **공개** 유지(QR로 바로 열려야 하므로).
+
+### `POST /api/v1/auth/pin`
+```json
+요청 { "pin": "0000" }
+200  { "token": "store:1abc..." }     ← 이후 요청에 X-Store-Token 헤더로 전달
+401  { "detail": "PIN이 올바르지 않습니다." }
+429  { "detail": "시도 횟수를 초과했습니다. 잠시 후 다시 시도하세요." }
+```
+### `GET /api/v1/auth/pin`
+현재 토큰 유효성 확인 → `{ "authorized": true }`.
+
+- PIN은 환경변수 **`STORE_PIN`** 으로 설정(미설정 시 기본값). 공개 저장소면 반드시 재정의.
+- 토큰은 `SECRET_KEY`로 서명(유효기간 30일). `SECRET_KEY`를 바꾸면 전부 무효화된다.
+- 무차별 대입 방지: IP당 5분에 7회 초과 시 429.
+
+| 구분 | 엔드포인트 |
+| --- | --- |
+| 🔒 **매장 전용** | `transactions*` · `sales/summary` · `margins/summary` · `dashboard/stats` · `store/session` · `members`(목록·가입·`import`) · `segments*` · `campaigns*` |
+| 🌐 **공개** | `health` · `menu` · `store` · `missions` · `member-qr` · `members/lookup` · `members/{id}/dashboard`·`missions`·`points` |
+
+> 토큰 없이 매장 전용 API 호출 시 **403**.
 
 ---
 
@@ -19,15 +43,57 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 404 { "detail": "회원을 찾을 수 없습니다." }
 ```
 
-### `POST /api/v1/members`
-회원 가입(이름·연락처).
+### `POST /api/v1/members`  🔒
+회원 가입. **이름은 선택** — 비우면 서버가 '행동 + 동물' 닉네임을 자동 부여한다
+(예: `느긋한 수달`). 연락처만으로 식별되므로 실명은 수집하지 않는 것이 기본이며,
+개인정보 최소 수집 원칙에 맞춘 설계다. 이관된 기존 고객처럼 이름을 주면 그대로 쓴다.
 ```json
-요청 { "phone": "01012345678", "name": "김슬로우", "marketing_opt_in": true }
-201  { "id": 1, "phone": "...", "name": "...", "points": 0, "tier": "BRONZE", ... }
+요청 { "phone": "01012345678", "marketing_opt_in": true }
+201  { "id": 1, "phone": "...", "name": "느긋한 수달", "points": 0, "tier": "BRONZE", ... }
 ```
+
+### `POST /api/v1/members/import`
+**기존 고객 CSV 일괄 등록** (payhere 등 타 시스템 이관용).
+- 입력: multipart `file`(엑셀 CP949·UTF-8 자동 판별) 또는 JSON `csv`(텍스트) + `dry_run`.
+- CSV 첫 행은 헤더. 필수 열 `이름`·`연락처`, 선택 열 `포인트`·`누적결제액`·`방문횟수`·
+  `스탬프`·`마케팅동의`(Y/N)·`가입일`(YYYY-MM-DD). 열 이름은 유사 표기 자동 매핑
+  (전화번호/휴대폰, 보유포인트/잔여적립금 등).
+- 규칙: 초기 포인트는 **원장(PointEntry, `adjust`)에 기록**, 등급은 누적액으로 재계산,
+  **이미 등록된 연락처는 건너뜀**(덮어쓰지 않음), 원래 가입일 보존.
+- `dry_run=true` → 검증·집계만(저장 없음). 대시보드의 "① 검증하기"가 사용.
+```json
+200 { "dry_run": false, "total": 220, "created": 210, "skipped": 8, "errors": 2,
+      "results": [ { "row": 2, "name": "김이관", "phone": "01055556666",
+                     "status": "created", "reason": "", "points": 3200 }, ... ] }
+400 { "detail": "헤더에서 이름·연락처 열을 찾을 수 없습니다. ..." }
+```
+
+### `GET /api/v1/member-qr`
+멤버십 페이지로 가는 **QR**(공개). `{ "url": ".../member/", "svg": "<svg …>" }`.
+- **개인정보도 토큰도 담지 않는다.** 모든 손님에게 동일한 고정 주소만 인코딩하고,
+  조회는 손님이 자기 폰에서 자기 번호를 입력해 한다.
+  → 계산대 화면을 촬영해도 얻을 게 없고, 만료가 없어 **인쇄해 붙여도** 동작한다.
+- SVG 문자열이라 고객 화면은 서버를 호출하지 않고 그대로 그린다(POS가 1회 받아 전달).
 
 ### `GET /api/v1/members/{id}`
 회원 상세 + 진행 중 미션 + 최근 적립 내역.
+
+> **`GET /api/v1/members/{id}/dashboard`** 는 게이미피케이션 전체를 한 번에 준다:
+> `badges`(19종 — 방문·누적에 더해 **시간대·요일·옵션·컬렉션·스트릭** 기반),
+> `taste`(최애 메뉴·카테고리 분포), `collection`(메뉴 도장깨기·다음 도전 메뉴),
+> `streak`(주 단위 연속 방문), `hall_of_fame`(이달의 단골), `referral`(내 초대 코드),
+> `next_tier`, `ranking`, `timeline`, `missions`.
+
+### `POST /api/v1/members/{id}/referral`
+**친구 초대 코드 적용**(공개 — 손님 폰에서 호출). `{ "code": "7K2M9Q" }`
+→ 초대한 사람과 받은 사람 **모두** 2,000P. 한 번만 가능하고, 자기 코드는 불가,
+가입 초기(방문 3회 이하)에만 사용할 수 있다. 실패 시 400 + 사유.
+
+### `GET /api/v1/hall-of-fame`
+**이달의 단골 TOP3**(공개). 닉네임으로 표시하므로 매장 화면에 띄워도 된다.
+```json
+200 { "month": "2026-08", "top": [ { "rank":1, "nickname":"느긋한 수달", "visits":12 } ] }
+```
 
 ### `GET /api/v1/members/{id}/missions`
 회원의 미션 진행 목록.
@@ -50,6 +116,21 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 - `temp_option`: `hotice`(핫/아이스 선택) · `ice`(아이스만) · `none`(디저트)
 - `decaf_available`(커피류)·`oatmilk_available`(라떼류): 옵션 추가 시 각 +`option_price`(기본 500원)
 - 세트 할인: 커피(음료)+디저트 동시 주문 시 `min(음료수, 디저트수) × set_discount_amount`(기본 500원)
+
+### `POST /api/v1/orders/parse`  🔒
+**자연어 주문 → 장바구니 항목.** POS 상단 입력창이 호출한다.
+```json
+요청 { "text": "아아 두 잔이랑 라떼 하나 따뜻하게, 휘낭시에 2개" }
+200  { "source": "gemini",
+       "items": [ { "menu_item_id": 1, "name": "아메리카노", "quantity": 2,
+                    "temperature": "ice", "decaf": false, "oatmilk": false, "shot": false }, ... ] }
+400  { "detail": "주문에서 메뉴를 찾지 못했습니다. ..." }
+```
+- **2단 구조**: `GEMINI_API_KEY` 설정 시 **Gemini**(`gemini-3.5-flash-lite`),
+  키가 없거나 호출 실패면 **규칙 기반 폴백**(`source: "rule"`). 키 없이도 동작한다.
+- **모델 출력을 신뢰하지 않는다**: 반환된 `menu_item_id`가 실제 판매 중인 메뉴인지,
+  옵션이 그 메뉴에 허용되는지, 수량이 1~20인지 서버가 전부 재검증한다. 품절 메뉴는 제외.
+- 금액은 계산하지 않는다 — 결제 시 `POST /transactions`가 서버 가격으로 계산.
 
 ---
 
@@ -126,7 +207,29 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 영업 시작/마감. `{ "action": "open" | "close" }` → 갱신된 store 반환.
 
 ### `GET /api/v1/sales/summary`
-오늘 정산: `{ count, gross, discount, net, points, by_method, is_open, opened_at }`.
+오늘 정산: `{ count, gross, discount, net, points, by_method, is_open, opened_at, margin }`.
+`margin` = 오늘 기여이익 `{ supply_revenue, material_cost, reward_cost, contribution, margin_rate }`.
+
+### `GET /api/v1/margins/summary?days=30`
+**원가·마진 분석**(점주 전용). 기준: **공급가(매출÷(1+vat))** − **재료원가** −
+**적립비용(포인트·스탬프·미션, 적립 시점 인식)** = 기여이익. 인건비·임대료 등 고정비는
+범위 밖(재료비 기준). 취소 거래는 매출·원가·비용 모두에서 제외.
+```json
+200 {
+  "days": 30, "vat_rate": 0.1, "tx_count": 3,
+  "revenue_incl_vat": 33000, "supply_revenue": 30000,
+  "material_cost": 9300, "reward_cost": 1990,
+  "contribution": 18710, "margin_rate": 62.4, "cost_rate": 31.0,
+  "menu": [ { "name": "카페 라떼", "qty": 3, "supply_revenue": 13636,
+             "material_cost": 4200, "margin": 9436, "margin_rate": 69.2,
+             "cost_rate": 30.8, "has_cost": true }, ... ]
+}
+```
+- **메뉴별 마진**(`menu[]`)은 각 메뉴 정가(옵션 포함 단가) 공급가 − 재료원가.
+  세트할인·포인트는 거래 단위라 개별 메뉴에 배분하지 않음(상품 자체 수익성).
+- 원가는 **관리자 → 메뉴**의 `재료원가`, 옵션 추가원가는 `Store.option_cost`,
+  부가세율은 `Store.vat_rate`. 원가는 결제 시점에 `OrderItem.unit_cost`로 스냅샷되어
+  나중에 원가를 바꿔도 과거 마진은 불변. `has_cost=false`는 원가 미입력 메뉴.
 
 ### `GET /api/v1/transactions`
 주문 내역: 최근 결제완료 100건(주문 항목·회원명·수단 포함).
