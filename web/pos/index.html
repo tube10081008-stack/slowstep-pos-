@@ -450,7 +450,9 @@
     if(d.type === "hello") {
       // 주기적인 연결 확인 — 현재 상태만 알려주고, 입력 초기화는 시키지 않는다.
       // 상태에는 초기화 지시가 없으므로(일회성 이벤트로 분리) 재전송돼도 안전.
-      disp.postMessage(lastState); return;
+      disp.postMessage(lastState);
+      memberQr().then(svg => svg && disp.postMessage({ type:"member_qr", svg })).catch(()=>{});
+      return;
     }
     // ── 손님이 고객화면(터치)에서 조작한 것 ──
     if(d.type === "phone_input"){        // 입력 중 — 직원 화면에 그대로 비춤
@@ -492,6 +494,8 @@
 
   async function init(){
     await StorePin.require("직원 POS");   // 매장 PIN 통과 후 로드
+    // 멤버십 QR은 고정 주소라 시작 시 한 번만 받아두고 고객 화면에 전달한다.
+    memberQr().then(svg => svg && sendEvent({ type:"member_qr", svg })).catch(()=>{});
     checkStorage();
     try {
       store = await api("/api/v1/store");
@@ -765,7 +769,6 @@
       $("doneRewards").innerHTML = rw;
     } else { $("doneSub").textContent = "비회원 결제 완료"; $("doneRewards").innerHTML=""; }
     // 멤버십 QR은 모든 손님에게 같은 고정 주소라 한 번만 받아 재사용한다.
-    if(res.member) memberQr().then(svg => svg && sendEvent({ type:"done_qr", svg })).catch(()=>{});
     sendDisplay({ type:"done", member:res.member||null, earned:res.points_earned,
                   net:res.net_amount, rewards:res.rewards||[] });
   }

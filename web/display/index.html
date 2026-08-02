@@ -105,7 +105,13 @@
     font-weight:700; text-align:center; line-height:1.5; }
 
   /* ── 완료 화면 ── */
-  #done { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2vh; }
+  /* 가로 모니터: 왼쪽 적립 결과 · 오른쪽 QR → QR을 크게 쓸 수 있다 */
+  #done { flex:1; display:flex; flex-direction:row; align-items:center;
+    justify-content:center; gap:4vw; }
+  .done-main { display:flex; flex-direction:column; align-items:center; gap:1.6vh; }
+  @media (max-width:900px){
+    #done { flex-direction:column; gap:2vh; }
+  }
   #done .check { width:104px; height:104px; border-radius:50%; background:#dcfce7; color:var(--green);
     display:flex; align-items:center; justify-content:center; font-size:56px; font-weight:800; }
   #done h1 { font-size:clamp(28px,4vw,50px); font-weight:800; letter-spacing:-.03em; }
@@ -122,13 +128,20 @@
     padding:10px 22px; font-size:clamp(13px,1.5vw,18px); font-weight:600; letter-spacing:-.01em; }
   .stamp-row { display:flex; gap:7px; margin-top:1.2vh; flex-wrap:wrap; justify-content:center; }
   /* 멤버십 QR — 손님이 자기 폰으로 스캔 */
-  .qr-box { display:flex; align-items:center; gap:2vw; margin-top:1.8vh;
+  .qr-box { display:flex; flex-direction:column; align-items:center; gap:1.2vh; margin-top:0;
     background:var(--card); border:1px solid var(--line); border-radius:18px;
     padding:1.6vh 2.4vw; box-shadow:var(--shadow); }
-  .qr { width:clamp(88px,11vh,132px); height:clamp(88px,11vh,132px); display:block; }
+  .qr { width:clamp(200px,34vh,360px); height:clamp(200px,34vh,360px); display:block; }
   .qr svg { width:100%; height:100%; display:block; }
   .qr svg path { fill:var(--txt); }
-  .qr-cap { font-size:clamp(12px,1.4vw,18px); font-weight:600; line-height:1.5; text-align:left; }
+  .qr-cap { font-size:clamp(14px,1.7vw,22px); font-weight:600; line-height:1.55; text-align:center; }
+  /* 대기 화면의 QR — 손님이 언제든 찍을 수 있게 상시 노출 */
+  #idleQr { display:flex; align-items:center; gap:1.6vw; margin-top:1vh;
+    background:var(--card); border:1px solid var(--line); border-radius:18px;
+    padding:1.4vh 2vw; box-shadow:var(--shadow); }
+  #idleQr.hidden { display:none !important; }
+  #idleQr .qr { width:clamp(150px,24vh,260px); height:clamp(150px,24vh,260px); }
+  #idleQr .qr-cap { font-size:clamp(13px,1.5vw,19px); }
   .qr-cap b { color:var(--brand); }
   .sd { width:clamp(30px,3.2vw,42px); height:clamp(30px,3.2vw,42px); color:#cfd5e1; }
   .sd svg { width:100%; height:100%; display:block; }
@@ -159,6 +172,10 @@
     <img class="mark" src="../assets/logo-lockup.png" alt="SLOW STEP · Roasting &amp; Baking" />
     <div class="big">어서 오세요</div>
     <div class="sub">오늘도 천천히, 좋은 시간 되세요</div>
+    <div id="idleQr" class="hidden">
+      <div class="qr" id="qrIdle"></div>
+      <div class="qr-cap">휴대폰으로 찍으면<br/><b>내 적립 내역</b>을 볼 수 있어요</div>
+    </div>
   </div>
 
   <!-- 주문 중 -->
@@ -199,12 +216,14 @@
 
   <!-- 완료 -->
   <div id="done" class="hidden">
-    <div class="check">✓</div>
-    <h1>감사합니다</h1>
-    <div class="who" id="doneWho"></div>
-    <div class="stats" id="doneStats"></div>
-    <div class="rewards" id="doneRw"></div>
-    <div class="stamp-row" id="doneStamps"></div>
+    <div class="done-main">
+      <div class="check">✓</div>
+      <h1>감사합니다</h1>
+      <div class="who" id="doneWho"></div>
+      <div class="stats" id="doneStats"></div>
+      <div class="rewards" id="doneRw"></div>
+      <div class="stamp-row" id="doneStamps"></div>
+    </div>
     <div class="qr-box hidden" id="qrBox">
       <div class="qr" id="qr"></div>
       <div class="qr-cap">휴대폰으로 찍으면<br/><b>내 적립 내역</b>을 볼 수 있어요</div>
@@ -226,6 +245,16 @@
   const CUP = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="cup-fill" d="M4.5 7.5h11v5.5a5.5 5.5 0 0 1-11 0V7.5Z"/><path d="M15.5 9h1.3a2.6 2.6 0 0 1 0 5.2h-1.3"/><path d="M3.5 19.5h13"/><path class="steam" d="M8.5 4.6c.5-.7.2-1.3 0-1.8M12 4.6c.5-.7.2-1.3 0-1.8"/></svg>`;
   const won = (n) => (n||0).toLocaleString("ko-KR") + "원";
   const VIEWS = ["idle","order","pay","greet","done"];
+
+  // 멤버십 QR(모든 손님 공통·고정) — 한 번 받아 대기·완료 화면 양쪽에 쓴다
+  let qrSvg = "";
+  function setQr(svg){ if(svg){ qrSvg = svg; paintQr(); } }
+  function paintQr(){
+    const has = !!qrSvg;
+    if(has){ $("qr").innerHTML = qrSvg; $("qrIdle").innerHTML = qrSvg; }
+    $("qrBox").classList.toggle("hidden", !has);
+    $("idleQr").classList.toggle("hidden", !has);
+  }
 
   function show(view){
     VIEWS.forEach(v => $(v).classList.toggle("hidden", v !== view));
@@ -269,8 +298,8 @@
       $("doneStats").innerHTML = `<div class="stat"><div class="k">결제 금액</div><div class="v">${won(d.net)}</div></div>`;
       $("doneRw").innerHTML = ""; $("doneStamps").innerHTML = "";
     }
-    $("qrBox").classList.add("hidden"); $("qr").innerHTML = "";   // QR은 도착하면 표시
     show("done");
+    paintQr();          // 고정 QR이라 결제 때마다 다시 받을 필요가 없다
   }
 
   const ch = new BroadcastChannel("slowstep-pos");
@@ -380,10 +409,7 @@
       $("gStats").innerHTML=""; }
     else if(d.type === "lookup_fail"){ hint(d.message || "처음 오셨군요. 직원이 도와드릴게요.", true); }
     else if(d.type === "done") renderDone(d);
-    else if(d.type === "done_qr"){                 // 결제 직후 도착하는 멤버십 QR
-      $("qr").innerHTML = d.svg || "";
-      $("qrBox").classList.toggle("hidden", !d.svg);
-    }
+    else if(d.type === "done_qr" || d.type === "member_qr") setQr(d.svg);
     else if(d.type === "idle") show("idle");
   };
   // POS가 이미 켜져 있으면 현재 상태를 다시 보내달라고 요청
