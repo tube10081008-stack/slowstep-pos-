@@ -6,6 +6,7 @@ from django.urls import path
 from .views import (
     HealthView,
     MarginView,
+    HallOfFameView,
     MemberQrView,
     OrderParseView,
     PinLoginView,
@@ -30,6 +31,7 @@ urlpatterns = [
     path("store/session", StoreSessionView.as_view(), name="store-session"),
     path("menu", MenuView.as_view(), name="menu"),
     path("member-qr", MemberQrView.as_view(), name="member-qr"),
+    path("hall-of-fame", HallOfFameView.as_view(), name="hall-of-fame"),
     path("orders/parse", OrderParseView.as_view(), name="orders-parse"),
     path("sales/summary", SalesSummaryView.as_view(), name="sales-summary"),
     path("margins/summary", MarginView.as_view(), name="margins-summary"),

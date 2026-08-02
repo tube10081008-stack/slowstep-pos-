@@ -23,12 +23,12 @@ class MenuItemAdmin(admin.ModelAdmin):
 
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
-    list_display = ["name", "point_earn_rate", "stamp_goal", "stamp_reward_points", "option_price", "option_cost", "vat_rate"]
+    list_display = ["name", "point_earn_rate", "stamp_goal", "option_price", "option_cost", "vat_rate", "happy_start", "happy_end", "happy_multiplier"]
 
 
 @admin.register(Member)
 class MemberAdmin(admin.ModelAdmin):
-    list_display = ["name", "phone", "tier", "points", "total_spent", "visit_count", "stamps", "marketing_opt_in"]
+    list_display = ["name", "phone", "tier", "points", "total_spent", "visit_count", "stamps", "marketing_opt_in", "referral_code"]
     list_filter = ["tier", "marketing_opt_in"]
     search_fields = ["name", "phone"]
 

@@ -67,7 +67,11 @@ class Command(BaseCommand):
         # 정책 갱신(기존 매장도 반영)
         store.point_earn_rate = "0.03"
         store.option_cost = 300  # 옵션(오트밀크·샷 등) 1개당 추가 원가 데모값
-        store.save(update_fields=["point_earn_rate", "option_cost"])
+        # 한가한 시간대(14~16시) 적립 2배 — 피크 분산용 기본값
+        store.happy_start, store.happy_end, store.happy_multiplier = 14, 16, 2
+        store.save(update_fields=[
+            "point_earn_rate", "option_cost", "happy_start", "happy_end", "happy_multiplier",
+        ])
         self.stdout.write(f"매장: {store.name} (적립 {float(store.point_earn_rate)*100:.0f}%)")
 
         missions = [

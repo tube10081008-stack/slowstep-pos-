@@ -8,6 +8,8 @@
 - 이중 취소 방지
 - /api/v1/health 저장 모드 보고
 """
+from datetime import timedelta
+
 from django.db import IntegrityError, transaction as db_transaction
 from django.test import TestCase
 from django.utils import timezone
@@ -792,6 +794,201 @@ class DeploymentDepsTests(TestCase):
             # 결제·조회 경로는 정상
             self.assertEqual(self.client.get("/api/v1/menu").status_code, 200)
             self.assertEqual(self.client.get("/api/v1/health").status_code, 200)
+
+
+class GamificationTests(TestCase):
+    """확장된 게이미피케이션: 룰렛·해피아워·스트릭·취향·컬렉션·초대·명예의 전당."""
+
+    def setUp(self):
+        self.store = make_store(point_earn_rate="0.03", stamp_goal=3)
+        self.m = Member.objects.create(
+            store=self.store, phone="01011110000", name="느긋한 수달"
+        )
+        self.amer = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000,
+            category=MenuItem.Category.COFFEE, decaf_available=True, shot_available=True,
+        )
+        self.latte = MenuItem.objects.create(
+            store=self.store, name="카페 라떼", price=4500,
+            category=MenuItem.Category.COFFEE, oatmilk_available=True,
+        )
+        self.cake = MenuItem.objects.create(
+            store=self.store, name="치즈케이크", price=6000,
+            category=MenuItem.Category.DESSERT, temp_option=MenuItem.Temp.NONE,
+        )
+
+    def _buy(self, menu, qty=1, oid=None, **opts):
+        return checkout(
+            member=self.m, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": menu.id, "quantity": qty, **opts}],
+            toss_order_id=oid or f"g-{timezone.now().timestamp()}-{menu.id}",
+        )
+
+    # ── 룰렛 ──
+    def test_stamp_completion_spins_roulette(self):
+        from .rewards import ROULETTE
+
+        segs = [p for p, _ in ROULETTE]
+        for i in range(3):                       # stamp_goal=3
+            r = self._buy(self.amer, oid=f"r{i}")
+        wheel = [x for x in r.rewards if x["type"] == "roulette"]
+        self.assertEqual(len(wheel), 1)
+        w = wheel[0]
+        self.assertIn(w["points"], segs)          # 실제 칸 중 하나
+        self.assertEqual(w["wheel"], segs)
+        self.assertEqual(segs[w["index"]], w["points"])   # 화면 연출과 결과가 일치
+        # 원장에 스탬프 보상으로 기록
+        self.m.refresh_from_db()
+        entry = self.m.point_entries.filter(reason="stamp").get()
+        self.assertEqual(entry.delta, w["points"])
+        self.assertEqual(self.m.stamps, 0)        # 리셋
+
+    def test_roulette_expected_value_close_to_fixed_reward(self):
+        """비용이 크게 늘지 않아야 한다(기댓값 ≈ 기존 3,000P)."""
+        from .rewards import ROULETTE
+
+        ev = sum(p * w for p, w in ROULETTE) / sum(w for _, w in ROULETTE)
+        self.assertLess(abs(ev - 3000), 400)
+
+    # ── 해피아워 ──
+    def test_happy_hour_doubles_earning(self):
+        from .services import calc_points_earned
+
+        base = calc_points_earned(10000, self.store)
+        self.assertEqual(base, 300)               # 3%
+        self.store.happy_start, self.store.happy_end = 0, 24
+        self.store.happy_multiplier = 2
+        self.store.save()
+        boosted = calc_points_earned(10000, self.store)
+        self.assertEqual(boosted, 600)            # 2배
+
+    def test_happy_hour_inactive_when_unset(self):
+        self.assertFalse(self.store.is_happy_hour())
+
+    def test_happy_hour_across_midnight(self):
+        self.store.happy_start, self.store.happy_end = 21, 2
+        self.store.save()
+        # 현지 시각으로 만들어야 한다(now()는 UTC 기준)
+        local = timezone.localtime(timezone.now())
+        late = local.replace(hour=23, minute=0)
+        noon = local.replace(hour=12, minute=0)
+        self.assertTrue(self.store.is_happy_hour(late))
+        self.assertFalse(self.store.is_happy_hour(noon))
+
+    # ── 취향 · 컬렉션 ──
+    def test_taste_and_collection(self):
+        from .profile import build_member_dashboard
+
+        self._buy(self.amer, qty=3, oid="t1")
+        self._buy(self.cake, qty=1, oid="t2")
+        d = build_member_dashboard(self.m)
+        self.assertEqual(d["taste"]["favorite"], "아메리카노")
+        self.assertEqual(d["taste"]["favorite_qty"], 3)
+        # 3종 중 2종 맛봄
+        self.assertEqual(d["collection"]["tried"], 2)
+        self.assertEqual(d["collection"]["total"], 3)
+        # 아직 안 먹어본 메뉴를 추천용으로 알려준다
+        coffee = [c for c in d["collection"]["categories"] if c["key"] == "coffee"][0]
+        self.assertEqual(coffee["next"], "카페 라떼")
+
+    # ── 스트릭 ──
+    def test_streak_counts_consecutive_weeks(self):
+        from .profile import _streak
+
+        now = timezone.now()
+        for weeks_ago in (0, 1, 2):
+            t = self._buy(self.amer, oid=f"s{weeks_ago}").transaction
+            Transaction.objects.filter(pk=t.pk).update(
+                paid_at=now - timedelta(days=7 * weeks_ago)
+            )
+        s = _streak(self.m)
+        self.assertEqual(s["weeks"], 3)
+        self.assertTrue(s["alive"] and s["visited_this_week"])
+
+    def test_streak_breaks_after_gap(self):
+        from .profile import _streak
+
+        t = self._buy(self.amer, oid="s-old").transaction
+        Transaction.objects.filter(pk=t.pk).update(
+            paid_at=timezone.now() - timedelta(days=30)
+        )
+        s = _streak(self.m)
+        self.assertEqual(s["weeks"], 0)
+        self.assertFalse(s["alive"])
+
+    # ── 배지 ──
+    def test_option_and_time_badges(self):
+        from .profile import build_member_dashboard
+
+        for i in range(3):
+            self._buy(self.latte, oid=f"o{i}", oatmilk=True)
+        badges = {b["key"]: b["earned"] for b in build_member_dashboard(self.m)["badges"]}
+        self.assertTrue(badges["oat"])
+        self.assertFalse(badges["decaf"])
+
+    # ── 랭킹 표시 이름 ──
+    def test_nickname_shown_but_real_name_masked(self):
+        from .profile import _display_name
+
+        self.assertEqual(_display_name("느긋한 수달"), "느긋한 수달")   # 닉네임 그대로
+        self.assertEqual(_display_name("김슬로우"), "김***")            # 이관 실명은 가림
+
+    # ── 초대 ──
+    def test_referral_rewards_both(self):
+        from .rewards import REFERRAL_REWARD
+        from .services import apply_referral
+
+        host = Member.objects.create(
+            store=self.store, phone="01022220000", name="졸린 판다"
+        )
+        code = host.ensure_referral_code()
+        result = apply_referral(self.m, code)
+        self.m.refresh_from_db(); host.refresh_from_db()
+        self.assertEqual(result["reward"], REFERRAL_REWARD)
+        self.assertEqual(self.m.points, REFERRAL_REWARD)
+        self.assertEqual(host.points, REFERRAL_REWARD)
+        self.assertEqual(self.m.referred_by_id, host.id)
+
+    def test_referral_rejects_self_reuse_and_unknown(self):
+        from .services import ReferralError, apply_referral
+
+        my_code = self.m.ensure_referral_code()
+        with self.assertRaises(ReferralError):
+            apply_referral(self.m, my_code)          # 자기 코드
+        with self.assertRaises(ReferralError):
+            apply_referral(self.m, "ZZZZZZ")         # 없는 코드
+
+        host = Member.objects.create(
+            store=self.store, phone="01033330000", name="춤추는 알파카"
+        )
+        apply_referral(self.m, host.ensure_referral_code())
+        with self.assertRaises(ReferralError):
+            apply_referral(self.m, host.referral_code)   # 두 번째 사용 불가
+
+    def test_referral_codes_are_unique(self):
+        codes = {
+            Member.objects.create(
+                store=self.store, phone=f"010444{i:05d}", name=f"회원{i}"
+            ).ensure_referral_code()
+            for i in range(20)
+        }
+        self.assertEqual(len(codes), 20)
+
+    # ── 이달의 단골 ──
+    def test_hall_of_fame_uses_nickname(self):
+        from .profile import hall_of_fame
+
+        self._buy(self.amer, oid="h1")
+        self._buy(self.amer, oid="h2")
+        hof = hall_of_fame()
+        self.assertEqual(hof["top"][0]["nickname"], "느긋한 수달")
+        self.assertEqual(hof["top"][0]["visits"], 2)
+
+    def test_hall_of_fame_endpoint_public(self):
+        res = self.client.get("/api/v1/hall-of-fame")   # 고객 화면용 — PIN 없음
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("top", res.json())
 
 
 class HealthEndpointTests(TestCase):

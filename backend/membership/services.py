@@ -23,6 +23,7 @@ from .models import (
     Transaction,
 )
 from .payments import TossClient, TossError
+from .rewards import REFERRAL_REWARD, earn_multiplier, spin_roulette
 
 
 class CheckoutError(Exception):
@@ -70,9 +71,9 @@ class CheckoutResult:
     idempotent_replay: bool = False
 
 
-def calc_points_earned(net_amount: int, store: Store) -> int:
-    """실결제액 기준 적립 포인트(반올림)."""
-    rate = Decimal(store.point_earn_rate)
+def calc_points_earned(net_amount: int, store: Store, when=None) -> int:
+    """실결제액 기준 적립 포인트(반올림). 해피아워면 배수를 적용한다."""
+    rate = Decimal(store.point_earn_rate) * earn_multiplier(store, when)
     return int((Decimal(net_amount) * rate).quantize(Decimal("1"), ROUND_HALF_UP))
 
 
@@ -201,12 +202,16 @@ def _apply_stamp_and_tier(member: Member, txn: Transaction, rewards: list[dict])
     member.stamps += 1
     if store.stamp_goal and member.stamps >= store.stamp_goal:
         member.stamps = 0
-        _record_point(member, txn, store.stamp_reward_points, PointEntry.Reason.STAMP)
+        # 고정 보상 대신 룰렛 — 결과는 서버가 정하고 화면은 연출만 한다.
+        won, idx, segments = spin_roulette()
+        _record_point(member, txn, won, PointEntry.Reason.STAMP)
         rewards.append(
             {
-                "type": "stamp",
-                "title": f"스탬프 {store.stamp_goal}개 적립 완료",
-                "points": store.stamp_reward_points,
+                "type": "roulette",
+                "title": f"스탬프 {store.stamp_goal}개 완성",
+                "points": won,
+                "wheel": segments,
+                "index": idx,
             }
         )
     member.tier = member.compute_tier()
@@ -386,6 +391,46 @@ def _checkout_atomic(
 
     member.save()
     return CheckoutResult(transaction=txn, rewards=rewards)
+
+
+class ReferralError(Exception):
+    """초대 코드 적용 실패."""
+
+
+@db_transaction.atomic
+def apply_referral(member: Member, code: str) -> dict:
+    """
+    친구 초대 코드 적용 — 초대한 사람과 받은 사람 모두에게 포인트.
+
+    한 번만 가능하고, 자기 코드는 쓸 수 없다. 이미 방문이 많은 회원이 뒤늦게
+    쓰는 걸 막기 위해 **첫 방문 전후(방문 3회 이하)** 로 제한한다.
+    """
+    code = (code or "").strip().upper()
+    if not code:
+        raise ReferralError("초대 코드를 입력해 주세요.")
+
+    me = Member.objects.select_for_update().get(pk=member.pk)
+    if me.referred_by_id is not None:
+        raise ReferralError("이미 초대 코드를 사용하셨어요.")
+    if me.visit_count > 3:
+        raise ReferralError("초대 코드는 가입 초기에만 사용할 수 있어요.")
+
+    host = Member.objects.select_for_update().filter(referral_code=code).first()
+    if host is None:
+        raise ReferralError("없는 초대 코드예요.")
+    if host.pk == me.pk:
+        raise ReferralError("자신의 코드는 사용할 수 없어요.")
+
+    me.referred_by = host
+    _record_point(me, None, REFERRAL_REWARD, PointEntry.Reason.REFERRAL)
+    me.save(update_fields=["referred_by", "points"])
+    _record_point(host, None, REFERRAL_REWARD, PointEntry.Reason.REFERRAL)
+    host.save(update_fields=["points"])
+    return {
+        "reward": REFERRAL_REWARD,
+        "host": host.name,
+        "points": me.points,
+    }
 
 
 @db_transaction.atomic

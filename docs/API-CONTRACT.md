@@ -78,6 +78,23 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 ### `GET /api/v1/members/{id}`
 회원 상세 + 진행 중 미션 + 최근 적립 내역.
 
+> **`GET /api/v1/members/{id}/dashboard`** 는 게이미피케이션 전체를 한 번에 준다:
+> `badges`(19종 — 방문·누적에 더해 **시간대·요일·옵션·컬렉션·스트릭** 기반),
+> `taste`(최애 메뉴·카테고리 분포), `collection`(메뉴 도장깨기·다음 도전 메뉴),
+> `streak`(주 단위 연속 방문), `hall_of_fame`(이달의 단골), `referral`(내 초대 코드),
+> `next_tier`, `ranking`, `timeline`, `missions`.
+
+### `POST /api/v1/members/{id}/referral`
+**친구 초대 코드 적용**(공개 — 손님 폰에서 호출). `{ "code": "7K2M9Q" }`
+→ 초대한 사람과 받은 사람 **모두** 2,000P. 한 번만 가능하고, 자기 코드는 불가,
+가입 초기(방문 3회 이하)에만 사용할 수 있다. 실패 시 400 + 사유.
+
+### `GET /api/v1/hall-of-fame`
+**이달의 단골 TOP3**(공개). 닉네임으로 표시하므로 매장 화면에 띄워도 된다.
+```json
+200 { "month": "2026-08", "top": [ { "rank":1, "nickname":"느긋한 수달", "visits":12 } ] }
+```
+
 ### `GET /api/v1/members/{id}/missions`
 회원의 미션 진행 목록.
 ```json

@@ -119,6 +119,40 @@
   @keyframes rise { from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none;} }
   .card, .hero { animation:rise .4s ease both; }
   button, .lb-row, .badge, .stamp { transition:all .16s ease; }
+  /* 스트릭 */
+  .streak { display:flex; align-items:center; gap:14px; }
+  .s-fire { font-size:34px; line-height:1; filter:grayscale(1); opacity:.35; }
+  .streak.on .s-fire { filter:none; opacity:1; }
+  .s-txt b { display:block; font-size:17px; font-weight:800; }
+  .s-txt span { display:block; font-size:12px; color:var(--muted); margin-top:3px; }
+  /* 취향 */
+  .fav { display:flex; align-items:baseline; gap:8px; margin-bottom:14px; }
+  .fav-k { font-size:11px; color:var(--muted); border:1px solid var(--line);
+    padding:2px 8px; border-radius:999px; }
+  .fav b { font-size:19px; font-weight:800; }
+  .fav-q { font-size:13px; color:var(--brand); font-weight:700; }
+  .catbar { display:flex; height:12px; border-radius:6px; overflow:hidden; background:var(--card2); }
+  .catbar i { display:block; height:100%; }
+  .catleg { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; font-size:12px; color:var(--muted); }
+  .catleg span i { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
+  /* 컬렉션 */
+  .coll { margin-bottom:12px; }
+  .coll:last-child { margin-bottom:0; }
+  .coll .top { display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; }
+  .coll .top b { font-weight:700; }
+  .coll .bar { height:7px; background:var(--card2); border-radius:4px; overflow:hidden; }
+  .coll .bar i { display:block; height:100%; background:var(--brand); }
+  .coll .next { font-size:11px; color:var(--muted); margin-top:4px; }
+  /* 초대 */
+  .refcode { font-size:26px; font-weight:800; letter-spacing:.16em; text-align:center;
+    background:var(--card2); border:1px dashed var(--line); border-radius:12px; padding:14px; }
+  /* 이달의 단골 */
+  .hof { display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line); }
+  .hof:last-child { border-bottom:0; }
+  .hof .r { font-size:16px; width:28px; text-align:center; }
+  .hof .n { flex:1; font-weight:600; font-size:14px; }
+  .hof .v { font-size:13px; color:var(--muted); }
+  .hof.me { background:var(--brand-soft); border-radius:8px; padding-left:8px; padding-right:8px; }
   /* 홈 화면에 추가 배너 */
   .install { position:fixed; left:12px; right:12px; bottom:12px; z-index:20;
     background:#fff; border:1px solid var(--line); border-radius:16px; padding:12px 14px;
@@ -218,6 +252,49 @@
       <p class="muted" style="margin-top:10px;" id="stampHint"></p>
     </div>
 
+    <!-- 연속 방문 스트릭 -->
+    <div class="card streak" id="streakCard" style="display:none">
+      <div class="s-fire" id="sFire">🔥</div>
+      <div class="s-txt"><b id="sWeeks"></b><span id="sHint"></span></div>
+    </div>
+
+    <!-- 취향 프로필 -->
+    <div class="card" id="tasteCard" style="display:none">
+      <h3>내 취향</h3>
+      <div class="fav"><span class="fav-k">최애</span>
+        <b id="favName"></b><span class="fav-q" id="favQty"></span></div>
+      <div class="catbar" id="catBar"></div>
+      <div class="catleg" id="catLeg"></div>
+    </div>
+
+    <!-- 메뉴 도장깨기 -->
+    <div class="card" id="collCard" style="display:none">
+      <h3>메뉴 도장깨기 <span class="muted" id="collSum"></span></h3>
+      <div id="collList"></div>
+    </div>
+
+    <!-- 친구 초대 -->
+    <div class="card" id="refCard" style="display:none">
+      <h3>친구 초대</h3>
+      <p class="muted" id="refDesc"></p>
+      <div class="refcode" id="refCode"></div>
+      <div id="refInput" style="margin-top:14px;display:none">
+        <label class="muted" style="font-size:12px">친구 코드가 있다면</label>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <input id="refIn" placeholder="예: 7K2M9Q" maxlength="8"
+                 style="text-transform:uppercase" />
+          <button class="go" style="flex:0 0 92px" onclick="useReferral()">적용</button>
+        </div>
+      </div>
+      <p class="muted" id="refMsg" style="margin-top:10px"></p>
+    </div>
+
+    <!-- 이달의 단골 -->
+    <div class="card" id="hofCard" style="display:none">
+      <h3>이달의 단골</h3>
+      <div id="hofList"></div>
+    </div>
+
     <!-- 방문 기록 타임라인 -->
     <div class="card">
       <h3>방문 기록</h3>
@@ -253,8 +330,8 @@
   const won = (n) => (n||0).toLocaleString("ko-KR");
   const METHOD = { CARD:"카드", NAVERPAY:"네이버페이", EASYPAY:"간편결제", CASH:"현금", TOSS_CARD:"카드", TOSS_EASY:"간편결제" };
 
-  async function api(path){
-    const r = await fetch(API_BASE + path);
+  async function api(path, opts){
+    const r = await fetch(API_BASE + path, opts || {});
     const b = await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(b.detail || ("오류 "+r.status));
     return b;
@@ -264,6 +341,21 @@
     const p = $("phone").value.trim();
     if(!p) return;
     location.search = "?phone=" + encodeURIComponent(p);
+  }
+
+  let currentMemberId = null;
+  async function useReferral(){
+    const code = ($("refIn").value||"").trim().toUpperCase();
+    if(!code || !currentMemberId) return;
+    $("refMsg").textContent = "확인 중…";
+    try {
+      const r = await api(`/api/v1/members/${currentMemberId}/referral`,
+        { method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ code }) });
+      $("refMsg").innerHTML = `🎉 <b>${won(r.reward)}P</b> 적립! (${r.host}님도 함께 받았어요)`;
+      $("refInput").style.display = "none";
+      setTimeout(()=>location.reload(), 2600);
+    } catch(e){ $("refMsg").textContent = "❌ " + e.message; }
   }
 
   async function load(phone){
@@ -280,6 +372,7 @@
 
   function render(d){
     const m = d.member;
+    currentMemberId = m.id;
     $("loginCard").classList.add("hidden");
     $("view").classList.remove("hidden");
 
@@ -348,6 +441,67 @@
           <div class="tl-sub">${label}</div>
         </div>`;
       }).join("");
+    }
+
+    // ── 스트릭 ──
+    const st = d.streak || {};
+    if(st.weeks > 0){
+      $("streakCard").style.display = "flex";
+      $("streakCard").classList.toggle("on", !!st.alive);
+      $("sWeeks").textContent = `${st.weeks}주 연속 방문 중`;
+      $("sHint").textContent = st.visited_this_week
+        ? "이번 주 방문 완료! 다음 주에도 오시면 계속 이어져요"
+        : "이번 주 안에 오시면 연속 기록이 이어져요";
+    }
+
+    // ── 취향 ──
+    const t = d.taste || {};
+    if(t.favorite){
+      $("tasteCard").style.display = "";
+      $("favName").textContent = t.favorite;
+      $("favQty").textContent = `${t.favorite_qty}잔`;
+      const COLORS = ["#3b5bff","#8b5cf6","#0ea5e9","#f59e0b","#ec4899","#10b981"];
+      $("catBar").innerHTML = t.categories.map((c,i)=>
+        `<i style="width:${c.pct}%;background:${COLORS[i%6]}" title="${c.label} ${c.pct}%"></i>`).join("");
+      $("catLeg").innerHTML = t.categories.map((c,i)=>
+        `<span><i style="background:${COLORS[i%6]}"></i>${c.label} ${c.pct}%</span>`).join("");
+    }
+
+    // ── 도장깨기 ──
+    const col = d.collection || {};
+    if(col.total){
+      $("collCard").style.display = "";
+      $("collSum").textContent = `${col.tried}/${col.total}종 · ${col.pct}%`;
+      $("collList").innerHTML = col.categories.map(c=>`
+        <div class="coll">
+          <div class="top"><span>${c.label}</span><b>${c.tried}/${c.total}</b></div>
+          <div class="bar"><i style="width:${c.total?Math.round(c.tried/c.total*100):0}%"></i></div>
+          ${c.next?`<div class="next">다음 도전: ${c.next}</div>`:'<div class="next">모두 정복!</div>'}
+        </div>`).join("");
+    }
+
+    // ── 친구 초대 ──
+    const rf = d.referral || {};
+    if(rf.code){
+      $("refCard").style.display = "";
+      $("refDesc").textContent =
+        `친구가 아래 코드를 입력하면 둘 다 ${won(rf.reward)}P를 받아요` +
+        (rf.invited ? ` · 지금까지 ${rf.invited}명 초대` : "");
+      $("refCode").textContent = rf.code;
+      $("refInput").style.display = rf.referred ? "none" : "";
+    }
+
+    // ── 이달의 단골 ──
+    const hof = d.hall_of_fame || {};
+    if(hof.top && hof.top.length){
+      $("hofCard").style.display = "";
+      const medal = ["🥇","🥈","🥉"];
+      $("hofList").innerHTML = hof.top.map(x=>
+        `<div class="hof ${x.member_id===m.id?"me":""}">
+           <span class="r">${medal[x.rank-1]||x.rank}</span>
+           <span class="n">${x.nickname}${x.member_id===m.id?" (나)":""}</span>
+           <span class="v">${x.visits}회</span>
+         </div>`).join("");
     }
 
     // 미션

@@ -29,6 +29,13 @@ class Store(models.Model):
     vat_rate = models.DecimalField(
         "부가세율", max_digits=4, decimal_places=3, default=0.10
     )
+    # ── 해피아워: 한가한 시간대에 적립을 올려 피크를 분산한다 ──
+    # start==end 이면 비활성. 자정을 넘기는 구간(예: 21~1시)도 지원.
+    happy_start = models.PositiveSmallIntegerField("해피아워 시작(시)", default=0)
+    happy_end = models.PositiveSmallIntegerField("해피아워 종료(시)", default=0)
+    happy_multiplier = models.DecimalField(
+        "해피아워 적립 배수", max_digits=3, decimal_places=1, default=2.0
+    )
     # 영업 상태
     is_open = models.BooleanField("영업중", default=False)
     opened_at = models.DateTimeField("영업 시작 시각", null=True, blank=True)
@@ -40,6 +47,19 @@ class Store(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def happy_hour_active(self) -> bool:
+        return self.happy_start != self.happy_end
+
+    def is_happy_hour(self, when=None) -> bool:
+        """지금이 해피아워인가. 자정을 넘기는 구간도 처리."""
+        if not self.happy_hour_active:
+            return False
+        h = timezone.localtime(when or timezone.now()).hour
+        if self.happy_start < self.happy_end:
+            return self.happy_start <= h < self.happy_end
+        return h >= self.happy_start or h < self.happy_end   # 자정 넘김
 
 
 class Member(models.Model):
@@ -70,6 +90,14 @@ class Member(models.Model):
     )
     stamps = models.IntegerField("스탬프", default=0)
     marketing_opt_in = models.BooleanField("마케팅 수신 동의", default=False)
+    # 친구 초대: 내 코드로 친구가 등록하면 둘 다 보상
+    referral_code = models.CharField(
+        "초대 코드", max_length=12, unique=True, null=True, blank=True
+    )
+    referred_by = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="referrals", verbose_name="추천인",
+    )
     joined_at = models.DateTimeField("가입 시각", auto_now_add=True)
 
     class Meta:
@@ -79,6 +107,21 @@ class Member(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name}({self.phone})"
+
+    def ensure_referral_code(self) -> str:
+        """초대 코드가 없으면 만들어 저장(헷갈리는 0·O·1·I 제외)."""
+        if self.referral_code:
+            return self.referral_code
+        import random
+
+        alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+        for _ in range(30):
+            code = "".join(random.choice(alphabet) for _ in range(6))
+            if not Member.objects.filter(referral_code=code).exists():
+                self.referral_code = code
+                Member.objects.filter(pk=self.pk).update(referral_code=code)
+                return code
+        raise RuntimeError("초대 코드 생성 실패")
 
     def compute_tier(self) -> str:
         """누적 결제액으로 등급 계산."""
@@ -272,6 +315,7 @@ class PointEntry(models.Model):
         ADJUST = "adjust", "조정"
         MISSION = "mission", "미션 보상"
         STAMP = "stamp", "스탬프 보상"
+        REFERRAL = "referral", "초대 보상"
         CANCEL = "cancel", "취소 원복"
 
     member = models.ForeignKey(

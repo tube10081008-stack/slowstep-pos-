@@ -36,8 +36,15 @@ from .ai_order import OrderParseError, parse_order
 from .imports import CsvImportError, import_members_csv
 from .member_qr import QrUnavailable, member_url, qr_svg
 from .margins import margin_summary, menu_item_margins, to_supply
-from .profile import build_member_dashboard
-from .services import CheckoutError, build_quote, cancel_transaction, checkout
+from .profile import build_member_dashboard, hall_of_fame
+from .services import (
+    CheckoutError,
+    ReferralError,
+    apply_referral,
+    build_quote,
+    cancel_transaction,
+    checkout,
+)
 
 
 def _resolve_member(member_id):
@@ -232,6 +239,13 @@ class MemberQrView(APIView):
         return Response({"url": url, "svg": svg})
 
 
+class HallOfFameView(APIView):
+    """이달의 단골(공개) — 닉네임으로 표시하므로 매장 화면에 띄워도 된다."""
+
+    def get(self, request):
+        return Response(hall_of_fame())
+
+
 class MarginView(APIView):
     """
     원가·마진 분석: 기간 기여이익 + 메뉴별 마진 순위.
@@ -257,7 +271,7 @@ class MemberViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post"]
 
     # 고객이 본인 멤버십을 보는 경로만 공개. 명단 검색·가입·일괄등록은 매장 전용.
-    PUBLIC_ACTIONS = {"lookup", "dashboard", "missions", "points"}
+    PUBLIC_ACTIONS = {"lookup", "dashboard", "missions", "points", "referral"}
 
     def get_permissions(self):
         if self.action in self.PUBLIC_ACTIONS:
@@ -331,6 +345,16 @@ class MemberViewSet(viewsets.ModelViewSet):
         data = {"member": MemberSerializer(member).data}
         data.update(build_member_dashboard(member))
         return Response(data)
+
+    @action(detail=True, methods=["post"], url_path="referral")
+    def referral(self, request, pk=None):
+        """친구 초대 코드 적용(손님 폰에서 호출). 둘 다 포인트를 받는다."""
+        member = self.get_object()
+        try:
+            result = apply_referral(member, request.data.get("code", ""))
+        except ReferralError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(result)
 
     @action(detail=True, methods=["get"])
     def points(self, request, pk=None):
