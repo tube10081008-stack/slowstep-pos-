@@ -119,6 +119,23 @@
   @keyframes rise { from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none;} }
   .card, .hero { animation:rise .4s ease both; }
   button, .lb-row, .badge, .stamp { transition:all .16s ease; }
+  /* 개인 퀘스트 */
+  .q { border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:10px; }
+  .q:last-child { margin-bottom:0; }
+  .q .qt { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .q .qt b { font-size:14px; font-weight:700; }
+  .q .qr { font-size:12px; color:var(--brand); font-weight:700; white-space:nowrap; }
+  .q .qd { font-size:12px; color:var(--muted); margin-top:3px; }
+  .q .bar { height:6px; background:var(--card2); border-radius:3px; margin-top:9px; overflow:hidden; }
+  .q .bar i { display:block; height:100%; background:var(--brand); }
+  .q .qp { font-size:11px; color:var(--muted); margin-top:4px; text-align:right; }
+  /* 대표 칭호 */
+  .title-chip { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700;
+    background:var(--brand-soft); color:var(--brand-dk); border:1px solid #dfe4ff;
+    border-radius:999px; padding:4px 11px; margin-bottom:8px; }
+  .title-chip small { font-weight:600; opacity:.75; }
+  /* 배지 희귀도·단계 */
+  .badge .rare { display:block; font-size:9px; color:var(--brand); font-weight:700; margin-top:2px; }
   /* 스트릭 */
   .streak { display:flex; align-items:center; gap:14px; }
   .s-fire { font-size:34px; line-height:1; filter:grayscale(1); opacity:.35; }
@@ -196,6 +213,7 @@
     <!-- 히어로 -->
     <div class="hero">
       <div class="eyebrow">SLOWSTEP MEMBERSHIP</div>
+      <div id="titleChip"></div>
       <div class="name" id="name">—</div>
       <span class="tier-badge" id="tier">—</span>
       <div class="points" id="points">0<span>P</span></div>
@@ -250,6 +268,12 @@
       <h3>스탬프 적립 <span class="muted" style="font-weight:400" id="stampLabel"></span></h3>
       <div class="stamps" id="stamps"></div>
       <p class="muted" style="margin-top:10px;" id="stampHint"></p>
+    </div>
+
+    <!-- 나만의 도전 (개인 맞춤 퀘스트) -->
+    <div class="card" id="questCard" style="display:none">
+      <h3>나만의 도전 <span class="muted" style="font-weight:500">— 내 기록에서 만들어졌어요</span></h3>
+      <div id="questList"></div>
     </div>
 
     <!-- 연속 방문 스트릭 -->
@@ -416,7 +440,8 @@
     $("badges").innerHTML = d.badges.map(b =>
       `<div class="badge ${b.earned?"on":""}" title="${b.desc}">
         <div class="ic">${b.icon}</div><div class="bt">${b.title}</div>
-        <div class="bd">${b.earned?"획득":b.desc}</div>
+        <div class="bd">${b.earned?(b.level?b.desc:"획득"):b.desc}</div>
+        ${b.earned && b.rarity!=null && b.rarity<50 ? `<span class="rare">상위 ${b.rarity}%</span>`:""}
       </div>`
     ).join("");
 
@@ -441,6 +466,29 @@
           <div class="tl-sub">${label}</div>
         </div>`;
       }).join("");
+    }
+
+    // ── 나만의 도전 ──
+    const qs = d.quests || [];
+    if(qs.length){
+      $("questCard").style.display = "";
+      $("questList").innerHTML = qs.map(q=>{
+        const pct = q.target ? Math.min(100, Math.round(q.progress/q.target*100)) : 0;
+        return `<div class="q">
+          <div class="qt"><b>${q.title}</b><span class="qr">+${won(q.reward)}P</span></div>
+          <div class="qd">${q.description||""}</div>
+          <div class="bar"><i style="width:${pct}%"></i></div>
+          <div class="qp">${q.progress} / ${q.target}</div>
+        </div>`;
+      }).join("");
+    }
+
+    // ── 대표 칭호 ──
+    if(d.title){
+      const r = d.title.rarity;
+      $("titleChip").innerHTML =
+        `<span class="title-chip">${d.title.icon} ${d.title.title}` +
+        (r!=null && r<100 ? ` <small>상위 ${r}%</small>` : "") + `</span>`;
     }
 
     // ── 스트릭 ──

@@ -11,7 +11,7 @@ from datetime import timedelta
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
-from .models import Member, MenuItem, Mission, OrderItem, Transaction
+from .models import Member, MenuItem, Mission, OrderItem, PointEntry, Transaction
 from .rewards import REFERRAL_REWARD
 
 # 등급 임계값 (누적 결제액 기준)
@@ -56,6 +56,60 @@ def _behavior_flags(member: Member) -> dict:
     return {**opt, "morning": morning, "evening": evening, "weekend": weekend}
 
 
+def _hidden_flags(member: Member) -> dict:
+    """히든 배지 판정 — 조건을 미리 알려주지 않는 '발견의 재미'용."""
+    paid = member.transactions.filter(
+        status=Transaction.Status.PAID, paid_at__isnull=False
+    )
+    # 그날의 첫 손님: 같은 날 나보다 앞선 결제가 없는 거래가 있는가
+    first_of_day = False
+    for t in paid.values_list("paid_at", flat=True):
+        day = timezone.localtime(t).date()
+        earlier = Transaction.objects.filter(
+            status=Transaction.Status.PAID, paid_at__date=day, paid_at__lt=t
+        ).exists()
+        if not earlier:
+            first_of_day = True
+            break
+    late = any(timezone.localtime(t).hour >= 21 for t in paid.values_list("paid_at", flat=True))
+    jackpot = member.point_entries.filter(
+        reason=PointEntry.Reason.STAMP, delta__gte=10000
+    ).exists()
+    set_master = paid.filter(discount__gt=0).count()
+    return {
+        "first_of_day": first_of_day,
+        "late": late,
+        "jackpot": jackpot,
+        "set_master": set_master,
+    }
+
+
+# 단계형 배지: (키, 아이콘, 이름, 단계 임계값)
+LEVELED = (
+    ("cups", "☕", "커피 애호가", (10, 50, 100)),
+    ("spender", "◈", "든든한 단골", (50_000, 200_000, 500_000)),
+)
+ROMAN = ("Ⅰ", "Ⅱ", "Ⅲ", "Ⅳ", "Ⅴ")
+
+
+def _leveled_badges(member: Member) -> list[dict]:
+    """한 번 따면 끝나지 않고 단계가 오르는 배지."""
+    values = {"cups": member.visit_count, "spender": member.total_spent}
+    out = []
+    for key, icon, title, steps in LEVELED:
+        v = values[key]
+        level = sum(1 for s in steps if v >= s)
+        nxt = steps[level] if level < len(steps) else None
+        out.append({
+            "key": key, "icon": icon,
+            "title": f"{title} {ROMAN[level - 1]}" if level else title,
+            "desc": (f"다음 단계까지 {nxt - v:,}" + ("잔" if key == "cups" else "원"))
+                    if nxt else "최고 단계 달성",
+            "earned": level > 0, "level": level, "max_level": len(steps),
+        })
+    return out
+
+
 def _badges(member: Member, completed_missions: int, collection: dict,
             streak: dict, flags: dict) -> list[dict]:
     """카페 멤버십용 성취 배지 목록(획득 여부 포함)."""
@@ -86,10 +140,22 @@ def _badges(member: Member, completed_missions: int, collection: dict,
         ("streak3", "🔥", "3주 연속", "3주 연속 방문", streak["weeks"] >= 3),
         ("streak8", "🔥", "두 달 개근", "8주 연속 방문", streak["weeks"] >= 8),
     ]
-    return [
+    # ── 히든 배지: 얻기 전에는 목록에 보이지 않는다 ──
+    hidden = _hidden_flags(member)
+    for key, icon, title, desc, earned in (
+        ("first_guest", "✷", "오늘의 첫 손님", "그날 첫 번째로 방문", hidden["first_of_day"]),
+        ("night", "☾", "늦은 밤의 위로", "밤 9시 이후 방문", hidden["late"]),
+        ("jackpot", "★", "룰렛 잭팟", "룰렛 최고 상금 당첨", hidden["jackpot"]),
+        ("setlover", "✚", "세트 마스터", "세트 할인 5회", hidden["set_master"] >= 5),
+    ):
+        if earned:
+            defs.append((key, icon, title, desc, True))
+    out = [
         {"key": k, "icon": icon, "title": t, "desc": d, "earned": bool(e)}
         for (k, icon, t, d, e) in defs
     ]
+    out.extend(_leveled_badges(member))
+    return out
 
 
 def _next_tier(member: Member) -> dict:
@@ -312,6 +378,65 @@ def _missions(member: Member) -> list[dict]:
     return out
 
 
+def badge_rarity() -> dict:
+    """
+    배지별 보유 비율(%) — "이 배지를 가진 분은 3%뿐" 같은 희소성 표시용.
+
+    회원 전체를 도는 비용이 있으므로 짧게 캐시한다(매장 단위 값이라
+    사람마다 다시 계산할 이유가 없다).
+    """
+    from django.core.cache import cache
+
+    cached = cache.get(_RARITY_KEY)
+    if cached is not None:
+        return cached
+
+    members = list(Member.objects.all().only("id", "visit_count", "total_spent", "tier"))
+    total = len(members)
+    if not total:
+        return {}
+
+    counts: dict[str, int] = {}
+    for m in members:
+        try:
+            for b in build_badges_only(m):
+                if b.get("earned"):
+                    counts[b["key"]] = counts.get(b["key"], 0) + 1
+        except Exception:      # 한 명의 데이터 문제로 전체가 죽지 않게
+            continue
+    rarity = {k: round(v / total * 100, 1) for k, v in counts.items()}
+    cache.set(_RARITY_KEY, rarity, 600)   # 10분
+    return rarity
+
+
+_RARITY_KEY = "slowstep.badge.rarity"
+
+
+def build_badges_only(member: Member) -> list[dict]:
+    """배지 목록만 계산(희귀도 집계에서 재사용)."""
+    missions = _missions(member)
+    completed = sum(1 for m in missions if m["is_completed"])
+    return _badges(
+        member, completed, _collection(member), _streak(member), _behavior_flags(member)
+    )
+
+
+def _title_of(badges: list[dict], rarity: dict) -> dict | None:
+    """
+    대표 칭호 — 획득한 배지 중 **가장 희귀한 것**을 뽑는다.
+    닉네임 앞에 붙어 그 사람의 정체성이 된다.
+    """
+    earned = [b for b in badges if b.get("earned")]
+    if not earned:
+        return None
+    ranked = sorted(earned, key=lambda b: rarity.get(b["key"], 100.0))
+    top = ranked[0]
+    return {
+        "key": top["key"], "icon": top["icon"], "title": top["title"],
+        "rarity": rarity.get(top["key"]),
+    }
+
+
 def build_member_dashboard(member: Member) -> dict:
     """고객 대시보드 전체 데이터."""
     missions = _missions(member)
@@ -319,8 +444,16 @@ def build_member_dashboard(member: Member) -> dict:
     collection = _collection(member)
     streak = _streak(member)
     flags = _behavior_flags(member)
+    badges = _badges(member, completed, collection, streak, flags)
+    rarity = badge_rarity()
+    for b in badges:
+        b["rarity"] = rarity.get(b["key"])
+    from .quests import active_quests
+
     return {
-        "badges": _badges(member, completed, collection, streak, flags),
+        "badges": badges,
+        "title": _title_of(badges, rarity),
+        "quests": [q.to_dict() for q in active_quests(member)],
         "next_tier": _next_tier(member),
         "ranking": _ranking(member),
         "timeline": _timeline(member),

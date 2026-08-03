@@ -23,6 +23,7 @@ from .models import (
     Transaction,
 )
 from .payments import TossClient, TossError
+from .quests import evaluate_and_award
 from .rewards import REFERRAL_REWARD, earn_multiplier, spin_roulette
 
 
@@ -388,6 +389,10 @@ def _checkout_atomic(
 
     # ── 미션 (방문/누적 갱신 후 평가) ──
     _update_missions(member, txn, rewards)
+
+    # ── 개인 맞춤 퀘스트 (그 사람 데이터에서 생성된 도전) ──
+    member.save()          # 방문·누적을 먼저 반영해야 퀘스트 진행률이 맞다
+    rewards.extend(evaluate_and_award(member, txn, _record_point))
 
     member.save()
     return CheckoutResult(transaction=txn, rewards=rewards)

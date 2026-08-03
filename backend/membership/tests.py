@@ -991,6 +991,183 @@ class GamificationTests(TestCase):
         self.assertIn("top", res.json())
 
 
+class QuestTests(TestCase):
+    """개인 맞춤 퀘스트 — 생성·달성·1회 지급."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99)     # 룰렛이 끼어들지 않게
+        self.m = Member.objects.create(
+            store=self.store, phone="01055550000", name="느긋한 수달"
+        )
+        self.amer = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000,
+            category=MenuItem.Category.COFFEE, oatmilk_available=True,
+        )
+        self.latte = MenuItem.objects.create(
+            store=self.store, name="카페 라떼", price=4500,
+            category=MenuItem.Category.COFFEE, oatmilk_available=True,
+        )
+        self.cake = MenuItem.objects.create(
+            store=self.store, name="치즈케이크", price=6000,
+            category=MenuItem.Category.DESSERT, temp_option=MenuItem.Temp.NONE,
+        )
+
+    def _buy(self, menu, oid, **opts):
+        return checkout(
+            member=self.m, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": menu.id, "quantity": 1, **opts}],
+            toss_order_id=oid,
+        )
+
+    def test_taste_quest_offered_for_untried_category(self):
+        from .quests import active_quests
+
+        self._buy(self.amer, "q1")
+        keys = {q.key for q in active_quests(self.m)}
+        self.assertIn("taste:dessert", keys)       # 디저트 미경험 → 제안
+
+    def test_quest_completed_awards_points_once(self):
+        from .models import MemberQuest
+        from .quests import active_quests
+
+        self._buy(self.amer, "q1")
+        before = self.m.points
+        # 디저트를 사면 taste:dessert 달성
+        r = self._buy(self.cake, "q2")
+        quest_rewards = [x for x in r.rewards if x["type"] == "quest"]
+        self.assertTrue(quest_rewards)
+        self.m.refresh_from_db()
+        self.assertGreater(self.m.points, before)
+        self.assertTrue(MemberQuest.objects.filter(member=self.m, key="taste:dessert").exists())
+
+        # 다시 사도 중복 지급되지 않는다
+        pts = self.m.points
+        r2 = self._buy(self.cake, "q3")
+        self.assertFalse([x for x in r2.rewards if x.get("title", "").startswith("디저트 처음")])
+        self.assertEqual(
+            MemberQuest.objects.filter(member=self.m, key="taste:dessert").count(), 1
+        )
+        # 완료된 퀘스트는 목록에서 사라진다
+        self.assertNotIn("taste:dessert", {q.key for q in active_quests(self.m)})
+
+    def test_option_quest(self):
+        from .quests import active_quests
+
+        self._buy(self.amer, "o1")
+        self.assertIn("option:oat", {q.key for q in active_quests(self.m)})
+        r = self._buy(self.latte, "o2", oatmilk=True)
+        self.assertTrue([x for x in r.rewards if "오트밀크" in x["title"]])
+
+    def test_at_most_three_active(self):
+        from .quests import MAX_ACTIVE, active_quests
+
+        self._buy(self.amer, "m1")
+        self.assertLessEqual(len(active_quests(self.m)), MAX_ACTIVE)
+
+    def test_reward_capped(self):
+        from .quests import MAX_REWARD, active_quests
+
+        for i in range(6):
+            self._buy(self.amer, f"c{i}")
+        for q in active_quests(self.m):
+            self.assertLessEqual(q.reward, MAX_REWARD)
+
+    def test_personal_difficulty_scales_with_habit(self):
+        """월간 도전 목표는 그 사람 평소 방문 수에 맞춰 정해진다."""
+        from .quests import build_candidates
+
+        for i in range(8):
+            t = self._buy(self.amer, f"h{i}").transaction
+            Transaction.objects.filter(pk=t.pk).update(
+                paid_at=timezone.now() - timedelta(days=i)
+            )
+        self.m.refresh_from_db()
+        stretch = [q for q in build_candidates(self.m) if q.kind == "stretch"]
+        self.assertTrue(stretch)
+        self.assertGreaterEqual(stretch[0].target, 2)
+
+    def test_avg_interval_needs_enough_visits(self):
+        from .quests import avg_interval_days
+
+        self.assertIsNone(avg_interval_days(self.m))    # 방문 0회
+
+
+class BadgeExtensionTests(TestCase):
+    """배지 확장 — 단계·희귀도·대표 칭호·히든."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.store = make_store()
+        self.m = Member.objects.create(
+            store=self.store, phone="01066660000", name="졸린 판다",
+            visit_count=60, total_spent=250_000, tier=Member.Tier.GOLD,
+        )
+
+    def test_leveled_badge_advances(self):
+        from .profile import build_badges_only
+
+        badges = {b["key"]: b for b in build_badges_only(self.m)}
+        cups = badges["cups"]
+        self.assertEqual(cups["level"], 2)              # 60잔 → Ⅱ
+        self.assertIn("Ⅱ", cups["title"])
+        self.assertIn("다음 단계까지", cups["desc"])
+
+        self.m.visit_count = 150
+        top = {b["key"]: b for b in build_badges_only(self.m)}["cups"]
+        self.assertEqual(top["level"], 3)
+        self.assertEqual(top["desc"], "최고 단계 달성")
+
+    def test_rarity_reflects_population(self):
+        from .profile import badge_rarity
+
+        # 방문 0인 회원 3명 추가 → '10잔 클럽'은 4명 중 1명만 보유
+        for i in range(3):
+            Member.objects.create(
+                store=self.store, phone=f"010777700{i:02d}", name=f"신규 {i}"
+            )
+        rarity = badge_rarity()
+        self.assertEqual(rarity["club10"], 25.0)
+        self.assertEqual(rarity["first"], 25.0)
+
+    def test_title_picks_rarest_badge(self):
+        from .profile import build_member_dashboard
+
+        for i in range(9):
+            Member.objects.create(
+                store=self.store, phone=f"010888800{i:02d}", name=f"흔한 {i}",
+                visit_count=1,
+            )
+        d = build_member_dashboard(self.m)
+        self.assertIsNotNone(d["title"])
+        # 흔한 배지(first, 전원 보유)가 칭호가 되면 안 된다
+        self.assertNotEqual(d["title"]["key"], "first")
+        self.assertLessEqual(d["title"]["rarity"], 100.0)
+
+    def test_hidden_badge_appears_only_when_earned(self):
+        from .profile import build_badges_only
+
+        keys = {b["key"] for b in build_badges_only(self.m)}
+        self.assertNotIn("jackpot", keys)      # 아직 없음 → 목록에 없다
+
+        from .models import PointEntry
+        PointEntry.objects.create(
+            member=self.m, delta=10000, reason=PointEntry.Reason.STAMP,
+            balance_after=10000,
+        )
+        keys2 = {b["key"] for b in build_badges_only(self.m)}
+        self.assertIn("jackpot", keys2)        # 달성하면 나타난다
+
+    def test_dashboard_exposes_rarity_on_badges(self):
+        from .profile import build_member_dashboard
+
+        d = build_member_dashboard(self.m)
+        earned = [b for b in d["badges"] if b.get("earned")]
+        self.assertTrue(all("rarity" in b for b in earned))
+
+
 class HealthEndpointTests(TestCase):
     def test_health_reports_pending_migrations(self):
         """스키마가 뒤처지면 눈에 보여야 한다(배포에서 500을 낸 원인)."""

@@ -380,6 +380,37 @@ class Mission(models.Model):
         return 0
 
 
+class MemberQuest(models.Model):
+    """
+    개인 맞춤 퀘스트 **달성 기록**.
+
+    퀘스트 자체는 회원 데이터에서 매번 생성하므로(quests.py) 저장하지 않는다.
+    여기에는 '보상을 지급했다'는 사실만 남겨 중복 지급을 막는다.
+    """
+
+    member = models.ForeignKey(
+        Member, on_delete=models.CASCADE, related_name="quests"
+    )
+    key = models.CharField("퀘스트 키", max_length=64)
+    kind = models.CharField("유형", max_length=20, blank=True, default="")
+    title = models.CharField("제목", max_length=100, blank=True, default="")
+    reward_points = models.IntegerField("지급 보상", default=0)
+    completed_at = models.DateTimeField("달성 시각", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "개인 퀘스트 달성"
+        verbose_name_plural = "개인 퀘스트 달성"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["member", "key"], name="uniq_member_quest"
+            )
+        ]
+        ordering = ["-completed_at"]
+
+    def __str__(self) -> str:
+        return f"{self.member.name} · {self.title}"
+
+
 class MemberMission(models.Model):
     """회원별 미션 진행 상태."""
 
