@@ -129,6 +129,18 @@
   .q .bar { height:6px; background:var(--card2); border-radius:3px; margin-top:9px; overflow:hidden; }
   .q .bar i { display:block; height:100%; background:var(--brand); }
   .q .qp { font-size:11px; color:var(--muted); margin-top:4px; text-align:right; }
+  /* 깬 퀘스트도 챕터 안에 남겨 둔다 — 빠지면 '2/3'이 말이 안 된다 */
+  .q.done { border-color:var(--brand); background:rgba(59,91,255,.05); }
+  .q.done .qt b::before { content:"✓ "; color:var(--brand); }
+  .q.done .qr { color:var(--muted); font-weight:600; }
+  /* 챕터 머리말 */
+  .qg { display:flex; align-items:center; justify-content:space-between;
+        gap:10px; margin:2px 0 12px; }
+  .qg .qg-d { font-size:12.5px; color:var(--muted); margin-top:2px; }
+  .qg .qg-n { font-size:12px; font-weight:700; color:var(--brand); white-space:nowrap; }
+  .qg-bonus { font-size:12px; color:var(--muted); margin-top:11px; padding-top:11px;
+              border-top:1px dashed var(--line); text-align:center; }
+  .qg-bonus b { color:var(--brand); }
   /* 대표 칭호 */
   .title-chip { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700;
     background:var(--brand-soft); color:var(--brand-dk); border:1px solid #dfe4ff;
@@ -270,10 +282,15 @@
       <p class="muted" style="margin-top:10px;" id="stampHint"></p>
     </div>
 
-    <!-- 나만의 도전 (개인 맞춤 퀘스트) -->
+    <!-- 나만의 도전 (개인 맞춤 퀘스트 — 한 번에 한 챕터) -->
     <div class="card" id="questCard" style="display:none">
       <h3>나만의 도전 <span class="muted" style="font-weight:500">— 내 기록에서 만들어졌어요</span></h3>
+      <div class="qg">
+        <div><b id="qgTitle"></b><div class="qg-d" id="qgDesc"></div></div>
+        <span class="qg-n" id="qgCount"></span>
+      </div>
       <div id="questList"></div>
+      <div class="qg-bonus" id="qgBonus" style="display:none"></div>
     </div>
 
     <!-- 연속 방문 스트릭 -->
@@ -468,20 +485,28 @@
       }).join("");
     }
 
-    // ── 나만의 도전 ──
-    const qs = d.quests || [];
-    if(qs.length){
+    // ── 나만의 도전 (한 챕터씩) ──
+    const qg = d.quests;
+    if(qg && qg.items && qg.items.length){
       $("questCard").style.display = "";
-      $("questList").innerHTML = qs.map(q=>{
+      $("qgTitle").textContent = qg.title;
+      $("qgDesc").textContent  = qg.description || "";
+      $("qgCount").textContent = `${qg.done} / ${qg.total}`;
+      $("questList").innerHTML = qg.items.map(q=>{
         const pct = q.target ? Math.min(100, Math.round(q.progress/q.target*100)) : 0;
-        return `<div class="q">
+        return `<div class="q${q.is_completed?" done":""}">
           <div class="qt"><b>${q.title}</b><span class="qr">+${won(q.reward)}P</span></div>
           <div class="qd">${q.description||""}</div>
           <div class="bar"><i style="width:${pct}%"></i></div>
           <div class="qp">${q.progress} / ${q.target}</div>
         </div>`;
       }).join("");
-    }
+      const bonus = $("qgBonus");
+      if(qg.bonus && !qg.bonus_earned){
+        bonus.style.display = "";
+        bonus.innerHTML = `이 챕터를 완주하면 <b>+${won(qg.bonus)}P</b>`;
+      } else { bonus.style.display = "none"; }
+    } else { $("questCard").style.display = "none"; }
 
     // ── 대표 칭호 ──
     if(d.title){

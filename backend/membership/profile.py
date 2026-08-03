@@ -448,12 +448,12 @@ def build_member_dashboard(member: Member) -> dict:
     rarity = badge_rarity()
     for b in badges:
         b["rarity"] = rarity.get(b["key"])
-    from .quests import active_quests
+    from .quests import active_group
 
     return {
         "badges": badges,
         "title": _title_of(badges, rarity),
-        "quests": [q.to_dict() for q in active_quests(member)],
+        "quests": active_group(member),   # 한 번에 한 챕터만 활성화된다
         "next_tier": _next_tier(member),
         "ranking": _ranking(member),
         "timeline": _timeline(member),

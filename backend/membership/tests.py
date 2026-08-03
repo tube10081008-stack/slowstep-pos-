@@ -1020,16 +1020,26 @@ class QuestTests(TestCase):
             toss_order_id=oid,
         )
 
+    def _active_keys(self):
+        from .quests import active_group
+
+        g = active_group(self.m)
+        return {q["key"] for q in (g or {}).get("items", [])}
+
     def test_taste_quest_offered_for_untried_category(self):
-        from .quests import active_quests
+        from .quests import build_candidates
 
         self._buy(self.amer, "q1")
-        keys = {q.key for q in active_quests(self.m)}
-        self.assertIn("taste:dessert", keys)       # 디저트 미경험 → 제안
+        # 디저트 미경험 → 후보에 오른다
+        self.assertIn("taste:dessert", {q.key for q in build_candidates(self.m)})
+        # 다만 지금 열린 챕터는 우선순위가 높은 '도장깨기'다
+        self.assertEqual(self._active_keys(), {"collection:coffee"})
+        # 그 챕터를 깨면 '취향 탐험대'가 열린다
+        self._buy(self.latte, "q2")
+        self.assertIn("taste:dessert", self._active_keys())
 
     def test_quest_completed_awards_points_once(self):
         from .models import MemberQuest
-        from .quests import active_quests
 
         self._buy(self.amer, "q1")
         before = self.m.points
@@ -1048,30 +1058,57 @@ class QuestTests(TestCase):
         self.assertEqual(
             MemberQuest.objects.filter(member=self.m, key="taste:dessert").count(), 1
         )
-        # 완료된 퀘스트는 목록에서 사라진다
-        self.assertNotIn("taste:dessert", {q.key for q in active_quests(self.m)})
+        # 챕터를 다 깼으니 다음 챕터가 열린다
+        self.assertNotIn("taste:dessert", self._active_keys())
 
     def test_option_quest(self):
-        from .quests import active_quests
-
         self._buy(self.amer, "o1")
-        self.assertIn("option:oat", {q.key for q in active_quests(self.m)})
         r = self._buy(self.latte, "o2", oatmilk=True)
         self.assertTrue([x for x in r.rewards if "오트밀크" in x["title"]])
 
-    def test_at_most_three_active(self):
-        from .quests import MAX_ACTIVE, active_quests
+    def test_only_one_group_is_active(self):
+        """서로 다른 성격의 목표를 한꺼번에 던지지 않는다 — 한 챕터씩."""
+        from .quests import GROUP_SIZE, active_group
 
         self._buy(self.amer, "m1")
-        self.assertLessEqual(len(active_quests(self.m)), MAX_ACTIVE)
+        g = active_group(self.m)
+        self.assertIsNotNone(g)
+        self.assertLessEqual(len(g["items"]), GROUP_SIZE)
+        self.assertEqual({q["group"] for q in g["items"]}, {g["key"]})
+
+    def test_group_clear_awards_bonus_once(self):
+        """챕터를 완주하면 보너스가 한 번 붙는다."""
+        from .models import MemberQuest
+        from .quests import GROUP_META, group_key
+
+        self._buy(self.amer, "g1")                      # taste 챕터 = 디저트 하나
+        r = self._buy(self.cake, "g2")                  # 완주
+        bonus = [x for x in r.rewards if x["type"] == "quest_group"]
+        self.assertTrue(bonus)
+        self.assertEqual(bonus[0]["points"], GROUP_META["taste"][2])
+        self.assertTrue(
+            MemberQuest.objects.filter(member=self.m, key=group_key("taste")).exists()
+        )
+        r2 = self._buy(self.cake, "g3")                 # 두 번은 없다
+        self.assertFalse([x for x in r2.rewards if x["type"] == "quest_group"])
 
     def test_reward_capped(self):
-        from .quests import MAX_REWARD, active_quests
+        from .quests import MAX_REWARD, active_group
 
         for i in range(6):
             self._buy(self.amer, f"c{i}")
-        for q in active_quests(self.m):
-            self.assertLessEqual(q.reward, MAX_REWARD)
+        for q in active_group(self.m)["items"]:
+            self.assertLessEqual(q["reward"], MAX_REWARD)
+
+    def test_checkout_reward_budget(self):
+        """한 번의 결제에서 나가는 퀘스트 보상 총액을 묶어 둔다."""
+        from .quests import MAX_REWARD_PER_CHECKOUT
+
+        for i in range(6):
+            self._buy(self.amer, f"b{i}")
+        r = self._buy(self.latte, "bx", oatmilk=True, shot=True)
+        paid = sum(x["points"] for x in r.rewards if x["type"].startswith("quest"))
+        self.assertLessEqual(paid, MAX_REWARD_PER_CHECKOUT)
 
     def test_personal_difficulty_scales_with_habit(self):
         """월간 도전 목표는 그 사람 평소 방문 수에 맞춰 정해진다."""

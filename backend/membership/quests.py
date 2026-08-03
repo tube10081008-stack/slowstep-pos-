@@ -10,13 +10,16 @@ MemberQuest로 기록해 보상을 1회 지급한다.
 설계 원칙:
 - **진행이 되돌아가지 않는 지표만 쓴다**(누적 카운트). 목표가 흔들리면
   손님이 손해 보는 느낌을 받는다.
-- 회원당 **진행 중 3개**까지만 노출하고 보상에 상한을 둔다 — 적립비용이
-  마진에서 차감되므로(margins.py) 예측 가능해야 한다.
+- 퀘스트는 **한 테마(그룹)씩만 활성화**한다. 성격이 다른 목표 세 개를
+  나란히 던지면 뭘 하라는 건지 안 잡힌다. 한 챕터를 다 깨면 보너스를 주고
+  다음 챕터가 열린다.
+- 보상에 상한을 둔다 — 적립비용이 마진에서 차감되므로(margins.py)
+  예측 가능해야 한다. 결제 1건당 지급 총액도 묶어 둔다.
 """
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from datetime import timedelta
 
 from django.db.models import Count, Q, Sum
@@ -24,8 +27,22 @@ from django.utils import timezone
 
 from .models import MenuItem, OrderItem, Transaction
 
-MAX_ACTIVE = 3          # 한 번에 보여줄 퀘스트 수
-MAX_REWARD = 2000       # 퀘스트 1개 보상 상한
+MAX_REWARD = 2000               # 퀘스트 1개 보상 상한
+MAX_REWARD_PER_CHECKOUT = 3000  # 결제 1건에서 나갈 수 있는 퀘스트 보상 총액
+GROUP_SIZE = 3                  # 한 그룹에 담는 퀘스트 수 상한
+
+# 그룹(챕터) 정의 — 위에서부터 우선순위. (키, 제목, 한 줄 설명, 클리어 보너스)
+# 미달성 퀘스트가 남은 **첫 번째** 그룹 하나만 손님에게 보여 준다.
+GROUPS = (
+    ("comeback", "다시 만나기", "오랜만이에요. 발걸음만 해주시면 돼요", 0),
+    ("collection", "도장깨기", "거의 다 모으셨어요. 마무리만 남았습니다", 1000),
+    ("taste", "취향 탐험대", "아직 안 드셔본 갈래를 하나씩", 1000),
+    ("rhythm", "나만의 리듬", "평소 오시던 박자를 이어가요", 1000),
+    ("option", "한 끗 다르게", "늘 마시던 잔을 조금만 바꿔서", 500),
+    ("timeslot", "다른 시간의 슬로우스텝", "같은 자리도 시간에 따라 달라요", 500),
+)
+GROUP_META = {k: (t, d, b) for k, t, d, b in GROUPS}
+GROUP_ORDER = [k for k, *_ in GROUPS]
 
 
 @dataclass
@@ -37,6 +54,11 @@ class Quest:
     progress: int
     target: int
     reward: int
+    group: str = ""     # 비면 kind 를 그룹으로 본다
+
+    def __post_init__(self):
+        if not self.group:
+            self.group = self.kind
 
     @property
     def is_completed(self) -> bool:
@@ -161,6 +183,7 @@ def build_candidates(member) -> list[Quest]:
             ))
 
     # ── 2) 컬렉션 마무리: 거의 다 모은 카테고리(1~2종 남음) ──
+    picked = 0
     for cat, c in sorted(coll.items(), key=lambda kv: kv[1]["total"] - kv[1]["tried"]):
         left = c["total"] - c["tried"]
         if c["tried"] > 0 and 1 <= left <= 2:
@@ -170,20 +193,27 @@ def build_candidates(member) -> list[Quest]:
                 description=(f"다음 도전: {c['next']}" if c["next"] else "마지막 한 잔!"),
                 progress=c["tried"], target=c["total"], reward=1000,
             ))
-            break
+            picked += 1
+            if picked >= GROUP_SIZE:
+                break
 
     # ── 3) 취향 확장: 선호 순서대로 '처음 만나기' ──
     # 후보 조건에 '아직 안 먹었을 것'을 넣으면 먹는 순간 후보에서 사라져
     # 보상을 지급할 기회가 없어진다. 후보는 고정하고 진행률로 판정한다.
+    picked = 0
     for cat in ("dessert", "coldbrew", "tea", "ade", "noncoffee"):
-        if cat in coll:
-            out.append(Quest(
-                key=f"taste:{cat}", kind="taste",
-                title=f"{labels.get(cat, cat)} 처음 만나기",
-                description=(f"{coll[cat]['next']} 어떠세요?" if coll[cat]["next"]
-                             else "새로운 맛을 만나요"),
-                progress=min(1, cats.get(cat, 0)), target=1, reward=500,
-            ))
+        if cat not in coll:
+            continue
+        out.append(Quest(
+            key=f"taste:{cat}", kind="taste",
+            title=f"{labels.get(cat, cat)} 처음 만나기",
+            description=(f"{coll[cat]['next']} 어떠세요?" if coll[cat]["next"]
+                         else "새로운 맛을 만나요"),
+            progress=min(1, cats.get(cat, 0)), target=1, reward=500,
+        ))
+        picked += 1
+        if picked >= GROUP_SIZE:
+            break
 
     # ── 4) 개인 주기: 이번 주에도 오시면 ──
     if avg and avg <= 12:
@@ -202,7 +232,7 @@ def build_candidates(member) -> list[Quest]:
         base = _personal_monthly_baseline(member)
         target = max(2, math.ceil(base * 1.2))
         out.append(Quest(
-            key=f"stretch:{_month_key(now)}", kind="stretch",
+            key=f"stretch:{_month_key(now)}", kind="stretch", group="rhythm",
             title=f"이번 달 {target}번 방문",
             description="평소보다 한 걸음만 더",
             progress=this_month, target=target,
@@ -245,24 +275,55 @@ def _personal_monthly_baseline(member) -> float:
     return len(recent) / months
 
 
-def active_quests(member) -> list[Quest]:
-    """
-    지금 진행 중인 퀘스트(최대 3개). 이미 보상을 받은 키는 제외한다.
-    """
+def group_key(group: str) -> str:
+    """그룹 클리어 보너스를 기록하는 키."""
+    return f"group:{group}"
+
+
+def _grouped(member) -> dict[str, list[Quest]]:
+    """후보를 그룹별로 모아 상한(GROUP_SIZE)까지 자른다."""
+    out: dict[str, list[Quest]] = {}
+    for q in build_candidates(member):
+        q.reward = min(q.reward, MAX_REWARD)
+        bucket = out.setdefault(q.group, [])
+        if len(bucket) < GROUP_SIZE:
+            bucket.append(q)
+    return out
+
+
+def _done_keys(member) -> set[str]:
     from .models import MemberQuest
 
-    done = set(
-        MemberQuest.objects.filter(member=member).values_list("key", flat=True)
-    )
-    out = []
-    for q in build_candidates(member):
-        if q.key in done or q.is_completed:
-            continue                      # 이미 받았거나 이미 채운 건 도전 대상이 아니다
-        q.reward = min(q.reward, MAX_REWARD)
-        out.append(q)
-        if len(out) >= MAX_ACTIVE:
-            break
-    return out
+    return set(MemberQuest.objects.filter(member=member).values_list("key", flat=True))
+
+
+def active_group(member) -> dict | None:
+    """
+    지금 활성화된 **한 챕터**. 미달성 퀘스트가 남은 첫 그룹을 통째로 돌려준다.
+
+    이미 깬 퀘스트도 목록에 남겨 둔다 — 빠지면 '2/3 달성'이 말이 안 되고,
+    그룹으로 묶은 이유(완주감)가 사라진다.
+    """
+    buckets = _grouped(member)
+    done = _done_keys(member)
+    for key in GROUP_ORDER:
+        items = buckets.get(key)
+        if not items:
+            continue
+        if all(q.is_completed for q in items):
+            continue                       # 다 깬 챕터 — 다음으로 넘어간다
+        title, desc, bonus = GROUP_META[key]
+        return {
+            "key": key,
+            "title": title,
+            "description": desc,
+            "bonus": bonus,
+            "bonus_earned": group_key(key) in done,
+            "done": sum(1 for q in items if q.is_completed),
+            "total": len(items),
+            "items": [q.to_dict() for q in items],
+        }
+    return None
 
 
 def evaluate_and_award(member, txn, record_point) -> list[dict]:
@@ -272,22 +333,38 @@ def evaluate_and_award(member, txn, record_point) -> list[dict]:
     """
     from .models import MemberQuest, PointEntry
 
-    done = set(
-        MemberQuest.objects.filter(member=member).values_list("key", flat=True)
-    )
+    done = _done_keys(member)
+    buckets = _grouped(member)
     awarded: list[dict] = []
-    # 표시 목록(active_quests)이 아니라 **후보 전체**를 본다 — 달성하는 순간
-    # 표시 목록에서 빠지므로, 그것만 보면 보상을 놓친다.
-    for q in build_candidates(member):
-        if q.key in done or not q.is_completed:
-            continue
-        q.reward = min(q.reward, MAX_REWARD)
+    budget = MAX_REWARD_PER_CHECKOUT
+
+    def _pay(key, kind, title, points, label) -> bool:
+        """예산 안에서 1회만 지급. 예산을 넘으면 기록하지 않아 다음 방문에 지급된다."""
+        nonlocal budget
+        if key in done or points > budget:
+            return False
         _, created = MemberQuest.objects.get_or_create(
-            member=member, key=q.key,
-            defaults={"kind": q.kind, "title": q.title, "reward_points": q.reward},
+            member=member, key=key,
+            defaults={"kind": kind, "title": title, "reward_points": points},
         )
-        if not created:      # 이미 지급됨(동시 요청 등)
-            continue
-        record_point(member, txn, q.reward, PointEntry.Reason.MISSION)
-        awarded.append({"type": "quest", "title": q.title, "points": q.reward})
+        if not created:                    # 이미 지급됨(동시 요청 등)
+            return False
+        done.add(key)
+        budget -= points
+        if points:
+            record_point(member, txn, points, PointEntry.Reason.MISSION)
+        awarded.append({"type": label, "title": title, "points": points})
+        return True
+
+    # 화면에 뜬 챕터가 아니라 **후보 전체**를 본다 — 달성하는 순간 다음 챕터로
+    # 넘어가므로, 활성 그룹만 보면 방금 깬 퀘스트의 보상을 놓친다.
+    for gkey in GROUP_ORDER:
+        items = buckets.get(gkey) or []
+        for q in items:
+            if q.is_completed:
+                _pay(q.key, q.kind, q.title, q.reward, "quest")
+        # 챕터 완주 보너스 — 퀘스트가 전부 지급 완료된 뒤에만.
+        title, _desc, bonus = GROUP_META[gkey]
+        if bonus and items and all(q.key in done for q in items):
+            _pay(group_key(gkey), "group", f"{title} 완주", bonus, "quest_group")
     return awarded
