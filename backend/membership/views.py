@@ -73,10 +73,34 @@ class HealthView(APIView):
             db_error = str(exc)[:200]
         engine = connection.settings_dict.get("ENGINE", "").rsplit(".", 1)[-1]
         persistent = getattr(settings, "STORAGE_PERSISTENT", True)
+
+        # 미적용 마이그레이션 — 스키마가 코드보다 뒤처지면 새 컬럼 조회가 500이 된다.
+        # (배포에서 실제로 겪은 문제라 눈에 보이게 노출한다)
+        pending = None
+        if db_ok:
+            try:
+                from django.db import connections
+                from django.db.migrations.executor import MigrationExecutor
+
+                executor = MigrationExecutor(connections["default"])
+                pending = len(
+                    executor.migration_plan(executor.loader.graph.leaf_nodes())
+                )
+            except Exception:
+                pending = None
+
         body = {
             "status": "ok" if db_ok else "degraded",
             "db": {"ok": db_ok, "engine": engine, "persistent": persistent},
         }
+        if pending is not None:
+            body["db"]["pending_migrations"] = pending
+            if pending:
+                body["status"] = "degraded"
+                body["warning"] = (
+                    f"적용되지 않은 마이그레이션이 {pending}건 있습니다. "
+                    "스키마가 코드보다 뒤처져 일부 API가 실패할 수 있습니다."
+                )
         if db_error:
             body["db"]["error"] = db_error
         if not persistent:

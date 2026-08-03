@@ -127,6 +127,7 @@ Vercel 프로젝트 → **Settings → Environment Variables** 에서 추가:
 | 404 / 빈 화면 | **Root Directory가 저장소 루트(`./`)** 인지, 배포 브랜치가 `main` 인지 |
 | 빌드가 파이썬 버전으로 실패 | Django 5는 Python 3.10+ 필요. Vercel **Settings → General → Python Version** 을 3.12로 지정 |
 | 500 에러 | Vercel **Deployments → Functions 로그** 확인. `DATABASE_URL` 형식·`sslmode=require` 여부 |
+| **일부 API만 500 (새 기능 쪽)** | 스키마가 코드보다 뒤처진 경우. `/api/v1/health` 의 `pending_migrations` 가 0인지 확인 — 0이 아니면 재배포(콜드스타트에 자동 적용된다) |
 | **모든 API가 500** | 새 패키지를 `backend/requirements.txt`에만 넣지 않았는지 확인. Vercel은 **저장소 루트의 `requirements.txt`** 를 설치하므로 여기에도 추가해야 한다(누락 시 ImportError로 앱 전체가 죽는다). `python manage.py test membership.tests.DeploymentDepsTests` 로 검사 가능 |
 | 데이터가 사라짐 | 아직 Neon 미연결(임시 저장). 2단계 진행 |
 | admin 로그인 실패 | `DJANGO_CSRF_TRUSTED_ORIGINS` 에 `https://<프로젝트>.vercel.app` 추가 |

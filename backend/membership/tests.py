@@ -992,6 +992,23 @@ class GamificationTests(TestCase):
 
 
 class HealthEndpointTests(TestCase):
+    def test_health_reports_pending_migrations(self):
+        """스키마가 뒤처지면 눈에 보여야 한다(배포에서 500을 낸 원인)."""
+        res = self.client.get("/api/v1/health")
+        self.assertEqual(res.json()["db"]["pending_migrations"], 0)
+
+        from unittest import mock
+
+        with mock.patch(
+            "django.db.migrations.executor.MigrationExecutor.migration_plan",
+            return_value=[("membership", "0009_x"), ("membership", "0010_y")],
+        ):
+            res = self.client.get("/api/v1/health")
+        body = res.json()
+        self.assertEqual(body["db"]["pending_migrations"], 2)
+        self.assertEqual(body["status"], "degraded")
+        self.assertIn("마이그레이션", body["warning"])
+
     def test_health_reports_persistent_storage(self):
         res = self.client.get("/api/v1/health")
         self.assertEqual(res.status_code, 200)

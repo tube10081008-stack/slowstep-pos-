@@ -35,13 +35,18 @@ _MIGRATION_LOCK_KEY = 815_001
 
 
 def _ensure_database() -> None:
-    """스키마가 없으면 migrate, 비어 있으면 데모 데이터 시드(멱등).
+    """migrate(항상) + 비어 있으면 데모 데이터 시드(멱등).
+
+    **migrate는 조건 없이 실행한다.** 예전에는 '테이블이 없을 때만' 돌렸는데,
+    그러면 첫 배포 이후에 추가된 마이그레이션이 영영 적용되지 않는다
+    (기존 테이블은 존재하므로 조회가 성공해 버린다). 새 컬럼을 읽는 순간
+    'column does not exist'로 API 전체가 500이 됐다.
+    적용할 게 없으면 migrate는 사실상 즉시 끝나므로 매번 호출해도 안전하다.
 
     Postgres에서는 advisory lock으로 감싸 동시 인스턴스의 중복 실행을 막는다.
     """
     from django.core.management import call_command
     from django.db import connection
-    from django.db.utils import OperationalError, ProgrammingError
 
     from membership.models import Store
 
@@ -50,11 +55,8 @@ def _ensure_database() -> None:
         with connection.cursor() as cur:
             cur.execute("SELECT pg_advisory_lock(%s)", [_MIGRATION_LOCK_KEY])
     try:
-        try:
-            seeded = Store.objects.exists()
-        except (OperationalError, ProgrammingError):
-            call_command("migrate", "--noinput")
-            seeded = Store.objects.exists()
+        call_command("migrate", "--noinput")
+        seeded = Store.objects.exists()
 
         if not seeded:
             try:
