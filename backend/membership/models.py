@@ -3,6 +3,8 @@
 
 설계 상세는 docs/DATA-MODEL.md 참조. 모든 금액은 원(KRW) 정수.
 """
+from datetime import timedelta
+
 from django.db import models
 from django.utils import timezone
 
@@ -72,10 +74,12 @@ class Member(models.Model):
 
     # 누적 결제액 기반 등급 임계값 (원)
     TIER_THRESHOLDS = (
-        (200_000, Tier.GOLD),
-        (50_000, Tier.SILVER),
+        (300_000, Tier.GOLD),
+        (100_000, Tier.SILVER),
         (0, Tier.BRONZE),
     )
+    # 등급이 오를 때 나가는 1+1 쿠폰 장수 (적립률은 등급과 무관하게 동일)
+    TIER_COUPONS = {Tier.SILVER: 1, Tier.GOLD: 3}
 
     store = models.ForeignKey(
         Store, on_delete=models.CASCADE, related_name="members", verbose_name="매장"
@@ -89,6 +93,12 @@ class Member(models.Model):
         "등급", max_length=10, choices=Tier.choices, default=Tier.BRONZE
     )
     stamps = models.IntegerField("스탬프", default=0)
+    # 남은 룰렛 기회. 스탬프 완성·연속방문으로 쌓이고, 손님이 직접 돌려 쓴다.
+    spins = models.IntegerField("룰렛 기회", default=0)
+    # 이미 지급한 등급 쿠폰의 최고 등급 — 강등 후 재승급으로 중복 지급되는 걸 막는다
+    tier_rewarded = models.CharField(
+        "등급 보상 지급분", max_length=10, choices=Tier.choices, default=Tier.BRONZE
+    )
     marketing_opt_in = models.BooleanField("마케팅 수신 동의", default=False)
     # 친구 초대: 내 코드로 친구가 등록하면 둘 다 보상
     referral_code = models.CharField(
@@ -98,6 +108,8 @@ class Member(models.Model):
         "self", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="referrals", verbose_name="추천인",
     )
+    # 초대 코드를 쓴 시각 — 초대한 쪽의 '하루 1명' 제한을 세는 기준
+    referral_used_at = models.DateTimeField("초대 사용 시각", null=True, blank=True)
     joined_at = models.DateTimeField("가입 시각", auto_now_add=True)
 
     class Meta:
@@ -436,3 +448,71 @@ class MemberMission(models.Model):
     def mark_completed(self) -> None:
         self.is_completed = True
         self.completed_at = timezone.now()
+
+class Coupon(models.Model):
+    """
+    회원이 보유한 쿠폰. 룰렛·등급 승급·랭킹 시상으로 발행된다.
+
+    포인트와 달리 **잔액이 아니라 장 단위**다. 할인율 쿠폰은 결제 때 금액을
+    깎고, 음료 쿠폰은 물건으로 나간다 — 원가 성격이 달라 원장(PointEntry)에
+    섞지 않고 따로 관리한다.
+    """
+
+    class Kind(models.TextChoices):
+        DISCOUNT_5 = "discount_5", "5% 할인"
+        DISCOUNT_10 = "discount_10", "10% 할인"
+        BOGO = "bogo", "음료 1+1"
+        FREE_DRINK = "free_drink", "무료 음료"
+        BEANS_200 = "beans_200", "원두 200g"
+
+    class Source(models.TextChoices):
+        ROULETTE = "roulette", "룰렛"
+        TIER = "tier", "등급 승급"
+        RANKING = "ranking", "월간 랭킹"
+        MANUAL = "manual", "수기 지급"
+
+    # 할인율 쿠폰은 결제 금액에서 그만큼 깎는다(0이면 금액 할인이 아님)
+    DISCOUNT_PCT = {Kind.DISCOUNT_5: 5, Kind.DISCOUNT_10: 10}
+    DEFAULT_VALID_DAYS = 90
+
+    member = models.ForeignKey(
+        Member, on_delete=models.CASCADE, related_name="coupons", verbose_name="회원"
+    )
+    kind = models.CharField("종류", max_length=20, choices=Kind.choices)
+    source = models.CharField(
+        "발행 사유", max_length=20, choices=Source.choices, default=Source.ROULETTE
+    )
+    note = models.CharField("메모", max_length=100, blank=True, default="")
+    issued_at = models.DateTimeField("발행 시각", auto_now_add=True)
+    expires_at = models.DateTimeField("만료 시각", null=True, blank=True)
+    used_at = models.DateTimeField("사용 시각", null=True, blank=True)
+    used_transaction = models.ForeignKey(
+        Transaction, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="coupons", verbose_name="사용 거래",
+    )
+
+    class Meta:
+        verbose_name = "쿠폰"
+        verbose_name_plural = "쿠폰"
+        ordering = ["-issued_at"]
+        indexes = [models.Index(fields=["member", "used_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.member.name} · {self.get_kind_display()}"
+
+    def save(self, *args, **kwargs):
+        if self.expires_at is None:
+            self.expires_at = timezone.now() + timedelta(days=self.DEFAULT_VALID_DAYS)
+        super().save(*args, **kwargs)
+
+    @property
+    def is_expired(self) -> bool:
+        return self.expires_at is not None and self.expires_at <= timezone.now()
+
+    @property
+    def is_usable(self) -> bool:
+        return self.used_at is None and not self.is_expired
+
+    @property
+    def discount_pct(self) -> int:
+        return self.DISCOUNT_PCT.get(self.kind, 0)

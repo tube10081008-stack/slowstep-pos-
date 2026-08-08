@@ -119,6 +119,79 @@
   @keyframes rise { from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none;} }
   .card, .hero { animation:rise .4s ease both; }
   button, .lb-row, .badge, .stamp { transition:all .16s ease; }
+  /* ── 룰렛 ─────────────────────────────────────────── */
+  .wheelCard { background:linear-gradient(160deg,#1b1f36 0%,#2a2350 100%);
+    border:0; color:#fff; text-align:center; padding:22px 20px 24px; }
+  .wheelCard h3 { color:#fff; margin-bottom:4px; }
+  .wheelCard .sub { font-size:12.5px; color:rgba(255,255,255,.62); margin-bottom:16px; }
+  .wheelBox { position:relative; width:250px; height:250px; margin:0 auto; }
+  /* 바늘 — 위에서 아래로 꽂힌다 */
+  .wheelBox .pin { position:absolute; top:-4px; left:50%; transform:translateX(-50%);
+    width:0; height:0; border-left:11px solid transparent; border-right:11px solid transparent;
+    border-top:19px solid #ffd45e; z-index:3; filter:drop-shadow(0 2px 4px rgba(0,0,0,.45)); }
+  .wheelBox svg { display:block; width:100%; height:100%;
+    filter:drop-shadow(0 8px 24px rgba(0,0,0,.4)); }
+  #wheelRot { transform-origin:150px 150px; transition:none; }
+  #wheelRot.spin { transition:transform 4.4s cubic-bezier(.15,.72,.16,1); }
+  .wheelBox .hub { position:absolute; top:50%; left:50%; width:54px; height:54px; margin:-27px 0 0 -27px;
+    border-radius:50%; background:#fff; z-index:2; display:flex; align-items:center;
+    justify-content:center; box-shadow:0 3px 10px rgba(0,0,0,.35); }
+  .wheelBox .hub b { font-size:19px; font-weight:800; color:#1b1f36; letter-spacing:-.02em; }
+  .wheelBox .hub span { position:absolute; bottom:9px; font-size:8px; color:var(--muted); letter-spacing:.05em; }
+  .wheelSeg text { font-family:var(--sans); font-weight:800; fill:#fff; }
+  .spinBtn { width:100%; margin-top:20px; border:0; border-radius:12px; padding:16px;
+    font-size:15px; font-weight:700; font-family:var(--sans); cursor:pointer;
+    color:#241b00; background:linear-gradient(135deg,#ffd45e,#ffb703);
+    box-shadow:0 6px 18px rgba(255,183,3,.32); }
+  .spinBtn:disabled { background:rgba(255,255,255,.13); color:rgba(255,255,255,.42);
+    box-shadow:none; cursor:default; }
+  .wheelMsg { margin-top:14px; font-size:13.5px; color:rgba(255,255,255,.8); min-height:20px; }
+  .wheelWin { margin-top:16px; padding:15px; border-radius:12px; background:rgba(255,255,255,.1);
+    border:1px solid rgba(255,212,94,.42); animation:pop .45s cubic-bezier(.2,1.4,.4,1) both; }
+  .wheelWin .k { font-size:11px; letter-spacing:.08em; color:#ffd45e; font-weight:700; }
+  .wheelWin .n { font-size:21px; font-weight:800; margin-top:5px; letter-spacing:-.02em; }
+  .wheelWin .e { font-size:12px; color:rgba(255,255,255,.6); margin-top:5px; }
+  @keyframes pop { from { opacity:0; transform:scale(.86) } to { opacity:1; transform:scale(1) } }
+  @media (prefers-reduced-motion: reduce) {
+    #wheelRot.spin { transition-duration:.35s; }
+    .wheelWin { animation:none; }
+  }
+
+  /* ── 쿠폰 지갑 ───────────────────────────────────── */
+  .cpn { display:flex; align-items:center; gap:13px; padding:13px 0;
+    border-bottom:1px dashed var(--line); }
+  .cpn:last-child { border-bottom:0; padding-bottom:0; }
+  .cpn:first-child { padding-top:0; }
+  .cpn .amt { flex:0 0 60px; height:52px; border-radius:10px; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; background:var(--brand-soft); color:var(--brand);
+    font-weight:800; font-size:17px; letter-spacing:-.02em; }
+  .cpn .amt small { font-size:9px; font-weight:600; letter-spacing:.04em; opacity:.75; }
+  .cpn.gift .amt { background:#fff5e0; color:#b06f00; }
+  .cpn .t { flex:1; min-width:0; }
+  .cpn .t b { display:block; font-size:14px; font-weight:700; }
+  .cpn .t span { font-size:12px; color:var(--muted); }
+  .cpn .d { font-size:11.5px; color:var(--muted); white-space:nowrap; }
+  .cpn .d.soon { color:#c2410c; font-weight:700; }
+
+  /* ── 연속 방문(두 갈래) ──────────────────────────── */
+  .stk { display:flex; gap:10px; }
+  .stk > div { flex:1; border:1px solid var(--line); border-radius:12px; padding:13px 14px; }
+  .stk .on { border-color:var(--brand); background:var(--brand-soft); }
+  .stk .k { font-size:11.5px; color:var(--muted); font-weight:600; }
+  .stk .v { font-size:20px; font-weight:800; letter-spacing:-.02em; margin-top:3px; }
+  .stk .v small { font-size:12px; font-weight:600; color:var(--muted); margin-left:2px; }
+  .stk .dots { display:flex; gap:4px; margin-top:9px; }
+  .stk .dots i { flex:1; height:4px; border-radius:2px; background:var(--line); }
+  .stk .dots i.f { background:var(--brand); }
+  .stk .h { font-size:11px; color:var(--muted); margin-top:8px; }
+
+  /* ── 랭킹 탭 ─────────────────────────────────────── */
+  .tabs { display:flex; gap:6px; background:var(--card2); padding:4px; border-radius:10px; margin-bottom:14px; }
+  .tabs button { flex:1; border:0; background:transparent; padding:9px; border-radius:7px;
+    font-size:13px; font-weight:600; color:var(--muted); cursor:pointer; font-family:var(--sans); }
+  .tabs button[aria-selected="true"] { background:#fff; color:var(--txt); box-shadow:var(--shadow); }
+  .hof .p { font-size:11px; color:var(--brand); font-weight:600; }
+
   /* 개인 퀘스트 */
   .q { border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:10px; }
   .q:last-child { margin-bottom:0; }
@@ -236,6 +309,48 @@
       </div>
     </div>
 
+    <!-- 연속 방문 — 룰렛 기회로 이어지므로 맨 위에 둔다 -->
+    <div class="card" id="streakCard" style="display:none">
+      <h3>연속 방문 <span class="muted" style="font-weight:400">· 채우면 룰렛 기회</span></h3>
+      <div class="stk">
+        <div id="stkDaily">
+          <div class="k">매일 오기</div>
+          <div class="v"><span id="sdN">0</span><small>일 연속</small></div>
+          <div class="dots" id="sdDots"></div>
+          <div class="h" id="sdHint"></div>
+        </div>
+        <div id="stkWeekly">
+          <div class="k">주마다 오기</div>
+          <div class="v"><span id="swN">0</span><small>주 연속</small></div>
+          <div class="dots" id="swDots"></div>
+          <div class="h" id="swHint"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 룰렛 -->
+    <div class="card wheelCard" id="wheelCard" style="display:none">
+      <h3>행운의 룰렛</h3>
+      <div class="sub" id="wheelSub">스탬프와 연속 방문으로 기회를 모아요</div>
+      <div class="wheelBox">
+        <div class="pin"></div>
+        <svg viewBox="0 0 300 300" aria-hidden="true">
+          <g id="wheelRot"></g>
+        </svg>
+        <div class="hub"><b id="hubN">0</b><span>기회</span></div>
+      </div>
+      <button class="spinBtn" id="spinBtn" onclick="doSpin()" disabled>기회 모으는 중</button>
+      <div class="wheelMsg" id="wheelMsg"></div>
+      <div id="wheelWin"></div>
+    </div>
+
+    <!-- 쿠폰 지갑 -->
+    <div class="card" id="cpnCard" style="display:none">
+      <h3>내 쿠폰 <span class="muted" style="font-weight:400" id="cpnCount"></span></h3>
+      <div id="cpnList"></div>
+      <p class="muted" style="margin-top:12px">주문하실 때 직원에게 보여주세요.</p>
+    </div>
+
     <!-- 다음 등급 진행 링 -->
     <div class="card">
       <h3>등급 여정</h3>
@@ -293,12 +408,6 @@
       <div class="qg-bonus" id="qgBonus" style="display:none"></div>
     </div>
 
-    <!-- 연속 방문 스트릭 -->
-    <div class="card streak" id="streakCard" style="display:none">
-      <div class="s-fire" id="sFire">🔥</div>
-      <div class="s-txt"><b id="sWeeks"></b><span id="sHint"></span></div>
-    </div>
-
     <!-- 취향 프로필 -->
     <div class="card" id="tasteCard" style="display:none">
       <h3>내 취향</h3>
@@ -332,8 +441,13 @@
 
     <!-- 이달의 단골 -->
     <div class="card" id="hofCard" style="display:none">
-      <h3>이달의 단골</h3>
+      <h3>이달의 단골 <span class="muted" style="font-weight:400" id="hofMonth"></span></h3>
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tabSpent" aria-selected="true">금액</button>
+        <button role="tab" id="tabVisits" aria-selected="false">횟수</button>
+      </div>
       <div id="hofList"></div>
+      <p class="muted" style="margin-top:12px">매달 1일에 초기화되고, 두 부문 각각 시상합니다.</p>
     </div>
 
     <!-- 방문 기록 타임라인 -->
@@ -385,6 +499,7 @@
   }
 
   let currentMemberId = null;
+  let lastData = {};        // 룰렛 당첨 후 화면을 갱신할 때 참조
   async function useReferral(){
     const code = ($("refIn").value||"").trim().toUpperCase();
     if(!code || !currentMemberId) return;
@@ -397,6 +512,123 @@
       $("refInput").style.display = "none";
       setTimeout(()=>location.reload(), 2600);
     } catch(e){ $("refMsg").textContent = "❌ " + e.message; }
+  }
+
+  /* ── 룰렛 ───────────────────────────────────────────────
+     칸 색은 5개 고정 팔레트. 마지막(원두)은 금색 — 확률 0이지만
+     눈에 보이는 큰 상품이 있어야 돌릴 맛이 난다. */
+  const SEG_FILL = ["#4b6bff","#3a4fd6","#5b4bd6","#7a4bc9","#c99a2e"];
+  const R = 150, CX = 150, CY = 150;
+  let wheelBusy = false;
+
+  function renderWheel(r){
+    const segs = r.segments || [];
+    if(!segs.length) return;
+    $("wheelCard").style.display = "";
+    const step = 360 / segs.length;
+    const pt = (deg, rad) => {
+      const a = (deg - 90) * Math.PI / 180;
+      return [CX + rad*Math.cos(a), CY + rad*Math.sin(a)];
+    };
+    $("wheelRot").innerHTML = segs.map((sg, i) => {
+      const a0 = i*step, a1 = (i+1)*step, mid = a0 + step/2;
+      const [x0,y0] = pt(a0, R), [x1,y1] = pt(a1, R);
+      const [lx,ly] = pt(mid, R*0.62);
+      // 아래쪽 절반은 그대로 두면 글자가 거꾸로 선다 → 180° 뒤집어 읽히게 한다.
+      // y 오프셋은 건드리지 않는다. 회전이 글자 기준 '위/아래'를 함께 돌려주므로
+      // 여기서 또 뒤집으면 제목과 부제가 서로 자리를 바꾼다.
+      const flip = mid > 90 && mid < 270;
+      const [yMain, ySub] = [-3, 12];
+      return `<g class="wheelSeg">
+        <path d="M${CX},${CY} L${x0},${y0} A${R},${R} 0 0,1 ${x1},${y1} Z"
+              fill="${SEG_FILL[i % SEG_FILL.length]}" stroke="rgba(255,255,255,.16)" stroke-width="1.5"/>
+        <g transform="translate(${lx},${ly}) rotate(${mid + (flip ? 180 : 0)})">
+          <text text-anchor="middle" y="${yMain}" font-size="21">${sg.label}</text>
+          <text text-anchor="middle" y="${ySub}" font-size="9.5" opacity=".8"
+                font-weight="600">${sg.sub}</text>
+        </g>
+      </g>`;
+    }).join("");
+
+    updateSpins(r.spins || 0);
+  }
+
+  function updateSpins(n){
+    $("hubN").textContent = n;
+    const btn = $("spinBtn");
+    btn.disabled = n <= 0 || wheelBusy;
+    btn.textContent = n > 0 ? `룰렛 돌리기 (${n}번 남음)` : "기회 모으는 중";
+    $("wheelSub").textContent = n > 0
+      ? "지금 바로 돌려보세요"
+      : "스탬프 10개 · 5일 연속 · 4주 연속이면 기회가 생겨요";
+  }
+
+  async function doSpin(){
+    if(wheelBusy || !currentMemberId) return;
+    wheelBusy = true;
+    $("spinBtn").disabled = true;
+    $("wheelWin").innerHTML = "";
+    $("wheelMsg").textContent = "";
+
+    let res;
+    try {
+      res = await api(`/api/v1/members/${currentMemberId}/spin`, { method:"POST" });
+    } catch(e){
+      wheelBusy = false;
+      $("wheelMsg").textContent = "❌ " + e.message;
+      updateSpins(Number($("hubN").textContent) || 0);
+      return;
+    }
+
+    // 당첨 칸은 서버가 정한다. 화면은 그 칸이 바늘(12시)에 멈추도록 돌릴 뿐이다.
+    const segs = (lastData.roulette.segments || []).length || 5;
+    const step = 360 / segs;
+    const target = 360*6 - (res.index*step + step/2);
+    const rot = $("wheelRot");
+    rot.classList.remove("spin");
+    rot.style.transform = "rotate(0deg)";
+    void rot.getBoundingClientRect();      // 리플로우 — 없으면 애니메이션이 안 걸린다
+    rot.classList.add("spin");
+    rot.style.transform = `rotate(${target}deg)`;
+
+    const settle = matchMedia("(prefers-reduced-motion: reduce)").matches ? 400 : 4500;
+    setTimeout(() => {
+      wheelBusy = false;
+      updateSpins(res.spins_left);
+      const c = res.coupon;
+      const days = c.expires_at
+        ? Math.max(0, Math.ceil((new Date(c.expires_at) - new Date())/86400000)) : null;
+      $("wheelWin").innerHTML = `<div class="wheelWin">
+        <div class="k">당첨</div>
+        <div class="n">${c.name}</div>
+        ${days!==null?`<div class="e">${days}일 안에 사용해 주세요</div>`:""}
+      </div>`;
+      // 지갑에 바로 꽂아 준다 — 새로고침을 시키면 당첨의 여운이 끊긴다
+      lastData.coupons = [{
+        id:c.id, kind:c.kind, name:c.name, source:"룰렛", note:"",
+        discount_pct:(c.kind==="discount_5"?5:c.kind==="discount_10"?10:0),
+        expires_at:c.expires_at, days_left:days,
+      }, ...(lastData.coupons || [])];
+      renderCoupons(lastData.coupons);
+    }, settle);
+  }
+
+  function renderCoupons(list){
+    if(!list.length){ $("cpnCard").style.display = "none"; return; }
+    $("cpnCard").style.display = "";
+    $("cpnCount").textContent = `· ${list.length}장`;
+    $("cpnList").innerHTML = list.map(c=>{
+      const gift = !c.discount_pct;
+      const face = c.discount_pct ? `${c.discount_pct}%`
+                 : c.kind === "bogo" ? "1+1"
+                 : c.kind === "free_drink" ? "FREE" : "원두";
+      const soon = c.days_left != null && c.days_left <= 7;
+      return `<div class="cpn ${gift?"gift":""}">
+        <div class="amt">${face}<small>${gift?"쿠폰":"할인"}</small></div>
+        <div class="t"><b>${c.name}</b><span>${c.note || c.source || ""}</span></div>
+        <div class="d ${soon?"soon":""}">${c.days_left!=null?`${c.days_left}일 남음`:""}</div>
+      </div>`;
+    }).join("");
   }
 
   async function load(phone){
@@ -414,6 +646,7 @@
   function render(d){
     const m = d.member;
     currentMemberId = m.id;
+    lastData = d;
     $("loginCard").classList.add("hidden");
     $("view").classList.remove("hidden");
 
@@ -516,16 +749,32 @@
         (r!=null && r<100 ? ` <small>상위 ${r}%</small>` : "") + `</span>`;
     }
 
-    // ── 스트릭 ──
+    // ── 연속 방문 ──
     const st = d.streak || {};
-    if(st.weeks > 0){
-      $("streakCard").style.display = "flex";
-      $("streakCard").classList.toggle("on", !!st.alive);
-      $("sWeeks").textContent = `${st.weeks}주 연속 방문 중`;
-      $("sHint").textContent = st.visited_this_week
-        ? "이번 주 방문 완료! 다음 주에도 오시면 계속 이어져요"
-        : "이번 주 안에 오시면 연속 기록이 이어져요";
+    if(st.daily){
+      $("streakCard").style.display = "";
+      const draw = (box, cur, goal, nEl, dotsEl, hintEl, unit, alive) => {
+        $(nEl).textContent = cur;
+        $(box).classList.toggle("on", cur > 0 && alive);
+        // 목표 주기 안에서의 진행만 보여준다(5일 채우면 다시 0부터)
+        const inCycle = goal ? cur % goal : 0;
+        const filled = (cur > 0 && inCycle === 0) ? goal : inCycle;
+        $(dotsEl).innerHTML = Array.from({length:goal},(_,i)=>
+          `<i class="${i<filled?"f":""}"></i>`).join("");
+        const left = goal - filled;
+        $(hintEl).textContent = left === 0
+          ? "룰렛 기회 획득!"
+          : `${left}${unit} 더 오시면 룰렛`;
+      };
+      draw("stkDaily", st.daily.days, st.daily.goal, "sdN", "sdDots", "sdHint", "일", st.daily.alive);
+      draw("stkWeekly", st.weekly.weeks, st.weekly.goal, "swN", "swDots", "swHint", "주", st.weekly.alive);
     }
+
+    // ── 룰렛 ──
+    renderWheel(d.roulette || {});
+
+    // ── 쿠폰 지갑 ──
+    renderCoupons(d.coupons || []);
 
     // ── 취향 ──
     const t = d.taste || {};
@@ -564,17 +813,29 @@
       $("refInput").style.display = rf.referred ? "none" : "";
     }
 
-    // ── 이달의 단골 ──
+    // ── 이달의 단골 (금액 · 횟수) ──
     const hof = d.hall_of_fame || {};
-    if(hof.top && hof.top.length){
+    if(hof.boards && hof.boards.some(b => b.top.length)){
       $("hofCard").style.display = "";
+      $("hofMonth").textContent = "· " + (hof.month || "").replace("-", "년 ") + "월";
       const medal = ["🥇","🥈","🥉"];
-      $("hofList").innerHTML = hof.top.map(x=>
-        `<div class="hof ${x.member_id===m.id?"me":""}">
-           <span class="r">${medal[x.rank-1]||x.rank}</span>
-           <span class="n">${x.nickname}${x.member_id===m.id?" (나)":""}</span>
-           <span class="v">${x.visits}회</span>
-         </div>`).join("");
+      const paint = (key) => {
+        const b = hof.boards.find(x => x.key === key) || {top:[]};
+        $("tabSpent").setAttribute("aria-selected", key === "spent");
+        $("tabVisits").setAttribute("aria-selected", key === "visits");
+        $("hofList").innerHTML = b.top.length
+          ? b.top.map(x=>
+            `<div class="hof ${x.member_id===m.id?"me":""}">
+               <span class="r">${medal[x.rank-1]||x.rank}</span>
+               <span class="n">${x.nickname}${x.member_id===m.id?" (나)":""}
+                 <div class="p">${x.prize}</div></span>
+               <span class="v">${won(x.value)}${b.unit}</span>
+             </div>`).join("")
+          : '<p class="muted">이번 달 기록이 아직 없어요.</p>';
+      };
+      $("tabSpent").onclick  = () => paint("spent");
+      $("tabVisits").onclick = () => paint("visits");
+      paint("spent");
     }
 
     // 미션

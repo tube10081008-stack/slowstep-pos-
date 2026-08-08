@@ -24,7 +24,7 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 | 구분 | 엔드포인트 |
 | --- | --- |
 | 🔒 **매장 전용** | `transactions*` · `sales/summary` · `margins/summary` · `dashboard/stats` · `store/session` · `members`(목록·가입·`import`) · `segments*` · `campaigns*` |
-| 🌐 **공개** | `health` · `menu` · `store` · `missions` · `member-qr` · `members/lookup` · `members/{id}/dashboard`·`missions`·`points` |
+| 🌐 **공개** | `health` · `menu` · `store` · `missions` · `member-qr` · `hall-of-fame` · `members/lookup` · `members/{id}/dashboard`·`missions`·`points`·`referral`·`spin` |
 
 > 토큰 없이 매장 전용 API 호출 시 **403**.
 
@@ -79,10 +79,53 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 회원 상세 + 진행 중 미션 + 최근 적립 내역.
 
 > **`GET /api/v1/members/{id}/dashboard`** 는 게이미피케이션 전체를 한 번에 준다:
-> `badges`, `title`, `quests`, `taste`(최애 메뉴·카테고리 분포),
-> `collection`(메뉴 도장깨기·다음 도전 메뉴), `streak`(주 단위 연속 방문),
+> `roulette`, `coupons`, `streak`, `badges`, `title`, `quests`,
+> `taste`(최애 메뉴·카테고리 분포), `collection`(메뉴 도장깨기·다음 도전 메뉴),
 > `hall_of_fame`(이달의 단골), `referral`(내 초대 코드),
 > `next_tier`, `ranking`, `timeline`, `missions`.
+
+#### `roulette` · `POST /api/v1/members/{id}/spin` — 행운의 룰렛
+스탬프를 채우거나 연속 방문 조건을 달성하면 **기회(spins)** 가 쌓이고,
+손님이 **자기 폰에서 직접** 돌린다. 결제 화면에서 자동으로 돌리지 않는 이유는
+직접 돌리는 순간이 재미의 전부이기 때문이다.
+```json
+"roulette": { "spins": 2, "segments": [
+  { "kind": "discount_5", "label": "5%", "sub": "할인 쿠폰", "name": "5% 할인" }, … ] }
+```
+```json
+POST → 200 { "index": 0, "spins_left": 1,
+             "coupon": { "id": 12, "kind": "discount_5", "name": "5% 할인",
+                         "expires_at": "2026-11-06T…" } }
+400 { "detail": "룰렛 기회가 없어요." }
+```
+- **당첨은 서버가 정한다.** 응답의 `index`는 화면이 그 칸에 멈추도록 하는 연출값일
+  뿐이고, 확률은 클라이언트로 내려보내지 않는다.
+- 확률 — 할인쿠폰 합계 60%(5% 40 / 10% 20), 1+1 20%, 무료 음료 20%,
+  **원두 200g 0%**. 원두 칸은 화면에만 있는 '보여주기용'이다. 눈에 보이는 큰
+  상품이 있어야 돌릴 맛이 나고, 실제 지급 부담은 지지 않는다.
+- 기회 차감은 회원 행을 잠그고 처리한다 — 버튼 두 번 누르기·두 기기 동시 접속으로
+  기회 1번에 쿠폰 두 장이 나가는 걸 막는다.
+
+#### `coupons` — 보유 쿠폰
+룰렛·등급 승급·랭킹 시상으로 발행된다. **포인트 원장과 섞지 않는다** — 할인율
+쿠폰과 음료 쿠폰은 원가 성격이 달라 따로 관리해야 한다. 기본 유효기간 90일.
+```json
+{ "id": 12, "kind": "bogo", "name": "음료 1+1", "source": "등급 승급",
+  "note": "실버 승급", "discount_pct": 0, "days_left": 89 }
+```
+- 사용·만료된 쿠폰은 목록에서 빠진다.
+
+#### `streak` — 연속 방문 (두 갈래)
+```json
+"streak": { "daily":  { "days": 4,  "goal": 5, "left": 1, "alive": true },
+            "weekly": { "weeks": 2, "goal": 4, "left": 2, "alive": true } }
+```
+- **5일 연속** 또는 **4주 연속**(주 1회 이상)이면 룰렛 기회 1번.
+- 매일 오는 손님만 보상하면 주 1회 단골이 소외되고, 주 단위만 보면 매일 오는
+  손님이 심심하다. 둘 다 열어 두고 각자의 리듬으로 도전하게 한다.
+- 보상은 **주기마다 반복**된다(10일·15일에도 다시). 한 번 받고 끝나면 이어갈
+  이유가 없어지는 게 연속 방문 보상에서 가장 흔한 실패다.
+- 오늘 아직 안 오셨어도 어제까지 이어졌다면 `alive: true` — 오늘 오시면 연장.
 
 #### `badges` — 배지
 방문·누적에 더해 **시간대·요일·옵션·컬렉션·스트릭** 기반 22종.
@@ -140,14 +183,27 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 
 ### `POST /api/v1/members/{id}/referral`
 **친구 초대 코드 적용**(공개 — 손님 폰에서 호출). `{ "code": "7K2M9Q" }`
-→ 초대한 사람과 받은 사람 **모두** 2,000P. 한 번만 가능하고, 자기 코드는 불가,
-가입 초기(방문 3회 이하)에만 사용할 수 있다. 실패 시 400 + 사유.
+→ 초대한 사람과 받은 사람 **모두** 1,000P. 받는 쪽은 한 번만, 자기 코드는 불가,
+가입 초기(방문 3회 이하)에만 사용할 수 있다. 초대하는 쪽은 **하루 1명**까지 —
+코드를 뿌려 하루에 수십 명을 넣는 걸 막는다. 실패 시 400 + 사유.
 
 ### `GET /api/v1/hall-of-fame`
 **이달의 단골 TOP3**(공개). 닉네임으로 표시하므로 매장 화면에 띄워도 된다.
+**금액·횟수 두 부문**을 따로 매긴다 — 한 줄로 세우면 객단가 높은 손님과 자주
+오는 손님 중 한쪽이 늘 진다. 매달 1일에 초기화된다.
 ```json
-200 { "month": "2026-08", "top": [ { "rank":1, "nickname":"느긋한 수달", "visits":12 } ] }
+200 { "month": "2026-08",
+      "prizes": ["아메리카노 + 플레인 휘낭시에", "아메리카노", "플레인 휘낭시에"],
+      "boards": [
+        { "key": "spent",  "label": "금액", "unit": "원",
+          "top": [ { "rank":1, "nickname":"큰손 고양이", "value":128000,
+                     "prize":"아메리카노 + 플레인 휘낭시에", "member_id":7 } ] },
+        { "key": "visits", "label": "횟수", "unit": "회", "top": [ … ] } ],
+      "top": [ … ] }
 ```
+> `top`은 횟수 부문과 같은 내용의 하위호환 필드다.
+> 시상 자체(쿠폰 발행)는 **월말에 사람이 확인하고 지급**한다 — 자동 지급은
+> 어뷰징 확인 없이 상품이 나가므로 일부러 넣지 않았다.
 
 ### `GET /api/v1/members/{id}/missions`
 회원의 미션 진행 목록.

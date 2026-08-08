@@ -109,18 +109,17 @@
     justify-content:center; gap:1.4vh; }
   .w-title { font-size:clamp(26px,3.8vw,46px); font-weight:800; letter-spacing:-.03em; }
   .w-sub { font-size:clamp(14px,1.6vw,20px); color:var(--muted); font-weight:500; }
-  .w-stage { position:relative; margin-top:1vh; }
-  .w-disc { width:clamp(240px,40vh,420px); height:clamp(240px,40vh,420px);
-    border-radius:50%; border:8px solid #fff; box-shadow:0 12px 40px rgba(16,24,40,.18);
-    transition:transform 4.2s cubic-bezier(.12,.72,.12,1); }
-  .w-pin { position:absolute; top:-14px; left:50%; transform:translateX(-50%);
-    width:0; height:0; border-left:14px solid transparent; border-right:14px solid transparent;
-    border-top:26px solid var(--txt); z-index:2; filter:drop-shadow(0 2px 3px rgba(0,0,0,.2)); }
-  .w-label { position:absolute; inset:0; }
-  .w-label b { position:absolute; left:50%; top:50%; font-size:clamp(13px,1.5vw,19px);
-    font-weight:800; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.35); }
-  .w-result { min-height:8vh; font-size:clamp(24px,3.4vw,44px); font-weight:800;
-    color:var(--brand); opacity:0; transform:scale(.9); transition:all .4s ease; }
+  .w-ticket { display:flex; align-items:center; gap:2.2vw; margin-top:1.5vh;
+    background:#fff; border:2px dashed var(--brand); border-radius:20px;
+    padding:2.6vh 3.4vw; box-shadow:0 12px 40px rgba(16,24,40,.14); }
+  .w-ticket .t-ic { font-size:clamp(38px,5vw,66px); line-height:1; }
+  .w-ticket .t-tx b { display:block; font-size:clamp(22px,2.8vw,38px); font-weight:800;
+    letter-spacing:-.02em; }
+  .w-ticket .t-tx span { display:block; font-size:clamp(13px,1.5vw,19px); color:var(--muted);
+    margin-top:.5vh; font-weight:500; }
+  .w-result { min-height:8vh; font-size:clamp(16px,1.9vw,24px); font-weight:600;
+    color:var(--muted); opacity:0; transform:scale(.9); transition:all .4s ease;
+    display:flex; align-items:center; }
   .w-result.on { opacity:1; transform:none; }
 
   /* ── 완료 화면 ── */
@@ -233,15 +232,18 @@
     <div class="ask" style="margin-top:1.6vh">이제 결제를 도와드릴게요</div>
   </div>
 
-  <!-- 스탬프 완성 룰렛 -->
+  <!-- 룰렛 기회 획득 안내 (룰렛 자체는 손님 폰에서 돌린다) -->
   <div id="wheel" class="hidden">
-    <div class="w-title">스탬프 10개 완성!</div>
-    <div class="w-sub">룰렛을 돌립니다</div>
-    <div class="w-stage">
-      <div class="w-pin"></div>
-      <div class="w-disc" id="wDisc"></div>
+    <div class="w-title" id="wTitle">스탬프 완성!</div>
+    <div class="w-sub" id="wSub">룰렛 기회를 받으셨어요</div>
+    <div class="w-ticket">
+      <div class="t-ic">🎡</div>
+      <div class="t-tx">
+        <b>룰렛 1회</b>
+        <span>휴대폰 멤버십에서 직접 돌려보세요</span>
+      </div>
     </div>
-    <div class="w-result" id="wResult"></div>
+    <div class="w-result on">5% · 10% 할인 · 1+1 · 무료 음료</div>
   </div>
 
   <!-- 완료 -->
@@ -314,38 +316,11 @@
   // ── 스탬프 완성 룰렛 ──
   // 당첨은 서버가 정한다. 화면은 그 칸으로 돌아가는 연출만 담당한다.
   const W_COLORS = ["#3b5bff","#8b5cf6","#0ea5e9","#f59e0b","#16a34a","#ec4899"];
-  function buildWheel(segments, index){
-    const n = segments.length, seg = 360 / n;
-    const stops = segments.map((_,i)=>
-      `${W_COLORS[i%W_COLORS.length]} ${i*seg}deg ${(i+1)*seg}deg`).join(",");
-    const disc = $("wDisc");
-    disc.style.background = `conic-gradient(${stops})`;
-    disc.style.transition = "none";
-    disc.style.transform = "rotate(0deg)";
-    // 칸 숫자 라벨
-    const labels = segments.map((p,i)=>{
-      const mid = (i + .5) * seg;
-      return `<b style="transform:translate(-50%,-50%) rotate(${mid}deg) translateY(-34%) rotate(${-mid}deg)">${p.toLocaleString("ko-KR")}P</b>`;
-    }).join("");
-    disc.innerHTML = `<div class="w-label">${labels}</div>`;
-    // 바늘(12시)이 당첨 칸 가운데를 가리키도록 회전량 계산 + 여러 바퀴
-    const target = 360*6 - ((index + .5) * seg);
-    requestAnimationFrame(()=>{
-      disc.style.transition = "";
-      disc.style.transform = `rotate(${target}deg)`;
-    });
-  }
-
-  function runRoulette(reward, after){
-    document.querySelector(".w-title").textContent = reward.title || "스탬프 완성!";
-    const res = $("wResult"); res.className = "w-result"; res.textContent = "";
+  function runSpinAward(reward, after){
+    $("wTitle").textContent = reward.title || "스탬프 완성!";
+    $("wSub").textContent = reward.description || "룰렛 기회를 받으셨어요";
     show("wheel");
-    buildWheel(reward.wheel || [reward.points], reward.index || 0);
-    setTimeout(()=>{
-      res.textContent = `+${(reward.points||0).toLocaleString("ko-KR")}P 당첨!`;
-      res.className = "w-result on";
-    }, 4300);
-    setTimeout(after, 6800);   // 결과를 잠시 보여준 뒤 완료 화면으로
+    setTimeout(after, 4200);   // 잠깐 보여준 뒤 완료 화면으로
   }
 
   function renderDone(d){
@@ -356,7 +331,9 @@
         <div class="stat"><div class="k">이번 적립</div><div class="v p">+${(d.earned||0).toLocaleString("ko-KR")}P</div></div>
         <div class="stat"><div class="k">모은 포인트</div><div class="v">${(m.points||0).toLocaleString("ko-KR")}P</div></div>
         <div class="stat"><div class="k">등급</div><div class="v g">${m.tier_display||m.tier||""}</div></div>`;
-      $("doneRw").innerHTML = (d.rewards||[]).map(r=>`<div class="rw">${r.title} +${r.points}P</div>`).join("");
+      $("doneRw").innerHTML = (d.rewards||[]).map(r=>`<div class="rw">${r.title} ${
+        r.points ? "+" + r.points.toLocaleString("ko-KR") + "P" : (r.description||"")
+      }</div>`).join("");
       const goal = m.stamp_goal || 10, on = m.stamps || 0;
       $("doneStamps").innerHTML = Array.from({length:goal},(_,i)=>
         `<span class="sd ${i<on?"on":""}">${CUP}</span>`).join("");
@@ -476,8 +453,8 @@
       $("gStats").innerHTML=""; }
     else if(d.type === "lookup_fail"){ hint(d.message || "처음 오셨군요. 직원이 도와드릴게요.", true); }
     else if(d.type === "done"){
-      const spin = (d.rewards || []).find(r => r.type === "roulette");
-      if(spin) runRoulette(spin, () => renderDone(d));   // 룰렛 → 완료
+      const spin = (d.rewards || []).find(r => r.type === "spin");
+      if(spin) runSpinAward(spin, () => renderDone(d));   // 기회 안내 → 완료
       else renderDone(d);
     }
     else if(d.type === "done_qr" || d.type === "member_qr") setQr(d.svg);

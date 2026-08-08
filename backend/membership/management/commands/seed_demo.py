@@ -77,24 +77,24 @@ class Command(BaseCommand):
         missions = [
             {
                 "title": "이번 시즌 3회 방문",
-                "description": "3번 방문하고 1,000P 받기",
+                "description": "3번 방문하고 500P 받기",
                 "condition_type": Mission.Condition.VISIT_COUNT,
                 "target_value": 3,
-                "reward_points": 1000,
+                "reward_points": 500,
             },
             {
                 "title": "단골 인증 10회 방문",
-                "description": "10번 방문하면 5,000P",
+                "description": "10번 방문하면 500P",
                 "condition_type": Mission.Condition.VISIT_COUNT,
                 "target_value": 10,
-                "reward_points": 5000,
+                "reward_points": 500,
             },
             {
                 "title": "누적 5만원 달성",
-                "description": "누적 결제 50,000원 달성 시 2,000P",
+                "description": "누적 결제 50,000원 달성 시 500P",
                 "condition_type": Mission.Condition.TOTAL_SPENT,
                 "target_value": 50000,
-                "reward_points": 2000,
+                "reward_points": 500,
             },
         ]
         for m in missions:

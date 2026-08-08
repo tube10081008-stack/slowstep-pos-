@@ -11,12 +11,14 @@ from datetime import timedelta
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
+from . import streaks
 from .models import Member, MenuItem, Mission, OrderItem, PointEntry, Transaction
-from .rewards import REFERRAL_REWARD
+from .rewards import REFERRAL_DAILY_LIMIT, REFERRAL_REWARD, wheel_segments
 
-# 등급 임계값 (누적 결제액 기준)
-_SILVER_AT = 50_000
-_GOLD_AT = 200_000
+# 등급 임계값 — 모델을 진실 원천으로 삼는다(두 곳에 적으면 반드시 어긋난다)
+_TIERS = dict((t, amt) for amt, t in Member.TIER_THRESHOLDS)
+_SILVER_AT = _TIERS[Member.Tier.SILVER]
+_GOLD_AT = _TIERS[Member.Tier.GOLD]
 
 
 def _display_name(name: str) -> str:
@@ -72,9 +74,8 @@ def _hidden_flags(member: Member) -> dict:
             first_of_day = True
             break
     late = any(timezone.localtime(t).hour >= 21 for t in paid.values_list("paid_at", flat=True))
-    jackpot = member.point_entries.filter(
-        reason=PointEntry.Reason.STAMP, delta__gte=10000
-    ).exists()
+    from .models import Coupon
+    jackpot = member.coupons.filter(kind=Coupon.Kind.FREE_DRINK).exists()
     set_master = paid.filter(discount__gt=0).count()
     return {
         "first_of_day": first_of_day,
@@ -120,9 +121,11 @@ def _badges(member: Member, completed_missions: int, collection: dict,
         ("regular", "❖", "단골", "5회 방문", v >= 5),
         ("club10", "X", "10잔 클럽", "10회 방문", v >= 10),
         ("club20", "XX", "20잔 마스터", "20회 방문", v >= 20),
-        ("silver", "◆", "실버 등급", "누적 5만원", member.tier in (Member.Tier.SILVER, Member.Tier.GOLD)),
-        ("gold", "♛", "골드 등급", "누적 20만원", member.tier == Member.Tier.GOLD),
-        ("bigspender", "◈", "큰손", "누적 10만원", spent >= 100_000),
+        ("silver", "◆", "실버 등급", f"누적 {_SILVER_AT // 10000}만원",
+         member.tier in (Member.Tier.SILVER, Member.Tier.GOLD)),
+        ("gold", "♛", "골드 등급", f"누적 {_GOLD_AT // 10000}만원",
+         member.tier == Member.Tier.GOLD),
+        ("bigspender", "◈", "큰손", "누적 20만원", spent >= 200_000),
         ("mission", "✧", "미션 클리어", "미션 1개 달성", completed_missions >= 1),
         # ── 시간대·요일 ──
         ("morning", "☀", "아침형 인간", "오전 방문 5회", flags["morning"] >= 5),
@@ -145,7 +148,7 @@ def _badges(member: Member, completed_missions: int, collection: dict,
     for key, icon, title, desc, earned in (
         ("first_guest", "✷", "오늘의 첫 손님", "그날 첫 번째로 방문", hidden["first_of_day"]),
         ("night", "☾", "늦은 밤의 위로", "밤 9시 이후 방문", hidden["late"]),
-        ("jackpot", "★", "룰렛 잭팟", "룰렛 최고 상금 당첨", hidden["jackpot"]),
+        ("jackpot", "★", "룰렛 잭팟", "룰렛에서 무료 음료 당첨", hidden["jackpot"]),
         ("setlover", "✚", "세트 마스터", "세트 할인 5회", hidden["set_master"] >= 5),
     ):
         if earned:
@@ -281,68 +284,58 @@ def _collection(member: Member) -> dict:
     }
 
 
-def _streak(member: Member) -> dict:
-    """
-    연속 방문 스트릭(주 단위).
-
-    카페 방문 주기에 맞춰 '일'이 아니라 '주'로 센다. 이번 주에 왔으면 이어지는
-    중이고, 안 왔어도 지난 주까지 이어졌다면 아직 끊긴 게 아니다(이번 주에 오면 연장).
-    """
-    days = list(
-        member.transactions.filter(status=Transaction.Status.PAID, paid_at__isnull=False)
-        .values_list("paid_at", flat=True)
-    )
-    if not days:
-        return {"weeks": 0, "alive": False, "visited_this_week": False}
-
-    def week_key(dt):
-        d = timezone.localtime(dt).date()
-        monday = d - timedelta(days=d.weekday())
-        return monday
-
-    weeks = sorted({week_key(d) for d in days}, reverse=True)
-    this_week = week_key(timezone.now())
-    last_week = this_week - timedelta(days=7)
-
-    if weeks[0] not in (this_week, last_week):
-        return {"weeks": 0, "alive": False, "visited_this_week": False}
-
-    streak, cursor = 0, weeks[0]
-    for w in weeks:
-        if w == cursor:
-            streak += 1
-            cursor = cursor - timedelta(days=7)
-        elif w < cursor:
-            break
-    return {
-        "weeks": streak,
-        "alive": True,
-        "visited_this_week": weeks[0] == this_week,
-    }
+# 월간 랭킹 시상 — 금액·횟수 두 부문 각각 지급
+RANKING_PRIZES = (
+    "아메리카노 + 플레인 휘낭시에",
+    "아메리카노",
+    "플레인 휘낭시에",
+)
 
 
-def hall_of_fame(store=None, when=None) -> dict:
-    """이달의 단골 — 이번 달 방문 횟수 1위(닉네임으로 표시)."""
-    now = timezone.localtime(when or timezone.now())
-    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    rows = (
+def _rank_rows(start, key: str) -> list[dict]:
+    """이번 달 순위 TOP3. key='spent' 금액 / key='visits' 횟수."""
+    qs = (
         Transaction.objects.filter(
             status=Transaction.Status.PAID, paid_at__gte=start, member__isnull=False
         )
         .values("member__id", "member__name")
-        .annotate(visits=Count("id"))
-        .order_by("-visits")[:3]
     )
-    top = [
+    if key == "spent":
+        qs = qs.annotate(value=Sum("net_amount")).order_by("-value", "member__id")
+    else:
+        qs = qs.annotate(value=Count("id")).order_by("-value", "member__id")
+    return [
         {
             "rank": i + 1,
             "nickname": _display_name(r["member__name"]),
-            "visits": r["visits"],
+            "value": r["value"] or 0,
             "member_id": r["member__id"],
+            "prize": RANKING_PRIZES[i],
         }
-        for i, r in enumerate(rows)
+        for i, r in enumerate(qs[:3])
     ]
-    return {"month": now.strftime("%Y-%m"), "top": top}
+
+
+def hall_of_fame(store=None, when=None) -> dict:
+    """
+    이달의 단골 — **금액 부문·횟수 부문**을 따로 매긴다.
+
+    한 줄 세우기로는 객단가 높은 손님과 자주 오는 손님 중 한쪽이 늘 진다.
+    부문을 나누면 각자 자기 방식으로 1등을 노릴 수 있다.
+    """
+    now = timezone.localtime(when or timezone.now())
+    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    visits = _rank_rows(start, "visits")
+    return {
+        "month": now.strftime("%Y-%m"),
+        "prizes": list(RANKING_PRIZES),
+        "boards": [
+            {"key": "spent", "label": "금액", "unit": "원", "top": _rank_rows(start, "spent")},
+            {"key": "visits", "label": "횟수", "unit": "회", "top": visits},
+        ],
+        # 이전 화면과의 호환 — 횟수 기준 TOP3
+        "top": [{**r, "visits": r["value"]} for r in visits],
+    }
 
 
 def _timeline(member: Member) -> list[dict]:
@@ -417,7 +410,7 @@ def build_badges_only(member: Member) -> list[dict]:
     missions = _missions(member)
     completed = sum(1 for m in missions if m["is_completed"])
     return _badges(
-        member, completed, _collection(member), _streak(member), _behavior_flags(member)
+        member, completed, _collection(member), streaks.build(member), _behavior_flags(member)
     )
 
 
@@ -442,7 +435,7 @@ def build_member_dashboard(member: Member) -> dict:
     missions = _missions(member)
     completed = sum(1 for m in missions if m["is_completed"])
     collection = _collection(member)
-    streak = _streak(member)
+    streak = streaks.build(member)
     flags = _behavior_flags(member)
     badges = _badges(member, completed, collection, streak, flags)
     rarity = badge_rarity()
@@ -462,10 +455,37 @@ def build_member_dashboard(member: Member) -> dict:
         "collection": collection,
         "streak": streak,
         "hall_of_fame": hall_of_fame(member.store),
+        "coupons": coupon_list(member),
+        "roulette": {
+            "spins": member.spins,
+            "segments": wheel_segments(),
+        },
         "referral": {
             "code": member.ensure_referral_code(),
             "reward": REFERRAL_REWARD,
             "invited": member.referrals.count(),
             "referred": member.referred_by_id is not None,
+            "daily_limit": REFERRAL_DAILY_LIMIT,
         },
     }
+
+
+def coupon_list(member: Member) -> list[dict]:
+    """보유 쿠폰 — 쓸 수 있는 것 먼저, 만료 임박 순."""
+    now = timezone.now()
+    out = []
+    for c in member.coupons.filter(used_at__isnull=True, expires_at__gt=now).order_by(
+        "expires_at"
+    ):
+        left = (c.expires_at - now).days
+        out.append({
+            "id": c.id,
+            "kind": c.kind,
+            "name": c.get_kind_display(),
+            "source": c.get_source_display(),
+            "note": c.note,
+            "discount_pct": c.discount_pct,
+            "expires_at": c.expires_at,
+            "days_left": left,
+        })
+    return out

@@ -13,6 +13,7 @@ from django.db.models import F
 from django.utils import timezone
 
 from .models import (
+    Coupon,
     Member,
     MemberMission,
     MenuItem,
@@ -24,7 +25,17 @@ from .models import (
 )
 from .payments import TossClient, TossError
 from .quests import evaluate_and_award
-from .rewards import REFERRAL_REWARD, earn_multiplier, spin_roulette
+from .rewards import (
+    REFERRAL_DAILY_LIMIT,
+    REFERRAL_REWARD,
+    earn_multiplier,
+    issue_coupon,
+    spin_roulette,
+)
+from .streaks import grant_spins
+
+# 매장 공통 미션을 전부 달성했을 때 한 번 주는 보너스
+MISSION_CLEAR_BONUS = 1000
 
 
 class CheckoutError(Exception):
@@ -177,8 +188,8 @@ def _record_point(member, txn, delta, reason) -> int:
 
 
 def _update_missions(member: Member, txn: Transaction, rewards: list[dict]) -> None:
-    """활성 미션 진행 갱신, 달성 시 보너스 적립."""
-    missions = Mission.objects.filter(store=member.store, is_active=True)
+    """활성 미션 진행 갱신, 달성 시 보너스 적립. 전부 깨면 추가 보너스."""
+    missions = list(Mission.objects.filter(store=member.store, is_active=True))
     for mission in missions:
         mm, _ = MemberMission.objects.get_or_create(member=member, mission=mission)
         if mm.is_completed:
@@ -195,27 +206,69 @@ def _update_missions(member: Member, txn: Transaction, rewards: list[dict]) -> N
                 }
             )
         mm.save()
+    _award_mission_clear(member, txn, missions, rewards)
+
+
+def _award_mission_clear(member, txn, missions, rewards) -> None:
+    """미션을 전부 달성하면 한 번만 완주 보너스 — 낱개 보상엔 없는 매듭."""
+    from .models import MemberQuest
+
+    if not missions:
+        return
+    done = MemberMission.objects.filter(
+        member=member, mission__in=missions, is_completed=True
+    ).count()
+    if done < len(missions):
+        return
+    _, created = MemberQuest.objects.get_or_create(
+        member=member, key="mission:clear",
+        defaults={"kind": "mission_clear", "title": "미션 전부 달성",
+                  "reward_points": MISSION_CLEAR_BONUS},
+    )
+    if not created:
+        return
+    _record_point(member, txn, MISSION_CLEAR_BONUS, PointEntry.Reason.MISSION)
+    rewards.append({"type": "mission_clear", "title": "미션 전부 달성",
+                    "points": MISSION_CLEAR_BONUS})
 
 
 def _apply_stamp_and_tier(member: Member, txn: Transaction, rewards: list[dict]) -> None:
-    """스탬프 +1, 목표 도달 시 리워드·리셋. 등급 재계산."""
+    """스탬프 +1, 목표 도달 시 룰렛 기회. 등급 재계산 + 승급 쿠폰."""
     store = member.store
     member.stamps += 1
     if store.stamp_goal and member.stamps >= store.stamp_goal:
         member.stamps = 0
-        # 고정 보상 대신 룰렛 — 결과는 서버가 정하고 화면은 연출만 한다.
-        won, idx, segments = spin_roulette()
-        _record_point(member, txn, won, PointEntry.Reason.STAMP)
-        rewards.append(
-            {
-                "type": "roulette",
-                "title": f"스탬프 {store.stamp_goal}개 완성",
-                "points": won,
-                "wheel": segments,
-                "index": idx,
-            }
-        )
+        # 여기서 바로 돌리지 않는다 — 손님이 자기 폰에서 직접 돌려야 재미가 산다.
+        member.spins += 1
+        rewards.append({
+            "type": "spin",
+            "title": f"스탬프 {store.stamp_goal}개 완성",
+            "description": "룰렛 기회 1번! 멤버십에서 돌려보세요",
+            "points": 0,
+        })
+    rewards.extend(grant_spins(member))
+    _apply_tier(member, rewards)
+
+
+def _apply_tier(member: Member, rewards: list[dict]) -> None:
+    """등급 재계산. 처음 올라간 등급이면 1+1 쿠폰을 지급한다."""
+    order = [Member.Tier.BRONZE, Member.Tier.SILVER, Member.Tier.GOLD]
     member.tier = member.compute_tier()
+    if order.index(member.tier) <= order.index(member.tier_rewarded):
+        return                                  # 이미 받은 등급(강등 후 재승급 포함)
+    for tier in order[order.index(member.tier_rewarded) + 1: order.index(member.tier) + 1]:
+        count = Member.TIER_COUPONS.get(tier, 0)
+        for _ in range(count):
+            issue_coupon(member, Coupon.Kind.BOGO, Coupon.Source.TIER,
+                         note=f"{Member.Tier(tier).label} 승급")
+        if count:
+            rewards.append({
+                "type": "tier",
+                "title": f"{Member.Tier(tier).label} 등급 달성",
+                "description": f"음료 1+1 쿠폰 {count}장",
+                "points": 0,
+            })
+    member.tier_rewarded = member.tier
 
 
 class _DuplicateOrder(Exception):
@@ -398,6 +451,39 @@ def _checkout_atomic(
     return CheckoutResult(transaction=txn, rewards=rewards)
 
 
+class SpinError(Exception):
+    """룰렛을 돌릴 수 없는 상태."""
+
+
+@db_transaction.atomic
+def spin(member: Member) -> dict:
+    """
+    룰렛 1회 — 기회를 1 차감하고 쿠폰을 발행한다.
+
+    잠금을 걸고 기회를 확인하는 이유: 손님이 버튼을 두 번 누르거나 두 기기에서
+    동시에 열면 기회 1번으로 쿠폰이 두 장 나올 수 있다.
+    """
+    me = Member.objects.select_for_update().get(pk=member.pk)
+    if me.spins <= 0:
+        raise SpinError("룰렛 기회가 없어요.")
+
+    kind, index = spin_roulette()
+    coupon = issue_coupon(me, kind, Coupon.Source.ROULETTE)
+    me.spins -= 1
+    me.save(update_fields=["spins"])
+    member.spins = me.spins
+    return {
+        "index": index,
+        "coupon": {
+            "id": coupon.id,
+            "kind": coupon.kind,
+            "name": coupon.get_kind_display(),
+            "expires_at": coupon.expires_at,
+        },
+        "spins_left": me.spins,
+    }
+
+
 class ReferralError(Exception):
     """초대 코드 적용 실패."""
 
@@ -407,8 +493,9 @@ def apply_referral(member: Member, code: str) -> dict:
     """
     친구 초대 코드 적용 — 초대한 사람과 받은 사람 모두에게 포인트.
 
-    한 번만 가능하고, 자기 코드는 쓸 수 없다. 이미 방문이 많은 회원이 뒤늦게
-    쓰는 걸 막기 위해 **첫 방문 전후(방문 3회 이하)** 로 제한한다.
+    받는 쪽은 한 번만 쓸 수 있고, 자기 코드는 쓸 수 없다. 이미 방문이 많은
+    회원이 뒤늦게 쓰는 걸 막기 위해 **첫 방문 전후(방문 3회 이하)** 로 제한한다.
+    초대하는 쪽은 **하루 1명** 까지만 — 코드를 뿌려 하루에 수십 명을 넣는 걸 막는다.
     """
     code = (code or "").strip().upper()
     if not code:
@@ -426,9 +513,19 @@ def apply_referral(member: Member, code: str) -> dict:
     if host.pk == me.pk:
         raise ReferralError("자신의 코드는 사용할 수 없어요.")
 
+    today = timezone.localtime(timezone.now()).date()
+    today_count = Member.objects.filter(
+        referred_by=host, referral_used_at__date=today
+    ).count()
+    if today_count >= REFERRAL_DAILY_LIMIT:
+        raise ReferralError(
+            f"이 코드는 오늘 이미 사용됐어요. 초대는 하루 {REFERRAL_DAILY_LIMIT}명까지예요."
+        )
+
     me.referred_by = host
+    me.referral_used_at = timezone.now()
     _record_point(me, None, REFERRAL_REWARD, PointEntry.Reason.REFERRAL)
-    me.save(update_fields=["referred_by", "points"])
+    me.save(update_fields=["referred_by", "referral_used_at", "points"])
     _record_point(host, None, REFERRAL_REWARD, PointEntry.Reason.REFERRAL)
     host.save(update_fields=["points"])
     return {

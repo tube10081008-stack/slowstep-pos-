@@ -40,11 +40,13 @@ from .profile import build_member_dashboard, hall_of_fame
 from .services import (
     CheckoutError,
     ReferralError,
+    SpinError,
     apply_referral,
     build_quote,
     cancel_transaction,
     checkout,
 )
+from .services import spin as spin_service
 
 
 def _resolve_member(member_id):
@@ -295,7 +297,7 @@ class MemberViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post"]
 
     # 고객이 본인 멤버십을 보는 경로만 공개. 명단 검색·가입·일괄등록은 매장 전용.
-    PUBLIC_ACTIONS = {"lookup", "dashboard", "missions", "points", "referral"}
+    PUBLIC_ACTIONS = {"lookup", "dashboard", "missions", "points", "referral", "spin"}
 
     def get_permissions(self):
         if self.action in self.PUBLIC_ACTIONS:
@@ -379,6 +381,19 @@ class MemberViewSet(viewsets.ModelViewSet):
         except ReferralError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response(result)
+
+    @action(detail=True, methods=["post"], url_path="spin")
+    def spin(self, request, pk=None):
+        """
+        룰렛 1회(손님 폰에서 호출). 기회를 1 차감하고 쿠폰을 발행한다.
+
+        **당첨 칸은 서버가 정해 내려준다** — 화면은 그 칸으로 멈추는 연출만 한다.
+        """
+        member = self.get_object()
+        try:
+            return Response(spin_service(member))
+        except SpinError as exc:
+            return Response({"detail": str(exc)}, status=400)
 
     @action(detail=True, methods=["get"])
     def points(self, request, pk=None):

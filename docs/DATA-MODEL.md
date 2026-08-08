@@ -40,7 +40,9 @@ Store 1───* Member 1───* Transaction *───1 Store
 | `joined_at` | DateTime | 가입 시각 |
 | `marketing_opt_in` | Bool | 마케팅 수신 동의 |
 
-> **등급 규칙(기본):** 누적액 `< 50,000` → BRONZE, `< 200,000` → SILVER, 그 이상 GOLD.
+> **등급 규칙(기본):** 누적액 `< 100,000` → BRONZE, `< 300,000` → SILVER, 그 이상 GOLD.
+> 적립률은 등급과 무관하게 동일하고, **승급할 때 음료 1+1 쿠폰**이 나간다(실버 1장·골드 3장).
+> 이미 지급한 최고 등급을 `tier_rewarded`에 남겨 강등 후 재승급으로 중복 지급되는 걸 막는다.
 
 ### Transaction — 거래(결제)
 | 필드 | 타입 | 설명 |

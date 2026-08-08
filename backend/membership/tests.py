@@ -190,8 +190,8 @@ class MemberImportTests(TestCase):
         self.assertEqual(m.visit_count, 42)
         self.assertEqual(m.stamps, 4)
         self.assertTrue(m.marketing_opt_in)
-        # 등급은 누적액으로 재계산(20만 이상 → GOLD)
-        self.assertEqual(m.tier, Member.Tier.GOLD)
+        # 등급은 누적액으로 재계산(10만 이상 → SILVER, 30만부터 GOLD)
+        self.assertEqual(m.tier, Member.Tier.SILVER)
         # 원래 가입일 보존(auto_now_add 우회)
         self.assertEqual(timezone.localtime(m.joined_at).date().isoformat(), "2024-03-15")
         # 초기 포인트는 원장(adjust)에 기록 — 잔액의 진실 원천 유지
@@ -826,30 +826,61 @@ class GamificationTests(TestCase):
         )
 
     # ── 룰렛 ──
-    def test_stamp_completion_spins_roulette(self):
-        from .rewards import ROULETTE
-
-        segs = [p for p, _ in ROULETTE]
+    def test_stamp_completion_grants_a_spin(self):
+        """스탬프를 채우면 바로 돌리지 않고 **기회**를 준다(손님이 직접 돌린다)."""
         for i in range(3):                       # stamp_goal=3
             r = self._buy(self.amer, oid=f"r{i}")
-        wheel = [x for x in r.rewards if x["type"] == "roulette"]
-        self.assertEqual(len(wheel), 1)
-        w = wheel[0]
-        self.assertIn(w["points"], segs)          # 실제 칸 중 하나
-        self.assertEqual(w["wheel"], segs)
-        self.assertEqual(segs[w["index"]], w["points"])   # 화면 연출과 결과가 일치
-        # 원장에 스탬프 보상으로 기록
+        spins = [x for x in r.rewards if x["type"] == "spin"]
+        self.assertEqual(len(spins), 1)
         self.m.refresh_from_db()
-        entry = self.m.point_entries.filter(reason="stamp").get()
-        self.assertEqual(entry.delta, w["points"])
+        self.assertEqual(self.m.spins, 1)
         self.assertEqual(self.m.stamps, 0)        # 리셋
+        # 스탬프만으로는 포인트가 나가지 않는다
+        self.assertFalse(self.m.point_entries.filter(reason="stamp").exists())
 
-    def test_roulette_expected_value_close_to_fixed_reward(self):
-        """비용이 크게 늘지 않아야 한다(기댓값 ≈ 기존 3,000P)."""
+    def test_spin_issues_coupon_and_consumes_chance(self):
+        from .models import Coupon
+        from .services import spin
+
+        for i in range(3):
+            self._buy(self.amer, oid=f"sp{i}")
+        self.m.refresh_from_db()
+        result = spin(self.m)
+        self.assertEqual(result["spins_left"], 0)
+        coupon = Coupon.objects.get(member=self.m)
+        self.assertEqual(coupon.kind, result["coupon"]["kind"])
+        self.assertTrue(coupon.is_usable)
+        # 화면 연출이 멈출 칸과 실제 당첨이 일치해야 한다
+        from .rewards import ROULETTE
+        self.assertEqual(ROULETTE[result["index"]][0], coupon.kind)
+
+    def test_spin_without_chance_rejected(self):
+        from .services import SpinError, spin
+
+        with self.assertRaises(SpinError):
+            spin(self.m)
+
+    def test_roulette_probabilities(self):
+        """할인쿠폰 합계 60% · 1+1과 무료음료 각 20% · 원두는 보여주기용(0%)."""
+        from .models import Coupon
         from .rewards import ROULETTE
 
-        ev = sum(p * w for p, w in ROULETTE) / sum(w for _, w in ROULETTE)
-        self.assertLess(abs(ev - 3000), 400)
+        w = dict(ROULETTE)
+        total = sum(w.values())
+        self.assertEqual(total, 100)
+        discount = w[Coupon.Kind.DISCOUNT_5] + w[Coupon.Kind.DISCOUNT_10]
+        self.assertEqual(discount, 60)
+        self.assertEqual(w[Coupon.Kind.BOGO], 20)
+        self.assertEqual(w[Coupon.Kind.FREE_DRINK], 20)
+        self.assertEqual(w[Coupon.Kind.BEANS_200], 0)
+
+    def test_beans_never_win(self):
+        """가중치 0인 칸은 아무리 돌려도 당첨되지 않는다."""
+        from .models import Coupon
+        from .rewards import spin_roulette
+
+        kinds = {spin_roulette()[0] for _ in range(500)}
+        self.assertNotIn(Coupon.Kind.BEANS_200, kinds)
 
     # ── 해피아워 ──
     def test_happy_hour_doubles_earning(self):
@@ -894,7 +925,7 @@ class GamificationTests(TestCase):
 
     # ── 스트릭 ──
     def test_streak_counts_consecutive_weeks(self):
-        from .profile import _streak
+        from .streaks import weekly_streak as _streak
 
         now = timezone.now()
         for weeks_ago in (0, 1, 2):
@@ -907,7 +938,7 @@ class GamificationTests(TestCase):
         self.assertTrue(s["alive"] and s["visited_this_week"])
 
     def test_streak_breaks_after_gap(self):
-        from .profile import _streak
+        from .streaks import weekly_streak as _streak
 
         t = self._buy(self.amer, oid="s-old").transaction
         Transaction.objects.filter(pk=t.pk).update(
@@ -1189,11 +1220,8 @@ class BadgeExtensionTests(TestCase):
         keys = {b["key"] for b in build_badges_only(self.m)}
         self.assertNotIn("jackpot", keys)      # 아직 없음 → 목록에 없다
 
-        from .models import PointEntry
-        PointEntry.objects.create(
-            member=self.m, delta=10000, reason=PointEntry.Reason.STAMP,
-            balance_after=10000,
-        )
+        from .models import Coupon
+        Coupon.objects.create(member=self.m, kind=Coupon.Kind.FREE_DRINK)
         keys2 = {b["key"] for b in build_badges_only(self.m)}
         self.assertIn("jackpot", keys2)        # 달성하면 나타난다
 
@@ -1232,3 +1260,296 @@ class HealthEndpointTests(TestCase):
         # 테스트는 로컬 SQLite(비서버리스) → 영구 저장으로 보고
         self.assertTrue(body["db"]["persistent"])
         self.assertNotIn("warning", body)
+
+
+class CouponAndTierTests(TestCase):
+    """쿠폰 발행 — 등급 승급 · 룰렛 · 만료."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99)
+        self.m = Member.objects.create(
+            store=self.store, phone="01066660000", name="느긋한 수달"
+        )
+        self.menu = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=100_000
+        )
+
+    def _buy(self, oid, qty=1):
+        return checkout(
+            member=self.m, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.menu.id, "quantity": qty}],
+            toss_order_id=oid,
+        )
+
+    def test_silver_upgrade_issues_one_bogo(self):
+        from .models import Coupon
+
+        self._buy("t1")                       # 10만원 → 실버
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.tier, Member.Tier.SILVER)
+        self.assertEqual(
+            Coupon.objects.filter(member=self.m, kind=Coupon.Kind.BOGO).count(), 1
+        )
+
+    def test_gold_upgrade_issues_three_more(self):
+        from .models import Coupon
+
+        self._buy("t1")                       # 10만 → 실버(1장)
+        self._buy("t2", qty=2)                # 누적 30만 → 골드(3장)
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.tier, Member.Tier.GOLD)
+        self.assertEqual(Coupon.objects.filter(member=self.m).count(), 4)
+
+    def test_skipping_to_gold_gives_both_tiers(self):
+        """한 번에 골드까지 올라도 건너뛴 실버 몫을 함께 준다."""
+        from .models import Coupon
+
+        self._buy("t1", qty=3)                # 30만원 한 번에
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.tier, Member.Tier.GOLD)
+        self.assertEqual(Coupon.objects.filter(member=self.m).count(), 4)
+
+    def test_tier_coupons_not_reissued(self):
+        from .models import Coupon
+
+        self._buy("t1")
+        self._buy("t2")                       # 여전히 실버 구간 위
+        self.assertEqual(Coupon.objects.filter(member=self.m).count(), 1)
+
+    def test_expired_coupon_hidden_from_dashboard(self):
+        from .models import Coupon
+        from .profile import coupon_list
+
+        c = Coupon.objects.create(member=self.m, kind=Coupon.Kind.BOGO)
+        self.assertEqual(len(coupon_list(self.m)), 1)
+        Coupon.objects.filter(pk=c.pk).update(
+            expires_at=timezone.now() - timedelta(days=1)
+        )
+        self.assertEqual(len(coupon_list(self.m)), 0)
+
+
+class StreakSpinTests(TestCase):
+    """연속 방문 → 룰렛 기회."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99)
+        self.m = Member.objects.create(
+            store=self.store, phone="01066661111", name="부지런한 다람쥐"
+        )
+        self.menu = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000
+        )
+
+    def _visit_on(self, days_ago, oid):
+        r = checkout(
+            member=self.m, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.menu.id, "quantity": 1}],
+            toss_order_id=oid,
+        )
+        Transaction.objects.filter(pk=r.transaction.pk).update(
+            paid_at=timezone.now() - timedelta(days=days_ago)
+        )
+        return r
+
+    def test_five_day_streak_grants_spin(self):
+        """5일째 결제 시점에 룰렛 기회가 붙는다(지급은 결제 안에서 일어난다)."""
+        from .streaks import grant_spins
+
+        for d in range(4, 0, -1):
+            self._visit_on(d, f"d{d}")
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.spins, 0)          # 아직 4일
+        r = self._visit_on(0, "d0")                # 5일째 — 오늘
+        self.assertTrue([x for x in r.rewards if x["type"] == "spin"])
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.spins, 1)
+        # 같은 주기로 두 번 받지 않는다
+        self.assertEqual(grant_spins(self.m), [])
+        self.assertEqual(self.m.spins, 1)
+
+    def test_streak_reward_repeats_next_cycle(self):
+        """5일에서 끝나면 이어갈 이유가 없다 — 10일째에 다시 한 번."""
+        from .streaks import _cycle_key
+
+        self.assertNotEqual(_cycle_key("daily", 5, 5), _cycle_key("daily", 10, 5))
+        self.assertEqual(_cycle_key("daily", 5, 5), _cycle_key("daily", 9, 5))
+
+    def test_four_week_streak_grants_spin(self):
+        for w in range(3, 0, -1):
+            self._visit_on(w * 7, f"w{w}")
+        r = self._visit_on(0, "w0")                # 4주째
+        self.assertTrue(
+            [x for x in r.rewards if x["type"] == "spin" and x["title"].startswith("4주")]
+        )
+
+    def test_daily_streak_survives_today_not_visited_yet(self):
+        from .streaks import daily_streak
+
+        for d in (3, 2, 1):
+            self._visit_on(d, f"y{d}")
+        self.m.refresh_from_db()
+        s = daily_streak(self.m)
+        self.assertEqual(s["days"], 3)
+        self.assertTrue(s["alive"])
+        self.assertFalse(s["visited_today"])
+
+
+class ReferralLimitTests(TestCase):
+    """초대 — 하루 1명, 각 1,000P."""
+
+    def setUp(self):
+        self.store = make_store()
+        self.host = Member.objects.create(
+            store=self.store, phone="01055551111", name="초대한 사람"
+        )
+        self.code = self.host.ensure_referral_code()
+
+    def _guest(self, n):
+        return Member.objects.create(
+            store=self.store, phone=f"0105555{n:04d}", name=f"손님 {n}"
+        )
+
+    def test_reward_is_1000_each(self):
+        from .services import apply_referral
+
+        g = self._guest(1)
+        r = apply_referral(g, self.code)
+        self.assertEqual(r["reward"], 1000)
+        g.refresh_from_db()
+        self.host.refresh_from_db()
+        self.assertEqual(g.points, 1000)
+        self.assertEqual(self.host.points, 1000)
+
+    def test_second_invite_same_day_rejected(self):
+        from .services import ReferralError, apply_referral
+
+        apply_referral(self._guest(1), self.code)
+        with self.assertRaises(ReferralError):
+            apply_referral(self._guest(2), self.code)
+
+    def test_invite_allowed_again_next_day(self):
+        from .services import apply_referral
+
+        g1 = self._guest(1)
+        apply_referral(g1, self.code)
+        Member.objects.filter(pk=g1.pk).update(
+            referral_used_at=timezone.now() - timedelta(days=1)
+        )
+        apply_referral(self._guest(2), self.code)   # 어제 것은 오늘 한도에 안 든다
+        self.host.refresh_from_db()
+        self.assertEqual(self.host.points, 2000)
+
+
+class MissionClearTests(TestCase):
+    """미션 500P + 전부 달성 시 1,000P 보너스."""
+
+    def setUp(self):
+        from .models import Mission
+
+        self.store = make_store(stamp_goal=99)
+        self.m = Member.objects.create(
+            store=self.store, phone="01044440000", name="성실한 토끼"
+        )
+        self.menu = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000
+        )
+        Mission.objects.create(
+            store=self.store, title="1회 방문", condition_type=Mission.Condition.VISIT_COUNT,
+            target_value=1, reward_points=500,
+        )
+        Mission.objects.create(
+            store=self.store, title="2회 방문", condition_type=Mission.Condition.VISIT_COUNT,
+            target_value=2, reward_points=500,
+        )
+
+    def _buy(self, oid):
+        return checkout(
+            member=self.m, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.menu.id, "quantity": 1}],
+            toss_order_id=oid,
+        )
+
+    def test_clear_bonus_once(self):
+        from .services import MISSION_CLEAR_BONUS
+
+        self._buy("m1")                     # 미션 1개 달성
+        r = self._buy("m2")                 # 나머지 달성 → 완주 보너스
+        clear = [x for x in r.rewards if x["type"] == "mission_clear"]
+        self.assertEqual(len(clear), 1)
+        self.assertEqual(clear[0]["points"], MISSION_CLEAR_BONUS)
+        r2 = self._buy("m3")
+        self.assertFalse([x for x in r2.rewards if x["type"] == "mission_clear"])
+
+
+class MonthlyRankingTests(TestCase):
+    """월간 랭킹 — 금액·횟수 두 부문."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99)
+        self.menu = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=1000
+        )
+        self.big = Member.objects.create(
+            store=self.store, phone="01033330001", name="큰손 고양이"
+        )
+        self.often = Member.objects.create(
+            store=self.store, phone="01033330002", name="자주 오는 여우"
+        )
+
+    def _buy(self, member, qty, oid):
+        return checkout(
+            member=member, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.menu.id, "quantity": qty}],
+            toss_order_id=oid,
+        )
+
+    def test_two_boards_rank_differently(self):
+        from .profile import hall_of_fame
+
+        self._buy(self.big, 50, "b1")                 # 1회 · 5만원
+        for i in range(4):
+            self._buy(self.often, 1, f"o{i}")         # 4회 · 4천원
+
+        hof = hall_of_fame()
+        spent = {b["key"]: b for b in hof["boards"]}["spent"]
+        visits = {b["key"]: b for b in hof["boards"]}["visits"]
+        self.assertEqual(spent["top"][0]["nickname"], "큰손 고양이")
+        self.assertEqual(visits["top"][0]["nickname"], "자주 오는 여우")
+        # 시상 내역이 순위와 함께 내려간다
+        self.assertEqual(spent["top"][0]["prize"], "아메리카노 + 플레인 휘낭시에")
+        self.assertEqual(visits["top"][1]["prize"], "아메리카노")
+
+
+class SpinEndpointTests(TestCase):
+    """룰렛 API — 손님 폰에서 PIN 없이 호출."""
+
+    def setUp(self):
+        self.store = make_store()
+        self.m = Member.objects.create(
+            store=self.store, phone="01022220000", name="궁금한 너구리", spins=1
+        )
+
+    def test_spin_public_and_issues_coupon(self):
+        res = self.client.post(f"/api/v1/members/{self.m.id}/spin")
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["spins_left"], 0)
+        self.assertIn("coupon", body)
+        self.assertIn(body["index"], range(5))
+
+    def test_spin_without_chance_returns_400(self):
+        self.client.post(f"/api/v1/members/{self.m.id}/spin")
+        res = self.client.post(f"/api/v1/members/{self.m.id}/spin")
+        self.assertEqual(res.status_code, 400)
+
+    def test_dashboard_exposes_wheel_and_spins(self):
+        res = self.client.get(f"/api/v1/members/{self.m.id}/dashboard")
+        r = res.json()["roulette"]
+        self.assertEqual(r["spins"], 1)
+        self.assertEqual(len(r["segments"]), 5)
+        # 확률은 화면으로 내려보내지 않는다(조작 방지)
+        self.assertNotIn("weight", r["segments"][0])
