@@ -77,36 +77,50 @@
   .disc .k, .disc .v { color:var(--gold); }
 
   /* ── 결제: 손님 터치 입력 ── */
-  #pay { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1.4vh; }
-  .pay-top { display:flex; align-items:baseline; gap:16px; }
-  .pay-top .lbl { font-size:clamp(14px,1.5vw,20px); color:var(--muted); font-weight:600; }
-  .pay-top .amt { font-size:clamp(34px,5.6vw,72px); font-weight:800; color:var(--brand);
-    letter-spacing:-.04em; line-height:1; }
-  .ask-sm { font-size:clamp(16px,1.9vw,25px); font-weight:600; margin-top:.8vh; letter-spacing:-.015em; }
-  .ask-sub { font-size:clamp(12px,1.3vw,16px); color:var(--muted); font-weight:500; margin-top:-.2vh; }
-  .phone-disp { font-size:clamp(28px,4.4vw,54px); font-weight:800; letter-spacing:.06em;
-    background:var(--card); border:2px solid var(--line); border-radius:16px;
-    padding:1.5vh 3vw; min-width:min(88vw,520px); text-align:center; box-shadow:var(--shadow); }
+  /* 가로 모니터를 세로 한 줄로 쓰면 키패드가 화면 밖으로 밀린다(1280×720에서 확인 버튼이
+     잘렸다). 왼쪽 안내 · 오른쪽 입력으로 나눠 어떤 해상도에서도 한 화면에 들어가게 한다. */
+  #pay { flex:1; display:flex; flex-direction:row; align-items:center;
+    justify-content:center; gap:4vw; min-height:0; }
+  .pay-l { display:flex; flex-direction:column; gap:1vh; align-items:flex-start;
+    max-width:36vw; flex:0 1 auto; }
+  .pay-r { display:flex; flex-direction:column; align-items:center; gap:1.1vh;
+    flex:0 1 auto; min-height:0; }
+  .pay-top { display:flex; flex-direction:column; }
+  .pay-top .lbl { font-size:clamp(13px,1.4vw,19px); color:var(--muted); font-weight:600; }
+  .pay-top .amt { font-size:clamp(30px,4.4vw,64px); font-weight:800; color:var(--brand);
+    letter-spacing:-.04em; line-height:1.05; }
+  .ask-sm { font-size:clamp(17px,2.1vw,30px); font-weight:700; margin-top:1.2vh;
+    letter-spacing:-.02em; line-height:1.35; }
+  .ask-sub { font-size:clamp(12px,1.3vw,17px); color:var(--muted); font-weight:500; }
+  .phone-disp { font-size:clamp(24px,3.2vw,44px); font-weight:800; letter-spacing:.06em;
+    background:var(--card); border:2px solid var(--line); border-radius:14px;
+    padding:1.2vh 2vw; width:100%; text-align:center; box-shadow:var(--shadow); }
   .phone-disp .ph { color:#d4d9e3; }
   .phone-disp .sep { color:#d4d9e3; margin:0 .1em; }
   /* 터치 대상은 크게 — 손님이 서서 누른다 */
-  .pad { display:grid; grid-template-columns:repeat(3,1fr); gap:1.1vh 1.1vw;
-    width:min(88vw,520px); margin-top:.6vh; }
-  .pad button { font-family:inherit; font-size:clamp(24px,3.4vw,40px); font-weight:700;
-    padding:1.9vh 0; border-radius:16px; border:1px solid var(--line); background:var(--card);
+  .pad { display:grid; grid-template-columns:repeat(3,1fr); gap:1vh .8vw;
+    width:min(42vw,460px); }
+  .pad button { font-family:inherit; font-size:clamp(22px,2.6vw,36px); font-weight:700;
+    padding:1.5vh 0; border-radius:14px; border:1px solid var(--line); background:var(--card);
     color:var(--txt); cursor:pointer; box-shadow:0 1px 2px rgba(16,24,40,.05);
     -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
   .pad button:active { background:var(--brand-soft); border-color:var(--brand); transform:scale(.96); }
-  .pad button.sm { font-size:clamp(13px,1.4vw,17px); font-weight:600; color:var(--muted); }
-  .pad-act { display:flex; gap:1.1vw; width:min(88vw,520px); margin-top:.4vh; }
-  .pad-act button { flex:1; font-family:inherit; font-size:clamp(16px,2vw,26px); font-weight:700;
-    padding:2vh 0; border-radius:16px; cursor:pointer; border:1px solid var(--line);
+  .pad button.sm { font-size:clamp(13px,1.3vw,17px); font-weight:600; color:var(--muted); }
+  .pad-act { display:flex; gap:.8vw; width:min(42vw,460px); }
+  .pad-act button { flex:1; font-family:inherit; font-size:clamp(15px,1.7vw,23px); font-weight:700;
+    padding:1.7vh 0; border-radius:14px; cursor:pointer; border:1px solid var(--line);
     touch-action:manipulation; }
   .pad-act .skip { background:var(--card); color:var(--muted); }
   .pad-act .go { background:var(--brand); color:#fff; border-color:var(--brand); flex:1.7; }
   .pad-act .go:disabled { opacity:.4; }
   .pad-act button:active { transform:scale(.98); }
-  .hint { font-size:clamp(11px,1.1vw,13px); color:var(--muted); margin-top:1vh; font-weight:500; letter-spacing:.01em; }
+  @media (max-aspect-ratio: 1/1) {      /* 세로로 세운 모니터 */
+    #pay { flex-direction:column; gap:2vh; }
+    .pay-l { align-items:center; text-align:center; max-width:none; }
+    .pad, .pad-act, .phone-disp { width:min(88vw,520px); }
+  }
+  .hint { font-size:clamp(11px,1.1vw,14px); color:var(--muted); margin-top:1.4vh;
+    font-weight:500; letter-spacing:.01em; }
   .hint.err { color:#ef4444; font-weight:700; }
 
   /* ── 회원 인사 ── */
@@ -223,19 +237,23 @@
 
   <!-- 결제: 손님이 직접 연락처 입력 (터치) -->
   <div id="pay" class="hidden">
-    <div class="pay-top">
-      <span class="lbl">결제 금액</span>
-      <span class="amt" id="payAmt">0원</span>
+    <div class="pay-l">
+      <div class="pay-top">
+        <span class="lbl">결제 금액</span>
+        <span class="amt" id="payAmt">0원</span>
+      </div>
+      <div class="ask-sm">휴대폰 번호를<br/>입력해 주세요</div>
+      <div class="ask-sub">번호만 남기시면 포인트가 자동으로 쌓여요</div>
+      <div class="hint" id="payHint">적립 외의 용도로 사용하지 않습니다</div>
     </div>
-    <div class="ask-sm">휴대폰 번호를 입력해 주세요</div>
-    <div class="ask-sub">번호만 남기시면 포인트가 자동으로 쌓여요</div>
-    <div class="phone-disp" id="phoneDisp"><span class="ph">010-0000-0000</span></div>
-    <div class="pad" id="pad"></div>
-    <div class="pad-act">
-      <button class="skip" id="skipBtn">다음에 할게요</button>
-      <button class="go" id="okBtn" disabled>확인</button>
+    <div class="pay-r">
+      <div class="phone-disp" id="phoneDisp"><span class="ph">010-0000-0000</span></div>
+      <div class="pad" id="pad"></div>
+      <div class="pad-act">
+        <button class="skip" id="skipBtn">다음에 할게요</button>
+        <button class="go" id="okBtn" disabled>확인</button>
+      </div>
     </div>
-    <div class="hint" id="payHint">적립 외의 용도로 사용하지 않습니다</div>
   </div>
 
   <!-- 회원 확인 (입력 후) -->
