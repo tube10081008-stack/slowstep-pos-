@@ -553,21 +553,33 @@
     msg.className = "ai-msg muted"; msg.textContent = "주문을 읽는 중…";
     try {
       const r = await api("/api/v1/orders/parse", { method:"POST", body: JSON.stringify({ text }) });
-      let added = 0;
+      const done = [], missed = [];
       r.items.forEach(it=>{
         const m = menu.find(x=>x.id===it.menu_item_id);
         if(!m) return;
-        for(let i=0;i<it.quantity;i++) addLine(m, it.temperature, it.decaf, it.oatmilk, it.shot);
-        added += it.quantity;
-      });
-      if(!added){ msg.className="ai-msg err"; msg.textContent="담을 메뉴를 찾지 못했습니다."; return; }
-      const summary = r.items.map(it=>{
         const opt = [it.temperature==="hot"?"HOT":(it.temperature==="ice"?"ICE":""),
                      it.decaf?"디카페인":"", it.oatmilk?"오트":"", it.shot?"샷":""].filter(Boolean).join("·");
-        return `${it.name}${opt?`(${opt})`:""} ${it.quantity}`;
-      }).join(", ");
+        const label = `${it.name}${opt?`(${opt})`:""}`;
+        if(it.action === "remove"){
+          const n = removeLine(m, it.temperature, it.decaf, it.oatmilk, it.shot, it.quantity);
+          if(n) done.push(`− ${label} ${n}`);
+          else  missed.push(label);
+        } else {
+          for(let i=0;i<it.quantity;i++) addLine(m, it.temperature, it.decaf, it.oatmilk, it.shot);
+          done.push(`+ ${label} ${it.quantity}`);
+        }
+      });
+      if(!done.length){
+        msg.className = "ai-msg err";
+        msg.textContent = missed.length
+          ? `${missed.join(", ")} — 장바구니에 없어서 뺄 수 없습니다.`
+          : "담을 메뉴를 찾지 못했습니다.";
+        return;
+      }
       msg.className = "ai-msg ok";
-      msg.textContent = `담았습니다 — ${summary}` + (r.source==="rule" ? "  ·  간이 인식" : "");
+      msg.textContent = done.join(", ")
+        + (missed.length ? `  ·  ${missed.join(", ")}는 장바구니에 없었습니다` : "")
+        + (r.source==="rule" ? "  ·  간이 인식" : "");
       $("aiText").value = "";
     } catch(e){
       msg.className = "ai-msg err";
@@ -619,6 +631,29 @@
     if(!cart[s]) cart[s] = { item:m, temp, decaf, oat, shot, qty:0, unit };
     cart[s].qty++;
     renderMenu(); renderCart();
+  }
+  /**
+   * 장바구니에서 뺀다. 실제로 뺀 수량을 돌려준다.
+   * 옵션까지 똑같은 줄을 먼저 찾고, 없으면 같은 메뉴의 다른 줄에서 뺀다.
+   * ("아메리카노 빼줘"라고만 하면 핫인지 아이스인지 알 수 없다)
+   */
+  function removeLine(m, temp, decaf, oat, shot, qty){
+    let left = qty, removed = 0;
+    const take = (key)=>{
+      if(!cart[key] || left <= 0) return;
+      const n = Math.min(cart[key].qty, left);
+      cart[key].qty -= n; left -= n; removed += n;
+      if(cart[key].qty <= 0) delete cart[key];
+    };
+    take(sig(m.id,temp,decaf,oat,shot));
+    if(left > 0){
+      Object.keys(cart)
+        .filter(k => cart[k].item.id === m.id)
+        .sort((a,b) => cart[b].qty - cart[a].qty)
+        .forEach(take);
+    }
+    if(removed) { renderMenu(); renderCart(); }
+    return removed;
   }
   function chgQty(s, d){ if(!cart[s]) return; cart[s].qty += d; if(cart[s].qty<=0) delete cart[s]; renderMenu(); renderCart(); }
   function clearCart(){ cart={}; renderMenu(); renderCart(); }

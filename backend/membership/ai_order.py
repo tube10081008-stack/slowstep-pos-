@@ -46,6 +46,14 @@ DECAF_WORDS = ("디카페인", "디카페", "디카", "decaf")
 OAT_WORDS = ("오트밀크", "오트", "귀리", "oat")
 SHOT_WORDS = ("샷추가", "샷 추가", "샷", "연하게말고", "shot")
 
+# ── 빼기(취소) 의도 ──
+# 직원은 "아아 하나 빼줘"처럼 말한다. 이걸 못 읽으면 빼려던 걸 한 잔 더 담는다.
+REMOVE_WORDS = ("빼줘", "빼주", "빼고", "빼기", "빼", "취소", "제외", "지워", "삭제",
+                "없애", "말고", "뺄게", "뺍시다", "캔슬")
+ADD_WORDS = ("담아", "담고", "담기", "추가", "넣어", "넣고", "주세요", "줘")
+# '빼'가 재료를 뜻하는 경우 — "얼음 빼고", "샷 빼고"는 줄 삭제가 아니라 옵션이다.
+INGREDIENT_BEFORE_REMOVE = ("얼음", "샷", "시럽", "휘핑", "크림", "우유", "설탕", "물")
+
 # 자주 쓰는 줄임말 → 메뉴명 일부
 ALIASES = {
     "아아": ("아메리카노", "ice"),
@@ -164,11 +172,53 @@ def _find_alias_temp(chunk: str) -> str | None:
     return None
 
 
+def _chunk_action(chunk: str) -> str | None:
+    """이 조각이 명시적으로 담기/빼기를 말하는가. 아니면 None."""
+    c = _norm(chunk)
+    for w in REMOVE_WORDS:
+        for m in re.finditer(re.escape(w), c):
+            before = c[: m.start()]
+            # "얼음 빼고"처럼 재료 뒤에 붙은 '빼'는 줄 삭제가 아니다
+            if any(before.endswith(g) for g in INGREDIENT_BEFORE_REMOVE):
+                continue
+            return "remove"
+    if any(w in c for w in ADD_WORDS):
+        return "add"
+    return None
+
+
+def _resolve_actions(chunks: list[str]) -> list[str]:
+    """
+    조각별 담기/빼기 결정.
+
+    한국어는 동사가 끝에 온다 — "아아랑 라떼 빼줘"의 '빼줘'는 앞의 두 개를 모두
+    가리킨다. 그래서 표시가 없는 조각은 **뒤에 오는** 가장 가까운 표시를 따른다.
+    앞으로는 전파하지 않는다. "아아 빼고 라떼 하나"의 라떼는 담는 것이다.
+    """
+    own = [_chunk_action(c) for c in chunks]
+    out: list[str] = []
+    for i, a in enumerate(own):
+        if a is None:
+            a = next((x for x in own[i + 1:] if x is not None), "add")
+        out.append(a)
+    return out
+
+
 def rule_parse(text: str, items) -> list[dict]:
     """규칙 기반 파싱. 쉼표·'랑'·'하고' 등으로 나눠 각 조각을 해석."""
     parts = re.split(r"[,\n]|그리고|하고|이랑|랑(?![떼])|플러스|\+", text)
-    lines: list[dict] = []
+    # "아아 말고 라떼로" — 앞은 빼고 뒤는 담는다. 카페에서 가장 흔한 변경 표현.
+    expanded: list[str] = []
     for part in parts:
+        if "말고" in _norm(part):
+            left, _, right = part.partition("말고")
+            expanded += [left + " 빼줘", right]
+        else:
+            expanded.append(part)
+    parts = expanded
+    actions = _resolve_actions(parts)
+    lines: list[dict] = []
+    for part, action in zip(parts, actions):
         if not part.strip():
             continue
         m = _find_menu(part, items)
@@ -188,6 +238,7 @@ def rule_parse(text: str, items) -> list[dict]:
 
         lines.append(
             {
+                "action": action,
                 "menu_item_id": m.id,
                 "quantity": _find_qty(part),
                 "temperature": temp,
@@ -209,6 +260,9 @@ PROMPT = """당신은 한국 카페 POS의 주문 해석기입니다.
 
 규칙:
 - 반드시 메뉴판에 있는 id만 사용
+- action: 장바구니에 "담기"면 "add", 빼거나 취소면 "remove". 기본값은 "add"
+- "빼줘/취소/지워/삭제"는 remove. "A 말고 B"는 A를 remove, B를 add
+- 단, "얼음 빼고"·"샷 빼고"처럼 재료를 빼는 말은 메뉴 remove가 아니다
 - temperature: 메뉴 temp가 "hotice"면 "hot" 또는 "ice", "ice"면 "ice", "none"이면 ""
 - 명시가 없으면 아이스로 간주. "따뜻하게/핫/뜨거운"이면 hot
 - decaf/oat/shot은 해당 메뉴에서 허용될 때만 true
@@ -216,7 +270,7 @@ PROMPT = """당신은 한국 카페 POS의 주문 해석기입니다.
 - 수량이 없으면 1
 
 출력 형식(다른 텍스트 없이 JSON 배열만):
-[{{"menu_item_id": 1, "quantity": 2, "temperature": "ice", "decaf": false, "oatmilk": false, "shot": false}}]
+[{{"action": "add", "menu_item_id": 1, "quantity": 2, "temperature": "ice", "decaf": false, "oatmilk": false, "shot": false}}]
 
 주문: {text}"""
 
@@ -326,8 +380,13 @@ def _sanitize(raw_lines, items) -> list[dict]:
         else:
             temp = ""
 
+        action = str(row.get("action", "add") or "add").lower()
+        if action not in ("add", "remove"):
+            action = "add"
+
         clean.append(
             {
+                "action": action,
                 "menu_item_id": m.id,
                 "name": m.name,
                 "quantity": qty,

@@ -577,6 +577,46 @@ class AiOrderParseTests(TestCase):
         # 디저트는 온도 옵션 없음
         self.assertEqual(by_id[self.fin.id]["temperature"], "")
 
+    # ── 빼기(취소) 의도 ──
+    def test_remove_intent(self):
+        """'아아 하나 빼줘'를 한 잔 추가로 읽던 버그."""
+        (it,) = self._parse("아아 하나 빼줘")["items"]
+        self.assertEqual(it["action"], "remove")
+        self.assertEqual(it["menu_item_id"], self.amer.id)
+        self.assertEqual(it["quantity"], 1)
+
+    def test_plain_order_defaults_to_add(self):
+        (it,) = self._parse("아아 하나")["items"]
+        self.assertEqual(it["action"], "add")
+
+    def test_trailing_remove_covers_earlier_items(self):
+        """한국어는 동사가 끝에 온다 — '아아랑 라떼 빼줘'는 둘 다 빼는 것."""
+        items = self._parse("아아랑 라떼 빼줘")["items"]
+        self.assertEqual(len(items), 2)
+        self.assertTrue(all(i["action"] == "remove" for i in items))
+
+    def test_remove_does_not_leak_forward(self):
+        """'아아 빼고 라떼 하나' — 라떼는 담는 것이다."""
+        by_id = {i["menu_item_id"]: i for i in self._parse("아아 빼고, 라떼 하나")["items"]}
+        self.assertEqual(by_id[self.amer.id]["action"], "remove")
+        self.assertEqual(by_id[self.latte.id]["action"], "add")
+
+    def test_malgo_swaps(self):
+        """'A 말고 B' — A는 빼고 B는 담는다."""
+        by_id = {i["menu_item_id"]: i for i in self._parse("아아 말고 라떼로 주세요")["items"]}
+        self.assertEqual(by_id[self.amer.id]["action"], "remove")
+        self.assertEqual(by_id[self.latte.id]["action"], "add")
+
+    def test_ingredient_removal_is_not_line_removal(self):
+        """'샷 빼고'는 재료 얘기지 메뉴를 빼라는 게 아니다."""
+        (it,) = self._parse("아아 얼음 빼고 하나")["items"]
+        self.assertEqual(it["action"], "add")
+
+    def test_various_remove_words(self):
+        for phrase in ("아아 취소", "아아 하나 지워줘", "아아 삭제", "아아 하나 제외"):
+            (it,) = self._parse(phrase)["items"]
+            self.assertEqual(it["action"], "remove", phrase)
+
     def test_options_only_when_allowed(self):
         r = self._parse("아메리카노 디카페인 오트밀크 한 잔")
         (it,) = r["items"]
