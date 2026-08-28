@@ -110,6 +110,36 @@
   input { width:100%; background:#fff; border:1px solid var(--line); color:var(--txt);
     border-radius:10px; padding:12px; font-size:16px; }
   input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-soft); }
+  /* 레시피 */
+  .r.has-rc { cursor:pointer; }
+  .rc-caret { display:inline-block; width:0; height:0; vertical-align:middle;
+    border-left:5px solid var(--brand); border-top:4px solid transparent;
+    border-bottom:4px solid transparent; margin-right:5px;
+    transition:transform .15s ease; }
+  .rc-caret.open { transform:rotate(90deg); }
+  .rc { background:var(--card2); border:1px solid var(--line); border-radius:10px;
+    padding:12px 14px; margin:2px 0 8px; }
+  .rc-t { font-size:10px; font-weight:800; letter-spacing:.08em; color:var(--brand);
+    margin-bottom:6px; }
+  .rc-b { font-size:14px; line-height:1.7; white-space:pre-wrap; font-weight:500; }
+  .rc-x { font-size:12.5px; color:var(--muted); margin-top:7px; }
+  .rc-x b { color:var(--txt); font-weight:700; margin-right:5px; }
+  .rc-p { font-size:11.5px; color:var(--muted); white-space:pre-wrap; margin-top:10px;
+    padding-top:9px; border-top:1px dashed var(--line); line-height:1.6; }
+  .rc-sep { height:1px; background:var(--line); margin:14px 0; }
+  #rcSheet { position:fixed; inset:0; z-index:900; background:rgba(16,24,40,.45);
+    display:flex; align-items:flex-end; justify-content:center; }
+  #rcSheet.hidden { display:none; }
+  .rc-card { background:#fff; border-radius:18px 18px 0 0; padding:20px;
+    width:100%; max-width:460px; max-height:80vh; overflow-y:auto;
+    animation:rcUp .22s ease both; }
+  @keyframes rcUp { from{ transform:translateY(16px); opacity:0 } to{ transform:none; opacity:1 } }
+  .rc-head { display:flex; align-items:center; justify-content:space-between; gap:12px;
+    margin-bottom:14px; }
+  .rc-head b { font-size:17px; font-weight:800; letter-spacing:-.01em; }
+  .rc-head button { border:1px solid var(--line); background:#fff; border-radius:9px;
+    padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer; font-family:var(--sans);
+    color:var(--muted); }
   .cpn-row { display:flex; flex-wrap:wrap; gap:8px; }
   .cpn-chip { border:1px solid var(--line); background:#fff; border-radius:10px;
     padding:9px 12px; font-size:13px; font-weight:600; cursor:pointer; font-family:var(--sans);
@@ -401,7 +431,7 @@
   const CAT_ORDER = [["all","전체"],["coffee","커피"],["coldbrew","콜드브루"],["ade","스무디·에이드"],["noncoffee","논커피"],["tea","티"],["dessert","디저트"]];
 
   let store=null, menu=[], cat="all", cart={}, member=null, method="CARD", earnRate=0.05;
-  let optPrice=500, setDiscount=500;
+  let optPrice=500, setDiscount=500, prepNotes="";
 
   function toast(m){ const t=$("toast"); t.textContent=m; t.style.display="block";
     clearTimeout(t._t); t._t=setTimeout(()=>t.style.display="none",2400); }
@@ -513,6 +543,7 @@
       earnRate = Number(store.point_earn_rate);
       optPrice = Number(store.option_price) || 500;
       setDiscount = Number(store.set_discount_amount) || 500;
+      prepNotes = store.prep_notes || "";
       $("storeTag").textContent = store.name + " · 적립 " + Math.round(earnRate*100) + "%";
       menu = await api("/api/v1/menu");
       renderCats(); renderMenu();
@@ -545,7 +576,9 @@
       if(m.temp_option==="hotice"){ tags.push('<span class="tg hot">HOT</span>','<span class="tg ice">ICE</span>'); }
       else if(m.temp_option==="ice"){ tags.push('<span class="tg ice">ICE</span>'); }
 
-      return `<div class="mi ${q?"sel":""}" onclick="tapItem(${m.id})">
+      return `<div class="mi ${q?"sel":""}" onclick="if(!pressed)tapItem(${m.id})"
+        onpointerdown="holdStart(${m.id})" onpointerup="holdEnd()"
+        onpointerleave="holdEnd()" oncontextmenu="return false">
         ${q?`<span class="qty">${q}</span>`:""}
         ${m.stock!=null?`<span class="stk">${m.stock}개</span>`:""}
         <div class="nm">${m.name}</div>
@@ -858,9 +891,17 @@
 
   function showDone(res){
     $("payView").classList.add("hidden"); $("doneView").classList.remove("hidden");
-    const rows = (res.items||[]).map(i=>{
+    // 결제가 끝나면 이 목록이 곧 '만들 것'이다 — 레시피를 여기 붙인다.
+    // 주문 받는 중에 띄우면 손님 앞에서 흐름이 끊긴다.
+    const rows = (res.items||[]).map((i, idx)=>{
       const ol = i.option_label ? ` <span class="muted" style="font-size:11px">${i.option_label}</span>` : "";
-      return `<div class="r"><span>${i.name}${ol} × ${i.quantity}</span><span>${won(i.line_total)}</span></div>`;
+      const mi = menu.find(m => m.id === i.menu_item_id);
+      const temp = (i.temperature || "").toLowerCase();
+      const body = recipeBody(mi, temp);
+      const head = `<div class="r${body ? " has-rc" : ""}"${body ? ` onclick="toggleRecipe(${idx})"` : ""}>
+          <span>${body ? '<i class="rc-caret" id="rcCaret'+idx+'"></i>' : ""}${i.name}${ol} × ${i.quantity}</span>
+          <span>${won(i.line_total)}</span></div>`;
+      return head + (body ? `<div class="rc" id="rc${idx}" hidden>${body}</div>` : "");
     }).join("");
     const discRow = res.discount>0 ? `<div class="r"><span style="color:var(--gold)">세트 할인</span><span style="color:var(--gold)">−${won(res.discount)}</span></div>` : "";
     const useRow = res.points_used>0 ? `<div class="r"><span class="muted">사용 포인트</span><span>−${won(res.points_used)}</span></div>` : "";
@@ -876,6 +917,50 @@
     sendDisplay({ type:"done", member:res.member||null, earned:res.points_earned,
                   net:res.net_amount, rewards:res.rewards||[] });
   }
+
+  /* ── 레시피 ──────────────────────────────────────────
+     HOT/ICE로 배합이 갈리는 메뉴가 있어 그 줄의 온도에 맞는 것만 보여준다.
+     "무슨 옵션이었지"를 다시 고르게 하지 않는 게 이 화면의 값어치다. */
+  function recipeBody(mi, temp){
+    if(!mi) return "";
+    const body = (temp === "hot" && mi.recipe_hot) ? mi.recipe_hot : mi.recipe;
+    if(!body && !mi.topping) return "";
+    const esc = (t)=> (t||"").replace(/[<>&]/g, c=>({ "<":"&lt;", ">":"&gt;", "&":"&amp;" }[c]));
+    const label = temp === "hot" ? "HOT" : (temp === "ice" ? "ICE" : "");
+    return (label ? `<div class="rc-t">${label} 기준</div>` : "")
+      + (body ? `<div class="rc-b">${esc(body)}</div>` : "")
+      + (mi.topping ? `<div class="rc-x"><b>토핑</b> ${esc(mi.topping)}</div>` : "")
+      + (mi.recipe_note ? `<div class="rc-x"><b>비고</b> ${esc(mi.recipe_note)}</div>` : "")
+      + (prepNotes ? `<div class="rc-p">${esc(prepNotes)}</div>` : "");
+  }
+
+  function toggleRecipe(idx){
+    const el = $("rc"+idx); if(!el) return;
+    el.hidden = !el.hidden;
+    const c = $("rcCaret"+idx); if(c) c.classList.toggle("open", !el.hidden);
+  }
+
+  /* 주문 중에도 확인할 수 있어야 한다 — 짧게 누르면 담기, 길게 누르면 레시피.
+     손님이 "이거 뭐 들어가요?" 물을 때 흐름을 끊지 않고 답할 수 있다. */
+  let pressTimer = null, pressed = false;
+  function holdStart(id){
+    pressed = false;
+    pressTimer = setTimeout(()=>{ pressed = true; openRecipe(id); }, 450);
+  }
+  function holdEnd(){ clearTimeout(pressTimer); }
+
+  function openRecipe(id){
+    const mi = menu.find(m => m.id === id);
+    if(!mi) return;
+    const ice = recipeBody(mi, mi.temp_option === "none" ? "" : "ice");
+    const hot = mi.recipe_hot ? recipeBody(mi, "hot") : "";
+    $("rcTitle").textContent = mi.name;
+    $("rcBody").innerHTML = (ice || hot)
+      ? (hot ? ice + '<div class="rc-sep"></div>' + hot : ice)
+      : '<p class="muted">아직 레시피가 등록되지 않았습니다.</p>';
+    $("rcSheet").classList.remove("hidden");
+  }
+  function closeRecipe(){ $("rcSheet").classList.add("hidden"); }
 
   async function newOrder(){ cart={}; member=null; orderId=null;
     try { menu = await api("/api/v1/menu"); } catch(e){}  // 재고 반영
@@ -976,7 +1061,15 @@
       ${o.points_used>0?`<tr><td>포인트 사용</td><td style="text-align:right">-${won(o.points_used)}</td></tr>`:""}
       <tr class="tot"><td>결제금액</td><td style="text-align:right">${won(o.net_amount)}</td></tr></table>
       ${o.member_name?`<p style="font-size:12px">${o.member_name} 님 · +${o.points_earned}P 적립</p>`:""}
-      <p style="text-align:center;font-size:11px;margin-top:10px">이용해 주셔서 감사합니다</p></body></html>`;
+      <p style="text-align:center;font-size:11px;margin-top:10px">이용해 주셔서 감사합니다</p>
+<!-- 레시피 시트 (메뉴 길게 누르기) -->
+<div id="rcSheet" class="hidden" onclick="if(event.target===this)closeRecipe()">
+  <div class="rc-card">
+    <div class="rc-head"><b id="rcTitle"></b><button onclick="closeRecipe()">닫기</button></div>
+    <div id="rcBody"></div>
+  </div>
+</div>
+</body></html>`;
     const w = window.open("", "", "width=320,height=560");
     if(!w){ toast("팝업이 차단되었습니다. 허용 후 다시 시도하세요."); return; }
     w.document.write(html); w.document.close(); w.focus(); setTimeout(()=>{ w.print(); }, 200);
@@ -984,5 +1077,13 @@
 
   init(); renderCart(); renderPhone();
 </script>
+
+<!-- 레시피 시트 (메뉴 길게 누르기) -->
+<div id="rcSheet" class="hidden" onclick="if(event.target===this)closeRecipe()">
+  <div class="rc-card">
+    <div class="rc-head"><b id="rcTitle"></b><button onclick="closeRecipe()">닫기</button></div>
+    <div id="rcBody"></div>
+  </div>
+</div>
 </body>
 </html>

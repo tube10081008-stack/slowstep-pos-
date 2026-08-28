@@ -246,7 +246,14 @@ POST → 200 { "index": 0, "spins_left": 1,
 ## 메뉴 (Menu)
 
 ### `GET /api/v1/menu`
-판매 중인 메뉴 목록(POS 주문 화면용).
+판매 중인 메뉴 목록(POS 주문 화면용). **레시피**(`recipe`·`recipe_hot`·`topping`·
+`recipe_note`)가 함께 내려간다 — POS가 제조 화면에서 쓴다.
+- `recipe_hot` 은 **HOT 배합이 다를 때만** 채운다. 비어 있으면 HOT 주문에도
+  `recipe` 를 쓴다(대부분은 온도만 다르고 배합은 같다).
+- 매장 공통 밑작업(우유 배합·수제 크림)은 메뉴마다 반복할 내용이 아니라
+  `GET /api/v1/store` 의 `prep_notes` 에 있다. POS는 레시피 아래에 항상 붙인다.
+- 최초 입력은 `python manage.py seed_recipes`, 이후 수정은 관리자 화면(메뉴 → 레시피).
+  메뉴명이 안 맞는 레시피와 레시피 없는 메뉴를 실행 끝에 보고한다.
 ```json
 200 [ { "id":1, "name":"아메리카노", "price":4000,
         "category":"coffee", "category_display":"커피", "emoji":"☕",

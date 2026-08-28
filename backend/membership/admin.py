@@ -19,8 +19,24 @@ from .models import (
 
 @admin.register(MenuItem)
 class MenuItemAdmin(admin.ModelAdmin):
-    list_display = ["name", "category", "price", "cost", "temp_option", "decaf_available", "oatmilk_available", "shot_available", "stock", "is_available", "sort_order"]
+    list_display = ["name", "category", "price", "cost", "temp_option", "decaf_available", "oatmilk_available", "shot_available", "stock", "is_available", "has_recipe", "sort_order"]
     list_filter = ["category", "temp_option", "is_available"]
+    search_fields = ["name", "recipe"]
+    fieldsets = (
+        (None, {"fields": ("store", "name", "category", "price", "cost", "sort_order",
+                           "is_available", "stock", "emoji")}),
+        ("옵션", {"fields": ("temp_option", "decaf_available", "oatmilk_available",
+                            "shot_available")}),
+        ("레시피", {
+            "fields": ("recipe", "recipe_hot", "topping", "recipe_note"),
+            "description": "POS 결제 완료 화면과 메뉴 길게 누르기에서 보입니다. "
+                           "HOT 배합이 다를 때만 '레시피(HOT)'를 채우세요.",
+        }),
+    )
+
+    @admin.display(boolean=True, description="레시피")
+    def has_recipe(self, obj):
+        return obj.has_recipe
     list_editable = ["price", "cost", "stock", "is_available", "sort_order"]
     search_fields = ["name"]
 

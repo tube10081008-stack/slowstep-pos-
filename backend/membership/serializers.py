@@ -26,17 +26,21 @@ class MenuItemSerializer(serializers.ModelSerializer):
             "id", "name", "price", "category", "category_display", "emoji",
             "temp_option", "decaf_available", "oatmilk_available", "shot_available",
             "stock", "sold_out",
+            # 레시피 — POS가 제조 화면에서 쓴다(손님 화면에는 내려가지 않는다)
+            "recipe", "recipe_hot", "topping", "recipe_note",
         ]
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
     line_total = serializers.IntegerField(read_only=True)
     option_label = serializers.CharField(read_only=True)
+    # POS가 결제 완료 화면에서 이 id로 레시피를 찾는다(메뉴가 삭제됐으면 null)
+    menu_item_id = serializers.IntegerField(read_only=True, allow_null=True)
 
     class Meta:
         model = OrderItem
         fields = [
-            "name", "unit_price", "quantity", "line_total",
+            "name", "menu_item_id", "unit_price", "quantity", "line_total",
             "temperature", "decaf", "oatmilk", "option_label",
         ]
 
@@ -47,7 +51,7 @@ class StoreSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "point_earn_rate", "stamp_goal", "stamp_reward_points",
             "set_discount_amount", "option_price", "is_open", "opened_at",
-            "happy_start", "happy_end", "happy_multiplier",
+            "happy_start", "happy_end", "happy_multiplier", "prep_notes",
         ]
 
 

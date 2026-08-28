@@ -27,6 +27,9 @@ class Store(models.Model):
     option_price = models.IntegerField("옵션 추가금", default=500)
     # 옵션 1개당 추가 재료원가(오트밀크·샷 등) — 마진 분석용
     option_cost = models.IntegerField("옵션 추가 원가", default=0)
+    # 모든 메뉴에 공통으로 들어가는 밑작업(우유 배합·수제 크림 등).
+    # 레시피 화면 맨 위에 항상 띄운다 — 메뉴마다 반복해 적을 내용이 아니다.
+    prep_notes = models.TextField("공통 밑작업", blank=True, default="")
     # 부가세율(마진은 공급가=매출÷(1+vat) 기준으로 계산)
     vat_rate = models.DecimalField(
         "부가세율", max_digits=4, decimal_places=3, default=0.10
@@ -177,6 +180,13 @@ class MenuItem(models.Model):
     decaf_available = models.BooleanField("디카페인 선택", default=False)
     oatmilk_available = models.BooleanField("오트밀크 선택", default=False)
     shot_available = models.BooleanField("샷 추가 선택", default=False)
+    # ── 레시피 (직원 참고용) ──
+    # HOT/ICE로 배합이 달라지는 메뉴가 있어 따로 둔다. recipe_hot 이 비어 있으면
+    # HOT 주문에도 recipe 를 쓴다 — 대부분은 온도만 다르고 배합은 같다.
+    recipe = models.TextField("레시피", blank=True, default="")
+    recipe_hot = models.TextField("레시피(HOT)", blank=True, default="")
+    topping = models.CharField("토핑·데코", max_length=200, blank=True, default="")
+    recipe_note = models.CharField("비고(잔·분쇄도 등)", max_length=200, blank=True, default="")
     emoji = models.CharField("이모지", max_length=8, blank=True, default="")
     is_available = models.BooleanField("판매중", default=True)
     # 재고: null=무제한. 0이면 품절 처리.
@@ -186,6 +196,16 @@ class MenuItem(models.Model):
     @property
     def sold_out(self) -> bool:
         return self.stock is not None and self.stock <= 0
+
+    @property
+    def has_recipe(self) -> bool:
+        return bool(self.recipe or self.recipe_hot)
+
+    def recipe_for(self, temperature: str = "") -> str:
+        """그 주문 줄의 온도에 맞는 레시피. HOT 전용이 없으면 기본을 쓴다."""
+        if temperature == "hot" and self.recipe_hot:
+            return self.recipe_hot
+        return self.recipe
 
     class Meta:
         verbose_name = "메뉴"
