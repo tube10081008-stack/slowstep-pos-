@@ -1,9 +1,13 @@
 """관리자 등록 (점주용 회원/거래 조회)."""
 from django.contrib import admin
 
+from django.utils import timezone
+
 from .models import (
+    Coupon,
     Member,
     MemberMission,
+    MemberQuest,
     MenuItem,
     Mission,
     OrderItem,
@@ -63,3 +67,37 @@ class MissionAdmin(admin.ModelAdmin):
 class MemberMissionAdmin(admin.ModelAdmin):
     list_display = ["member", "mission", "progress", "is_completed", "completed_at"]
     list_filter = ["is_completed"]
+
+
+@admin.register(Coupon)
+class CouponAdmin(admin.ModelAdmin):
+    """
+    쿠폰 조회·사용 처리.
+
+    손님이 폰으로 쿠폰을 보여주면 직원이 여기서 '사용 처리'해야 한다.
+    안 그러면 같은 쿠폰을 몇 번이든 다시 쓸 수 있다.
+    """
+
+    list_display = ["member", "kind", "source", "note", "state", "issued_at", "expires_at"]
+    list_filter = ["kind", "source", "used_at"]
+    search_fields = ["member__name", "member__phone"]
+    date_hierarchy = "issued_at"
+    actions = ["mark_used"]
+
+    @admin.display(description="상태")
+    def state(self, obj):
+        if obj.used_at:
+            return "사용함"
+        return "만료" if obj.is_expired else "사용 가능"
+
+    @admin.action(description="선택한 쿠폰을 사용 처리")
+    def mark_used(self, request, queryset):
+        n = queryset.filter(used_at__isnull=True).update(used_at=timezone.now())
+        self.message_user(request, f"{n}장을 사용 처리했습니다.")
+
+
+@admin.register(MemberQuest)
+class MemberQuestAdmin(admin.ModelAdmin):
+    list_display = ["member", "title", "kind", "reward_points", "completed_at"]
+    list_filter = ["kind"]
+    search_fields = ["member__name", "member__phone", "key"]

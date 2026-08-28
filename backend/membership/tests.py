@@ -1593,3 +1593,95 @@ class SpinEndpointTests(TestCase):
         self.assertEqual(len(r["segments"]), 5)
         # 확률은 화면으로 내려보내지 않는다(조작 방지)
         self.assertNotIn("weight", r["segments"][0])
+
+
+class ImportBaselineTests(TestCase):
+    """이관 회원에게 지난 기록에 대한 보상이 소급 지급되지 않아야 한다."""
+
+    def setUp(self):
+        from .models import Mission
+
+        self.store = make_store(stamp_goal=99)
+        self.menu = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000
+        )
+        for title, target, reward in (
+            ("3회 방문", 3, 500), ("10회 방문", 10, 500),
+        ):
+            Mission.objects.create(
+                store=self.store, title=title,
+                condition_type=Mission.Condition.VISIT_COUNT,
+                target_value=target, reward_points=reward,
+            )
+        Mission.objects.create(
+            store=self.store, title="누적 5만원", condition_type=Mission.Condition.TOTAL_SPENT,
+            target_value=50_000, reward_points=500,
+        )
+
+    def _import(self, spent, visits):
+        from .imports import import_members_csv
+
+        import_members_csv(csv_text=(
+            "이름,연락처,포인트,누적결제액,방문횟수\n"
+            f"김단골,010-9999-0001,0,{spent},{visits}\n"
+        ))
+        return Member.objects.get(phone="01099990001")
+
+    def _buy(self, m):
+        return checkout(
+            member=m, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.menu.id, "quantity": 1}],
+            toss_order_id="imp-1",
+        )
+
+    def test_no_retroactive_tier_coupons(self):
+        """이미 골드인 채로 들어온 회원에게 승급 쿠폰이 나가면 안 된다."""
+        from .models import Coupon
+
+        m = self._import(380_000, 95)
+        self.assertEqual(m.tier, Member.Tier.GOLD)
+        self.assertEqual(m.tier_rewarded, Member.Tier.GOLD)   # 이관 시점에 정산됨
+        self._buy(m)
+        self.assertEqual(Coupon.objects.filter(member=m).count(), 0)
+
+    def test_no_retroactive_mission_points(self):
+        """이미 채운 미션의 보상·완주 보너스가 첫 결제에 쏟아지면 안 된다."""
+        m = self._import(380_000, 95)
+        r = self._buy(m)
+        self.assertFalse([x for x in r.rewards if x["type"].startswith("mission")])
+        m.refresh_from_db()
+        self.assertEqual(m.points, r.transaction.points_earned)   # 적립분만
+
+    def test_partial_progress_still_rewarded_going_forward(self):
+        """아직 못 채운 미션은 그대로 살아 있어야 한다 — 앞으로 하는 건 보상한다."""
+        m = self._import(10_000, 1)          # 어느 미션도 미달
+        r = self._buy(m)
+        self.assertFalse([x for x in r.rewards if x["type"] == "mission"])  # 2회차 — 아직 미달
+        got = []
+        for i in range(2):
+            r = checkout(
+                member=m, gross_amount=0, points_to_use=0,
+                payment_method=Transaction.Method.CARD,
+                items=[{"menu_item_id": self.menu.id, "quantity": 1}],
+                toss_order_id=f"imp-f{i}",
+            )
+            got += [x["title"] for x in r.rewards if x["type"] == "mission"]
+        self.assertIn("3회 방문", got)         # 방문 3회를 우리 앱에서 채우면 지급된다
+
+    def test_tier_coupon_still_issued_when_actually_upgrading(self):
+        """이관 후 실제로 등급이 올라가면 그때는 쿠폰이 나가야 한다."""
+        from .models import Coupon
+
+        m = self._import(90_000, 5)          # 브론즈
+        self.assertEqual(m.tier, Member.Tier.BRONZE)
+        big = MenuItem.objects.create(store=self.store, name="원두 1kg", price=20_000)
+        checkout(
+            member=m, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": big.id, "quantity": 1}],
+            toss_order_id="up-1",
+        )
+        m.refresh_from_db()
+        self.assertEqual(m.tier, Member.Tier.SILVER)
+        self.assertEqual(Coupon.objects.filter(member=m).count(), 1)

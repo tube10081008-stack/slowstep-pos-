@@ -20,7 +20,7 @@ from datetime import datetime
 from django.db import transaction as db_transaction
 from django.utils import timezone
 
-from .models import Member, PointEntry, Store
+from .models import Member, MemberMission, MemberQuest, Mission, PointEntry, Store
 
 MAX_FILE_BYTES = 1_000_000  # 1MB — 220명 이관에 충분, 오업로드 방지
 MAX_ROWS = 2_000
@@ -247,6 +247,7 @@ def _persist(store: Store, to_create: list[dict]) -> None:
         member = Member.objects.create(store=store, points=points, **data)
         member.tier = member.compute_tier()
         member.save(update_fields=["tier"])
+        apply_baseline(member)
         if points > 0:
             PointEntry.objects.create(
                 member=member,
@@ -257,3 +258,42 @@ def _persist(store: Store, to_create: list[dict]) -> None:
         if joined_at is not None:
             # auto_now_add 우회 — 이관 시 원래 가입일 보존
             Member.objects.filter(pk=member.pk).update(joined_at=joined_at)
+
+
+def apply_baseline(member: Member) -> None:
+    """
+    이관 회원이 **이미 충족한 것**을 보상 없이 달성 처리한다.
+
+    이관 회원은 등급도 미션 조건도 이미 채운 상태로 들어온다. 그대로 두면
+    첫 결제 한 번에 등급 쿠폰과 미션 보상이 통째로 소급 지급된다
+    (누적 38만원 회원 기준 2,500P + 1+1 쿠폰 4장. 220명이면 감당이 안 된다).
+
+    보상은 **우리 앱에서 앞으로 하는 것**에 붙어야 한다. 지난 기록은
+    등급·방문수로 이미 인정하고 있으므로, 여기서 또 지급하면 이중이다.
+    """
+    if member.tier_rewarded != member.tier:
+        member.tier_rewarded = member.tier
+        member.save(update_fields=["tier_rewarded"])
+
+    missions = list(Mission.objects.filter(store_id=member.store_id, is_active=True))
+    if not missions:
+        return
+    already = 0
+    for mission in missions:
+        value = mission.member_value(member)
+        if value < mission.target_value:
+            continue
+        already += 1
+        MemberMission.objects.update_or_create(
+            member=member, mission=mission,
+            defaults={"progress": value, "is_completed": True,
+                      "completed_at": timezone.now()},
+        )
+    # 전부 이미 충족했다면 '미션 완주' 보너스도 이미 받은 것으로 남긴다.
+    # (안 남기면 첫 결제에서 완주 보너스만 따로 튀어나온다)
+    if already == len(missions):
+        MemberQuest.objects.get_or_create(
+            member=member, key="mission:clear",
+            defaults={"kind": "mission_clear", "title": "미션 전부 달성(이관)",
+                      "reward_points": 0},
+        )
