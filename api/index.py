@@ -61,7 +61,8 @@ def _ensure_database() -> None:
         if not seeded:
             try:
                 # 매장·메뉴·미션은 운영에 필요한 설정 → 항상 시드.
-                call_command("seed_demo")
+                # 샘플 회원(김슬로우 등)은 만들지 않는다 — 실매장 랭킹에 섞인다.
+                call_command("seed_demo", "--no-members")
                 # 가짜 회원·매출은 데모용 → 명시적으로 켤 때만.
                 # (실매장에서 켜면 매출·마진 지표가 오염된다)
                 if os.environ.get("SEED_MARKETING", "").lower() in ("1", "true", "yes"):

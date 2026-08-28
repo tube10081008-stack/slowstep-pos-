@@ -154,6 +154,7 @@ class CheckoutRequestSerializer(serializers.Serializer):
     approval_no = serializers.CharField(required=False, allow_blank=True, default="")
     toss_payment_key = serializers.CharField(required=False, allow_blank=True, default="")
     toss_order_id = serializers.CharField(required=False, allow_blank=True, default="")
+    coupon_id = serializers.IntegerField(required=False, allow_null=True)
 
     def validate(self, attrs):
         if not attrs.get("items") and not attrs.get("gross_amount"):

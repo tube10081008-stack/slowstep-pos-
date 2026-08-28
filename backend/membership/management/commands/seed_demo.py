@@ -53,7 +53,13 @@ MENU = [
 
 
 class Command(BaseCommand):
-    help = "슬로우스텝 데모 데이터(매장·미션·샘플 회원) 시드"
+    help = "슬로우스텝 기본 데이터(매장·메뉴·미션) 시드 (+샘플 회원)"
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--no-members", action="store_true",
+            help="샘플 회원을 만들지 않는다(실매장 배포용)",
+        )
 
     def handle(self, *args, **options):
         store, _ = Store.objects.get_or_create(
@@ -67,11 +73,10 @@ class Command(BaseCommand):
         # 정책 갱신(기존 매장도 반영)
         store.point_earn_rate = "0.03"
         store.option_cost = 300  # 옵션(오트밀크·샷 등) 1개당 추가 원가 데모값
-        # 한가한 시간대(14~16시) 적립 2배 — 피크 분산용 기본값
-        store.happy_start, store.happy_end, store.happy_multiplier = 14, 16, 2
-        store.save(update_fields=[
-            "point_earn_rate", "option_cost", "happy_start", "happy_end", "happy_multiplier",
-        ])
+        # 해피아워는 **꺼진 상태가 기본**이다. 어느 시간대가 한가한지는 매장이 정할
+        # 일이고, 시드가 매번 켜 버리면 관리자에서 끈 설정이 되살아난다.
+        # 쓰시려면 관리자 화면에서 시작·종료 시각을 다르게 넣으면 켜진다.
+        store.save(update_fields=["point_earn_rate", "option_cost"])
         self.stdout.write(f"매장: {store.name} (적립 {float(store.point_earn_rate)*100:.0f}%)")
 
         missions = [
@@ -103,7 +108,9 @@ class Command(BaseCommand):
             )
             self.stdout.write(("생성: " if created else "갱신: ") + obj.title)
 
-        members = [
+        # 샘플 회원은 개발용이다. 실매장 배포에서 만들면 랭킹·명예의 전당에
+        # 가짜 이름이 섞이고 지표가 오염된다(--no-members).
+        members = [] if options.get("no_members") else [
             {"phone": "01012345678", "name": "김슬로우", "marketing_opt_in": True},
             {"phone": "01023456789", "name": "이천천", "marketing_opt_in": True},
             {"phone": "01034567890", "name": "박스텝", "marketing_opt_in": False},

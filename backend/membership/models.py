@@ -36,7 +36,7 @@ class Store(models.Model):
     happy_start = models.PositiveSmallIntegerField("해피아워 시작(시)", default=0)
     happy_end = models.PositiveSmallIntegerField("해피아워 종료(시)", default=0)
     happy_multiplier = models.DecimalField(
-        "해피아워 적립 배수", max_digits=3, decimal_places=1, default=2.0
+        "해피아워 적립 배수", max_digits=3, decimal_places=1, default=1.5
     )
     # 영업 상태
     is_open = models.BooleanField("영업중", default=False)

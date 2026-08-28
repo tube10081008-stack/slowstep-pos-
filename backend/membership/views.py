@@ -39,6 +39,7 @@ from .margins import margin_summary, menu_item_margins, to_supply
 from .profile import build_member_dashboard, hall_of_fame
 from .services import (
     CheckoutError,
+    CouponError,
     ReferralError,
     SpinError,
     apply_referral,
@@ -382,6 +383,13 @@ class MemberViewSet(viewsets.ModelViewSet):
             return Response({"detail": str(exc)}, status=400)
         return Response(result)
 
+    @action(detail=True, methods=["get"], url_path="coupons")
+    def coupons(self, request, pk=None):
+        """이 회원이 지금 쓸 수 있는 쿠폰(직원용). 결제 화면에서 붙여 쓴다."""
+        from .profile import coupon_list
+
+        return Response(coupon_list(self.get_object()))
+
     @action(detail=True, methods=["post"], url_path="spin")
     def spin(self, request, pk=None):
         """
@@ -475,8 +483,9 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 approval_no=data.get("approval_no", ""),
                 toss_payment_key=data.get("toss_payment_key", ""),
                 toss_order_id=data.get("toss_order_id", ""),
+                coupon_id=data.get("coupon_id"),
             )
-        except CheckoutError as exc:
+        except (CheckoutError, CouponError) as exc:
             return Response({"detail": str(exc)}, status=400)
         except TossError as exc:
             return Response({"detail": str(exc)}, status=502)

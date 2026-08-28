@@ -1685,3 +1685,124 @@ class ImportBaselineTests(TestCase):
         m.refresh_from_db()
         self.assertEqual(m.tier, Member.Tier.SILVER)
         self.assertEqual(Coupon.objects.filter(member=m).count(), 1)
+
+
+class CouponRedeemTests(TestCase):
+    """쿠폰 사용 — 금액 차감 · 1회 소진 · 취소 시 원복."""
+
+    def setUp(self):
+        from .models import Coupon
+
+        self.store = make_store(stamp_goal=99, set_discount_amount=0)
+        self.m = Member.objects.create(
+            store=self.store, phone="01077770000", name="느긋한 수달"
+        )
+        self.amer = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000, category=MenuItem.Category.COFFEE
+        )
+        self.latte = MenuItem.objects.create(
+            store=self.store, name="카페 라떼", price=5000, category=MenuItem.Category.COFFEE
+        )
+        self.cake = MenuItem.objects.create(
+            store=self.store, name="플레인 휘낭시에", price=2500,
+            category=MenuItem.Category.DESSERT, temp_option=MenuItem.Temp.NONE,
+        )
+        self.Coupon = Coupon
+
+    def _coupon(self, kind):
+        return self.Coupon.objects.create(member=self.m, kind=kind)
+
+    def _buy(self, items, oid, coupon=None):
+        return checkout(
+            member=self.m, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD, items=items,
+            toss_order_id=oid, coupon_id=coupon.id if coupon else None,
+        )
+
+    def test_percent_coupon_discounts_total(self):
+        c = self._coupon(self.Coupon.Kind.DISCOUNT_10)
+        r = self._buy([{"menu_item_id": self.amer.id, "quantity": 2}], "c1", c)
+        self.assertEqual(r.transaction.gross_amount, 8000)
+        self.assertEqual(r.transaction.discount, 800)      # 10%
+        self.assertEqual(r.transaction.net_amount, 7200)
+
+    def test_bogo_takes_the_cheaper_drink(self):
+        c = self._coupon(self.Coupon.Kind.BOGO)
+        r = self._buy([{"menu_item_id": self.amer.id, "quantity": 1},
+                       {"menu_item_id": self.latte.id, "quantity": 1}], "c2", c)
+        self.assertEqual(r.transaction.discount, 4000)     # 싼 쪽(아메리카노)
+        self.assertEqual(r.transaction.net_amount, 5000)
+
+    def test_free_drink_takes_the_priciest(self):
+        c = self._coupon(self.Coupon.Kind.FREE_DRINK)
+        r = self._buy([{"menu_item_id": self.amer.id, "quantity": 1},
+                       {"menu_item_id": self.latte.id, "quantity": 1}], "c3", c)
+        self.assertEqual(r.transaction.discount, 5000)     # 비싼 쪽(라떼)
+
+    def test_bogo_needs_two_drinks(self):
+        from .services import CouponError
+
+        c = self._coupon(self.Coupon.Kind.BOGO)
+        with self.assertRaises(CouponError):
+            self._buy([{"menu_item_id": self.amer.id, "quantity": 1}], "c4", c)
+
+    def test_dessert_is_not_a_drink(self):
+        """1+1은 음료 쿠폰이다 — 디저트를 두 번째 잔으로 치면 안 된다."""
+        from .services import CouponError
+
+        c = self._coupon(self.Coupon.Kind.BOGO)
+        with self.assertRaises(CouponError):
+            self._buy([{"menu_item_id": self.amer.id, "quantity": 1},
+                       {"menu_item_id": self.cake.id, "quantity": 1}], "c5", c)
+
+    def test_coupon_consumed_once(self):
+        from .services import CouponError
+
+        c = self._coupon(self.Coupon.Kind.DISCOUNT_5)
+        self._buy([{"menu_item_id": self.amer.id, "quantity": 1}], "c6", c)
+        c.refresh_from_db()
+        self.assertIsNotNone(c.used_at)
+        with self.assertRaises(CouponError):
+            self._buy([{"menu_item_id": self.amer.id, "quantity": 1}], "c7", c)
+
+    def test_expired_coupon_rejected(self):
+        from .services import CouponError
+
+        c = self._coupon(self.Coupon.Kind.DISCOUNT_5)
+        self.Coupon.objects.filter(pk=c.pk).update(
+            expires_at=timezone.now() - timedelta(days=1)
+        )
+        c.refresh_from_db()
+        with self.assertRaises(CouponError):
+            self._buy([{"menu_item_id": self.amer.id, "quantity": 1}], "c8", c)
+
+    def test_other_members_coupon_rejected(self):
+        from .services import CouponError
+
+        other = Member.objects.create(store=self.store, phone="01077771111", name="다른 손님")
+        c = self.Coupon.objects.create(member=other, kind=self.Coupon.Kind.DISCOUNT_5)
+        with self.assertRaises(CouponError):
+            self._buy([{"menu_item_id": self.amer.id, "quantity": 1}], "c9", c)
+
+    def test_cancel_restores_coupon(self):
+        """취소했는데 쿠폰만 사라지면 손님이 손해를 본다."""
+        c = self._coupon(self.Coupon.Kind.BOGO)
+        r = self._buy([{"menu_item_id": self.amer.id, "quantity": 2}], "c10", c)
+        cancel_transaction(r.transaction)
+        c.refresh_from_db()
+        self.assertIsNone(c.used_at)
+        self.assertTrue(c.is_usable)
+
+    def test_earning_is_on_the_discounted_amount(self):
+        """적립은 실제로 받은 돈 기준이어야 한다."""
+        c = self._coupon(self.Coupon.Kind.DISCOUNT_10)
+        r = self._buy([{"menu_item_id": self.amer.id, "quantity": 1}], "c11", c)
+        self.assertEqual(r.transaction.net_amount, 3600)
+        self.assertEqual(r.transaction.points_earned, 108)   # 3600 × 3%
+
+    def test_staff_can_list_member_coupons(self):
+        self._coupon(self.Coupon.Kind.BOGO)
+        authenticate(self.client)
+        res = self.client.get(f"/api/v1/members/{self.m.id}/coupons")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.json()), 1)

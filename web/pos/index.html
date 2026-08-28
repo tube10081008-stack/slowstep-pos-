@@ -110,6 +110,13 @@
   input { width:100%; background:#fff; border:1px solid var(--line); color:var(--txt);
     border-radius:10px; padding:12px; font-size:16px; }
   input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-soft); }
+  .cpn-row { display:flex; flex-wrap:wrap; gap:8px; }
+  .cpn-chip { border:1px solid var(--line); background:#fff; border-radius:10px;
+    padding:9px 12px; font-size:13px; font-weight:600; cursor:pointer; font-family:var(--sans);
+    color:var(--txt); display:flex; align-items:center; gap:7px; }
+  .cpn-chip small { color:var(--muted); font-weight:500; font-size:11px; }
+  .cpn-chip.on { border-color:var(--brand); background:var(--brand-soft); color:var(--brand-dk); }
+  .cpn-chip.on small { color:var(--brand-dk); }
   .pill-row { display:flex; gap:6px; margin-top:8px; }
   .pill { flex:1; text-align:center; font-size:13px; padding:10px; border-radius:10px; background:var(--card2);
     border:1px solid var(--line); cursor:pointer; }
@@ -273,6 +280,10 @@
       <!-- 2-2. 회원 확인 + 결제 승인 -->
       <div id="confirmStep" class="hidden">
         <div class="mcard" id="mcard"></div>
+        <div id="cpnBox" class="hidden">
+          <label>보유 쿠폰 <span class="muted" id="cpnHint"></span></label>
+          <div class="cpn-row" id="cpnRow"></div>
+        </div>
         <div id="pointBox">
           <label>포인트 사용 (1P=1원)</label>
           <div class="row">
@@ -754,14 +765,72 @@
     }
     $("usePoints").value="0";
     $("approvalNo").value="";
+    loadCoupons();
     recalcPay();
     sendDisplay(member ? { type:"greet", member } : { type:"guest_ok" });
   }
 
-  function useAll(){ if(member){ $("usePoints").value = Math.min(member.points, finalTotal()); recalcPay(); } }
+  /* ── 쿠폰 ─────────────────────────────────────────────
+     할인액은 주문 내용에 따라 달라지므로(1+1은 싼 잔, 무료음료는 비싼 잔)
+     화면에서 미리 계산해 보여주되, **최종 판정은 서버가 한다.** */
+  let coupons = [], couponId = null;
+
+  async function loadCoupons(){
+    coupons = []; couponId = null;
+    $("cpnBox").classList.add("hidden");
+    if(!member) return;
+    try { coupons = await api(`/api/v1/members/${member.id}/coupons`); }
+    catch(e){ return; }                       // 쿠폰을 못 불러와도 결제는 되어야 한다
+    if(!coupons.length) return;
+    $("cpnBox").classList.remove("hidden");
+    renderCoupons();
+  }
+
+  function drinkPrices(){
+    return Object.values(cart)
+      .filter(c => c.item.category !== "dessert")
+      .flatMap(c => Array(c.qty).fill(c.unit))
+      .sort((a,b) => a-b);
+  }
+
+  function couponValue(c){
+    const drinks = drinkPrices();
+    if(c.discount_pct) return Math.floor(grossTotal() * c.discount_pct / 100);
+    if(c.kind === "bogo")       return drinks.length >= 2 ? drinks[0] : 0;
+    if(c.kind === "free_drink") return drinks.length ? drinks[drinks.length-1] : 0;
+    return 0;
+  }
+
+  function renderCoupons(){
+    $("cpnRow").innerHTML = coupons.map(c=>{
+      const v = couponValue(c);
+      const off = v > 0 ? `-${won(v)}` : "적용 불가";
+      return `<button class="cpn-chip${couponId===c.id?" on":""}"${v>0?"":" disabled"}
+        onclick="toggleCoupon(${c.id})">${c.name}<small>${off}</small></button>`;
+    }).join("");
+    const picked = coupons.find(c => c.id === couponId);
+    $("cpnHint").textContent = picked ? `· ${picked.name} 적용 중` : "· 사용할 쿠폰을 누르세요";
+  }
+
+  function toggleCoupon(id){
+    const c = coupons.find(x => x.id === id);
+    if(!c || couponValue(c) <= 0) return;
+    couponId = (couponId === id) ? null : id;   // 다시 누르면 해제
+    renderCoupons();
+    recalcPay();
+  }
+
+  const couponDiscount = () => {
+    const c = coupons.find(x => x.id === couponId);
+    return c ? couponValue(c) : 0;
+  };
+
+  function useAll(){ if(member){ $("usePoints").value = Math.min(member.points, payable()); recalcPay(); } }
+  // 쿠폰 할인까지 뺀 '포인트 쓰기 전 금액'
+  const payable = () => Math.max(0, finalTotal() - couponDiscount());
   function recalcPay(){
-    let use = member ? Math.max(0, Math.min(parseInt($("usePoints").value||"0",10), member.points, finalTotal())) : 0;
-    $("payNet").textContent = won(finalTotal() - use);
+    let use = member ? Math.max(0, Math.min(parseInt($("usePoints").value||"0",10), member.points, payable())) : 0;
+    $("payNet").textContent = won(payable() - use);
   }
   $("methods").addEventListener("click", e=>{
     const p=e.target.closest(".pill"); if(!p) return;
@@ -778,7 +847,7 @@
       const res = await api("/api/v1/transactions", { method:"POST", body: JSON.stringify({
         member_id: member?member.id:null, items, points_to_use:use,
         payment_method:method, approval_no:($("approvalNo").value||"").trim(),
-        toss_order_id: orderId || newOrderId(),
+        toss_order_id: orderId || newOrderId(), coupon_id: couponId,
       })});
       lastOrder = res;
       if(res.idempotent_replay) toast("이미 처리된 주문입니다 — 기존 결제를 표시합니다");

@@ -288,6 +288,7 @@ def checkout(
     approval_no: str = "",
     toss_payment_key: str = "",
     toss_order_id: str = "",
+    coupon_id=None,
 ) -> CheckoutResult:
     """결제 확정(멱등 래퍼). 동일 order_id 중복 요청은 기존 거래를 반환한다.
 
@@ -304,6 +305,7 @@ def checkout(
             approval_no=approval_no,
             toss_payment_key=toss_payment_key,
             toss_order_id=toss_order_id,
+            coupon_id=coupon_id,
         )
     except _DuplicateOrder as dup:
         existing = Transaction.objects.filter(
@@ -325,6 +327,7 @@ def _checkout_atomic(
     approval_no: str = "",
     toss_payment_key: str = "",
     toss_order_id: str = "",
+    coupon_id=None,
 ) -> CheckoutResult:
     """
     결제 확정 전체 플로우(원자적):
@@ -360,6 +363,9 @@ def _checkout_atomic(
     if resolved:
         gross_amount = resolved.gross
         discount = resolved.discount
+    # 쿠폰 할인은 세트 할인 위에 더한다(포인트 사용보다는 먼저 — 적립은 실결제액 기준)
+    coupon, coupon_amount = resolve_coupon(member, coupon_id, resolved.lines if resolved else [])
+    discount = min(gross_amount, discount + coupon_amount)
 
     quote = build_quote(member, gross_amount, points_to_use, discount)
 
@@ -391,6 +397,14 @@ def _checkout_atomic(
             raise CheckoutError("결제가 승인되지 않았습니다.")
         txn.toss_payment_key = result.payment_key
         txn.toss_order_id = result.order_id
+
+    if coupon is not None:
+        # 결제가 확정되는 순간에만 소진한다. 같은 거래 안이므로 승인 실패 시 함께 되돌아간다.
+        used = Coupon.objects.filter(pk=coupon.pk, used_at__isnull=True).update(
+            used_at=timezone.now(), used_transaction=txn
+        )
+        if not used:
+            raise CouponError("이미 사용한 쿠폰입니다.")   # 동시 요청
 
     txn.status = Transaction.Status.PAID
     txn.paid_at = timezone.now()
@@ -449,6 +463,57 @@ def _checkout_atomic(
 
     member.save()
     return CheckoutResult(transaction=txn, rewards=rewards)
+
+
+class CouponError(Exception):
+    """쿠폰을 쓸 수 없는 상태(만료·사용됨·다른 회원)."""
+
+
+def coupon_discount(coupon: Coupon, lines) -> int:
+    """
+    쿠폰이 깎아 주는 금액. 주문 내용에 따라 달라지므로 결제 시점에 계산한다.
+
+    - 5%·10% 할인: 주문 총액에서 그 비율(원 단위 버림)
+    - 음료 1+1: 음료 2잔 이상일 때 **싼 쪽 1잔** 값
+    - 무료 음료: 음료 중 **가장 비싼 1잔** 값
+    - 원두 200g: 물건으로 나가므로 금액 할인은 0
+    """
+    drinks = sorted(
+        (l.unit_price for l in lines
+         for _ in range(l.quantity)
+         if l.menu_item.category != MenuItem.Category.DESSERT)
+    )
+    if coupon.discount_pct:
+        gross = sum(l.line_total for l in lines)
+        return gross * coupon.discount_pct // 100
+    if coupon.kind == Coupon.Kind.BOGO:
+        return drinks[0] if len(drinks) >= 2 else 0
+    if coupon.kind == Coupon.Kind.FREE_DRINK:
+        return drinks[-1] if drinks else 0
+    return 0
+
+
+def resolve_coupon(member: Member | None, coupon_id, lines) -> tuple[Coupon | None, int]:
+    """쿠폰을 검증하고 (쿠폰, 할인액)을 돌려준다. 쓸 수 없으면 CouponError."""
+    if not coupon_id:
+        return None, 0
+    if member is None:
+        raise CouponError("쿠폰은 회원 주문에만 사용할 수 있어요.")
+    coupon = Coupon.objects.filter(pk=coupon_id, member=member).first()
+    if coupon is None:
+        raise CouponError("이 회원의 쿠폰이 아닙니다.")
+    if coupon.used_at is not None:
+        raise CouponError("이미 사용한 쿠폰입니다.")
+    if coupon.is_expired:
+        raise CouponError("사용 기한이 지난 쿠폰입니다.")
+    amount = coupon_discount(coupon, lines or [])
+    if amount <= 0:
+        if coupon.kind == Coupon.Kind.BOGO:
+            raise CouponError("1+1 쿠폰은 음료 2잔 이상일 때 사용할 수 있어요.")
+        if coupon.kind == Coupon.Kind.FREE_DRINK:
+            raise CouponError("무료 음료 쿠폰은 음료가 있어야 사용할 수 있어요.")
+        raise CouponError("이 주문에는 적용할 수 없는 쿠폰입니다.")
+    return coupon, amount
 
 
 class SpinError(Exception):
@@ -559,6 +624,9 @@ def cancel_transaction(txn: Transaction) -> Transaction:
         member.stamps = max(0, member.stamps - 1)
         member.tier = member.compute_tier()
         member.save()
+
+    # 쿠폰 원복 — 취소했는데 쿠폰만 사라지면 손님이 손해를 본다
+    Coupon.objects.filter(used_transaction=txn).update(used_at=None, used_transaction=None)
 
     # 재고 원복 (F식으로 원자적 증가 — 동시 판매와 충돌해도 유실 없음)
     for it in txn.items.select_related("menu_item").all():
