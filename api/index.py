@@ -70,6 +70,17 @@ def _ensure_database() -> None:
             except Exception as exc:  # 시드 실패는 치명적이지 않음
                 log.warning("seed skipped: %s", exc)
 
+        # 레시피는 매장이 이미 만들어진 뒤에 추가된 기능이라 위 블록에 못 넣는다.
+        # 서버리스엔 셸이 없어 manage.py 를 못 돌리므로 부팅 때 보장한다.
+        # 이미 적혀 있는 레시피는 덮어쓰지 않으므로 매번 돌아도 안전하다.
+        try:
+            from membership.models import MenuItem
+
+            if not MenuItem.objects.exclude(recipe="").exists():
+                call_command("seed_recipes")
+        except Exception as exc:
+            log.warning("seed_recipes skipped: %s", exc)
+
         # 이미 들어간 데모 데이터 정리(실매장 전환). 대상이 없으면 no-op이라
         # 환경변수를 켜둔 채로 둬도 안전하다.
         if os.environ.get("PURGE_DEMO", "").lower() in ("1", "true", "yes"):
