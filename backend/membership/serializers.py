@@ -46,12 +46,15 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 
 class StoreSerializer(serializers.ModelSerializer):
+    discount_rate_list = serializers.ListField(read_only=True)
+
     class Meta:
         model = Store
         fields = [
             "id", "name", "point_earn_rate", "stamp_goal", "stamp_reward_points",
             "set_discount_amount", "option_price", "is_open", "opened_at",
             "happy_start", "happy_end", "happy_multiplier", "prep_notes",
+            "discount_rates", "discount_rate_list",
         ]
 
 
@@ -127,7 +130,8 @@ class TransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transaction
         fields = [
-            "id", "member_name", "gross_amount", "discount", "points_used", "net_amount",
+            "id", "member_name", "gross_amount", "discount", "manual_discount_pct",
+            "points_used", "net_amount",
             "points_earned", "payment_method", "method_display", "approval_no", "status",
             "toss_order_id", "created_at", "paid_at", "items",
         ]
@@ -160,6 +164,7 @@ class CheckoutRequestSerializer(serializers.Serializer):
     toss_payment_key = serializers.CharField(required=False, allow_blank=True, default="")
     toss_order_id = serializers.CharField(required=False, allow_blank=True, default="")
     coupon_id = serializers.IntegerField(required=False, allow_null=True)
+    discount_pct = serializers.IntegerField(required=False, min_value=0, max_value=100, default=0)
 
     def validate(self, attrs):
         if not attrs.get("items") and not attrs.get("gross_amount"):

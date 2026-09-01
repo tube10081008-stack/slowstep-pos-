@@ -294,6 +294,7 @@ def checkout(
     toss_payment_key: str = "",
     toss_order_id: str = "",
     coupon_id=None,
+    discount_pct: int = 0,
 ) -> CheckoutResult:
     """결제 확정(멱등 래퍼). 동일 order_id 중복 요청은 기존 거래를 반환한다.
 
@@ -311,6 +312,7 @@ def checkout(
             toss_payment_key=toss_payment_key,
             toss_order_id=toss_order_id,
             coupon_id=coupon_id,
+            discount_pct=discount_pct,
         )
     except _DuplicateOrder as dup:
         existing = Transaction.objects.filter(
@@ -333,6 +335,7 @@ def _checkout_atomic(
     toss_payment_key: str = "",
     toss_order_id: str = "",
     coupon_id=None,
+    discount_pct: int = 0,
 ) -> CheckoutResult:
     """
     결제 확정 전체 플로우(원자적):
@@ -370,7 +373,11 @@ def _checkout_atomic(
         discount = resolved.discount
     # 쿠폰 할인은 세트 할인 위에 더한다(포인트 사용보다는 먼저 — 적립은 실결제액 기준)
     coupon, coupon_amount = resolve_coupon(member, coupon_id, resolved.lines if resolved else [])
-    discount = min(gross_amount, discount + coupon_amount)
+    # 직원이 결제 화면에서 누른 수기 할인. 쿠폰과 같은 기준(주문 총액)으로 계산해
+    # "5%가 왜 금액마다 다르지?"가 생기지 않게 한다.
+    manual_pct = _valid_discount_pct(store, discount_pct)
+    manual_amount = gross_amount * manual_pct // 100
+    discount = min(gross_amount, discount + coupon_amount + manual_amount)
 
     quote = build_quote(member, gross_amount, points_to_use, discount)
 
@@ -382,6 +389,7 @@ def _checkout_atomic(
         points_used=quote.points_used,
         net_amount=quote.net_amount,
         points_earned=quote.points_earned,
+        manual_discount_pct=manual_pct,
         payment_method=payment_method,
         approval_no=approval_no,
         toss_order_id=toss_order_id,
@@ -469,6 +477,21 @@ def _checkout_atomic(
 
     member.save()
     return CheckoutResult(transaction=txn, rewards=rewards)
+
+
+def _valid_discount_pct(store: Store, pct) -> int:
+    """
+    매장이 허용한 할인율만 받는다.
+
+    클라이언트가 보낸 숫자를 그대로 믿으면 화면을 조작해 100% 할인을 넣을 수
+    있다. 허용 목록에 없는 값은 **거절이 아니라 0** — 결제가 실패하는 것보다
+    할인이 안 먹는 쪽이 계산대에서 덜 위험하다(직원이 바로 알아챈다).
+    """
+    try:
+        pct = int(pct or 0)
+    except (TypeError, ValueError):
+        return 0
+    return pct if pct in store.discount_rate_list else 0
 
 
 class CouponError(Exception):

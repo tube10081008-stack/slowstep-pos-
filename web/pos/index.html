@@ -321,6 +321,10 @@
             <button class="ghost" style="flex:0 0 92px" onclick="useAll()">전액사용</button>
           </div>
         </div>
+        <div id="discBox" class="hidden">
+          <label>할인</label>
+          <div class="pill-row" id="discRow"></div>
+        </div>
         <label>결제수단</label>
         <div class="pill-row" id="methods">
           <span class="pill on" data-m="CARD">카드</span>
@@ -824,6 +828,7 @@
     }
     $("usePoints").value="0";
     $("approvalNo").value="";
+    discPct = 0; renderDisc();
     loadCoupons();
     recalcPay();
     sendDisplay(member ? { type:"greet", member } : { type:"guest_ok" });
@@ -832,7 +837,21 @@
   /* ── 쿠폰 ─────────────────────────────────────────────
      할인액은 주문 내용에 따라 달라지므로(1+1은 싼 잔, 무료음료는 비싼 잔)
      화면에서 미리 계산해 보여주되, **최종 판정은 서버가 한다.** */
-  let coupons = [], couponId = null;
+  let coupons = [], couponId = null, discPct = 0;
+
+  /* 수기 할인 — 할인율은 매장 설정(discount_rates)에서 온다.
+     화면에서 고른 값은 참고일 뿐이고 **서버가 허용 목록으로 다시 검증**한다. */
+  function renderDisc(){
+    const rates = (store && store.discount_rate_list) || [];
+    if(!rates.length){ $("discBox").classList.add("hidden"); return; }
+    $("discBox").classList.remove("hidden");
+    $("discRow").innerHTML =
+      `<span class="pill${discPct===0?" on":""}" onclick="pickDisc(0)">없음</span>` +
+      rates.map(r => `<span class="pill${discPct===r?" on":""}" onclick="pickDisc(${r})">${r}%</span>`).join("");
+  }
+  function pickDisc(r){ discPct = r; renderDisc(); recalcPay(); }
+  // 수기 할인은 쿠폰과 같은 기준(주문 총액)으로 계산한다
+  const manualDiscount = () => Math.floor(grossTotal() * discPct / 100);
 
   async function loadCoupons(){
     coupons = []; couponId = null;
@@ -886,7 +905,7 @@
 
   function useAll(){ if(member){ $("usePoints").value = Math.min(member.points, payable()); recalcPay(); } }
   // 쿠폰 할인까지 뺀 '포인트 쓰기 전 금액'
-  const payable = () => Math.max(0, finalTotal() - couponDiscount());
+  const payable = () => Math.max(0, finalTotal() - couponDiscount() - manualDiscount());
   function recalcPay(){
     let use = member ? Math.max(0, Math.min(parseInt($("usePoints").value||"0",10), member.points, payable())) : 0;
     $("payNet").textContent = won(payable() - use);
@@ -907,6 +926,7 @@
         member_id: member?member.id:null, items, points_to_use:use,
         payment_method:method, approval_no:($("approvalNo").value||"").trim(),
         toss_order_id: orderId || newOrderId(), coupon_id: couponId,
+        discount_pct: discPct,
       })});
       lastOrder = res;
       if(res.idempotent_replay) toast("이미 처리된 주문입니다 — 기존 결제를 표시합니다");
@@ -929,7 +949,13 @@
           <span>${won(i.line_total)}</span></div>`;
       return head + (body ? `<div class="rc" id="rc${idx}" hidden>${body}</div>` : "");
     }).join("");
-    const discRow = res.discount>0 ? `<div class="r"><span style="color:var(--gold)">세트 할인</span><span style="color:var(--gold)">−${won(res.discount)}</span></div>` : "";
+    // 할인은 세트·쿠폰·수기가 합쳐진 값이라 무엇 때문인지 적어 준다
+    const why = [];
+    if(res.manual_discount_pct) why.push(`${res.manual_discount_pct}% 할인`);
+    if(couponId) why.push("쿠폰");
+    const discRow = res.discount>0
+      ? `<div class="r"><span style="color:var(--gold)">할인${why.length?` · ${why.join(" · ")}`:""}</span><span style="color:var(--gold)">−${won(res.discount)}</span></div>`
+      : "";
     const useRow = res.points_used>0 ? `<div class="r"><span class="muted">사용 포인트</span><span>−${won(res.points_used)}</span></div>` : "";
     $("receipt").innerHTML = rows + discRow + useRow +
       `<div class="r"><b>실결제액</b><b style="color:var(--gold)">${won(res.net_amount)}</b></div>`;

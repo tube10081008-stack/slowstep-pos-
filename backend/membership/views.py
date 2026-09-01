@@ -539,6 +539,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 toss_payment_key=data.get("toss_payment_key", ""),
                 toss_order_id=data.get("toss_order_id", ""),
                 coupon_id=data.get("coupon_id"),
+                discount_pct=data.get("discount_pct") or 0,
             )
         except (CheckoutError, CouponError) as exc:
             return Response({"detail": str(exc)}, status=400)

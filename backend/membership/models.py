@@ -23,6 +23,11 @@ class Store(models.Model):
     )
     # 커피+디저트 세트 시 디저트 1건당 할인액
     set_discount_amount = models.IntegerField("세트 할인액", default=500)
+    # 결제 화면에서 직원이 바로 누를 수 있는 할인율(%). 쉼표로 구분.
+    # 비우면 수기 할인 버튼이 아예 안 뜬다.
+    discount_rates = models.CharField(
+        "수기 할인율(%)", max_length=50, blank=True, default="5,10"
+    )
     # 디카페인·오트밀크 등 옵션 추가금
     option_price = models.IntegerField("옵션 추가금", default=500)
     # 옵션 1개당 추가 재료원가(오트밀크·샷 등) — 마진 분석용
@@ -52,6 +57,16 @@ class Store(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def discount_rate_list(self) -> list[int]:
+        """'5,10' → [5, 10]. 잘못 적힌 값은 조용히 버린다."""
+        out = []
+        for chunk in (self.discount_rates or "").split(","):
+            chunk = chunk.strip()
+            if chunk.isdigit() and 0 < int(chunk) < 100:
+                out.append(int(chunk))
+        return sorted(set(out))
 
     @property
     def happy_hour_active(self) -> bool:
@@ -249,7 +264,11 @@ class Transaction(models.Model):
         verbose_name="회원",
     )
     gross_amount = models.IntegerField("주문 총액")
-    discount = models.IntegerField("세트 할인", default=0)
+    discount = models.IntegerField("할인 합계", default=0)
+    # 직원이 결제 화면에서 직접 누른 할인율(%). 0이면 수기 할인 없음.
+    # discount 합계에 이미 포함돼 있고, 여기 따로 남기는 건 **나중에 감사하기
+    # 위해서**다 — 세트·쿠폰과 섞이면 누가 얼마를 깎아 줬는지 알 수 없다.
+    manual_discount_pct = models.PositiveSmallIntegerField("수기 할인율", default=0)
     points_used = models.IntegerField("사용 포인트", default=0)
     net_amount = models.IntegerField("실결제액")
     points_earned = models.IntegerField("적립 포인트", default=0)

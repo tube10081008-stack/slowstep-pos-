@@ -1941,3 +1941,77 @@ class MenuAdminApiTests(TestCase):
         anon = self.client_class()
         self.assertEqual(anon.get("/api/v1/menu?all=1").status_code, 403)
         self.assertEqual(self.client.get("/api/v1/menu?all=1").status_code, 200)
+
+
+class ManualDiscountTests(TestCase):
+    """결제 화면 수기 할인 — 매장이 허용한 할인율만."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99, set_discount_amount=0,
+                                discount_rates="5,10")
+        self.m = Member.objects.create(
+            store=self.store, phone="01011110009", name="느긋한 수달"
+        )
+        self.amer = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000,
+            category=MenuItem.Category.COFFEE,
+        )
+
+    def _buy(self, oid, pct=0, qty=2, member=None, coupon=None):
+        return checkout(
+            member=member, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.amer.id, "quantity": qty}],
+            toss_order_id=oid, discount_pct=pct,
+            coupon_id=coupon.id if coupon else None,
+        )
+
+    def test_applies_percentage(self):
+        t = self._buy("d1", 10).transaction
+        self.assertEqual(t.gross_amount, 8000)
+        self.assertEqual(t.discount, 800)
+        self.assertEqual(t.net_amount, 7200)
+        self.assertEqual(t.manual_discount_pct, 10)
+
+    def test_rate_not_allowed_is_ignored(self):
+        """화면을 조작해 50%를 보내도 먹지 않는다."""
+        t = self._buy("d2", 50).transaction
+        self.assertEqual(t.discount, 0)
+        self.assertEqual(t.net_amount, 8000)
+        self.assertEqual(t.manual_discount_pct, 0)
+
+    def test_store_can_change_rates(self):
+        self.store.discount_rates = "15"
+        self.store.save(update_fields=["discount_rates"])
+        self.assertEqual(self._buy("d3", 15).transaction.discount, 1200)
+        self.assertEqual(self._buy("d4", 10).transaction.discount, 0)   # 이제 허용 안 됨
+
+    def test_rate_list_parses_and_ignores_garbage(self):
+        self.store.discount_rates = " 10 , 5, 어쩌고, 0, 150 "
+        self.assertEqual(self.store.discount_rate_list, [5, 10])
+
+    def test_empty_rates_disables_manual_discount(self):
+        self.store.discount_rates = ""
+        self.store.save(update_fields=["discount_rates"])
+        self.assertEqual(self.store.discount_rate_list, [])
+        self.assertEqual(self._buy("d5", 10).transaction.discount, 0)
+
+    def test_stacks_with_coupon(self):
+        from .models import Coupon
+
+        c = Coupon.objects.create(member=self.m, kind=Coupon.Kind.DISCOUNT_10)
+        t = self._buy("d6", 5, member=self.m, coupon=c).transaction
+        self.assertEqual(t.discount, 800 + 400)      # 쿠폰 10% + 수기 5%
+        self.assertEqual(t.net_amount, 6800)
+
+    def test_earning_follows_discounted_amount(self):
+        """할인해 준 만큼 적립도 줄어야 한다 — 적립은 실제로 받은 돈 기준."""
+        t = self._buy("d7", 10, member=self.m).transaction
+        self.assertEqual(t.points_earned, 216)       # 7200 × 3%
+
+    def test_discount_never_exceeds_order(self):
+        self.store.discount_rates = "99"
+        self.store.save(update_fields=["discount_rates"])
+        t = self._buy("d8", 99).transaction
+        self.assertLessEqual(t.discount, t.gross_amount)
+        self.assertGreaterEqual(t.net_amount, 0)
