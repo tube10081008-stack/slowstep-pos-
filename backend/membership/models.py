@@ -17,6 +17,9 @@ class Store(models.Model):
     point_earn_rate = models.DecimalField(
         "적립률", max_digits=4, decimal_places=3, default=0.03
     )
+    # 신규 가입 축하 포인트. 0이면 지급하지 않는다.
+    # 이관 회원에게는 주지 않는다 — 그쪽은 기존 잔액을 그대로 옮겨 받는다.
+    signup_bonus_points = models.PositiveIntegerField("가입 축하 포인트", default=1000)
     stamp_goal = models.PositiveSmallIntegerField("스탬프 목표", default=10)
     stamp_reward_points = models.PositiveIntegerField(
         "스탬프 달성 보상 포인트", default=3000
@@ -373,6 +376,7 @@ class PointEntry(models.Model):
         MISSION = "mission", "미션 보상"
         STAMP = "stamp", "스탬프 보상"
         REFERRAL = "referral", "초대 보상"
+        SIGNUP = "signup", "가입 축하"
         CANCEL = "cancel", "취소 원복"
 
     member = models.ForeignKey(

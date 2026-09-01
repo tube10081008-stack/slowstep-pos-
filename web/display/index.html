@@ -405,7 +405,10 @@
   const PREFIX = "010";   // 손님이 뒷자리만 누르면 되도록 미리 채워둔다
   const LEN = 11;
   let buf = PREFIX;
-  function paintPhone(){
+  // broadcast=false 면 화면만 다시 그리고 POS에는 알리지 않는다.
+  // 손님이 실제로 누른 것만 직원 화면에 비춰야 한다 — 그렇지 않으면
+  // 4초마다 오는 연결 확인 응답이 직원이 POS에서 친 번호를 덮어쓴다.
+  function paintPhone(broadcast = true){
     // 남은 자리를 회색 자리표시로 보여줘 몇 자리 더 눌러야 하는지 알 수 있게
     let html = "";
     for(let i=0;i<LEN;i++){
@@ -415,7 +418,7 @@
     $("phoneDisp").innerHTML = html;
     $("okBtn").disabled = buf.length < 10;
     // 직원 화면에도 입력 상황을 그대로 비춰준다(손님이 헤매면 도와줄 수 있게)
-    ch.postMessage({ type:"phone_input", phone: buf });
+    if(broadcast) ch.postMessage({ type:"phone_input", phone: buf });
   }
   function hint(msg, isErr){
     const h = $("payHint");
@@ -426,7 +429,7 @@
   // force=true 는 '결제 화면에 새로 진입' 또는 직원이 '다시 입력'을 누른 경우뿐.
   function resetPad(force){
     if(!force && buf.length > PREFIX.length) return;   // 입력 중이면 유지
-    buf = PREFIX; paintPhone(); hint("");
+    buf = PREFIX; paintPhone(false); hint("");
   }
 
   (function buildPad(){
@@ -455,14 +458,21 @@
     ch.postMessage({ type:"guest" });
   };
 
-  function renderGreet(m){
+  function renderGreet(m, fresh){
     $("gTier").textContent = m.tier_display || m.tier || "회원";
-    $("gName").textContent = `${m.name} 님, 반갑습니다`;
-    $("gInfo").textContent = m.visit_count > 0
-      ? `${m.visit_count}번 찾아주셨어요 · 스탬프 ${m.stamps}/${m.stamp_goal}`
-      : "첫 방문을 환영합니다";
+    $("gName").textContent = fresh
+      ? `${m.name} 님, 환영합니다`
+      : `${m.name} 님, 반갑습니다`;
+    $("gInfo").textContent = fresh
+      ? "가입이 완료되었어요"
+      : (m.visit_count > 0
+          ? `${m.visit_count}번 찾아주셨어요 · 스탬프 ${m.stamps}/${m.stamp_goal}`
+          : "첫 방문을 환영합니다");
+    // 방금 가입한 손님에게는 '왜 이 포인트가 생겼는지'를 같이 보여준다.
+    // 숫자만 뜨면 원래 있던 포인트인지 방금 받은 것인지 알 수 없다.
+    const label = fresh ? "가입 축하 포인트" : "지금 쓸 수 있는 포인트";
     $("gStats").innerHTML = `
-      <div class="stat"><div class="k">지금 쓸 수 있는 포인트</div><div class="v p">${(m.points||0).toLocaleString("ko-KR")}P</div></div>`;
+      <div class="stat"><div class="k">${label}</div><div class="v p">${(m.points||0).toLocaleString("ko-KR")}P</div></div>`;
     show("greet");
   }
 
@@ -481,7 +491,7 @@
       resetPad($("pay").classList.contains("hidden"));
       show("pay");
     }
-    else if(d.type === "greet")   renderGreet(d.member);
+    else if(d.type === "greet")   renderGreet(d.member, d.fresh);
     else if(d.type === "reset_input"){ resetPad(true); show("pay"); }
     else if(d.type === "guest_ok"){ show("greet"); $("gTier").textContent="적립 없이 결제";
       $("gName").textContent="결제를 도와드릴게요"; $("gInfo").textContent="다음에 번호를 남겨주시면 적립해 드릴게요";

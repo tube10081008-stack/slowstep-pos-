@@ -1,4 +1,5 @@
 """DRF 시리얼라이저."""
+from django.db import transaction as db_transaction
 from rest_framework import serializers
 
 from .models import (
@@ -54,7 +55,7 @@ class StoreSerializer(serializers.ModelSerializer):
             "id", "name", "point_earn_rate", "stamp_goal", "stamp_reward_points",
             "set_discount_amount", "option_price", "is_open", "opened_at",
             "happy_start", "happy_end", "happy_multiplier", "prep_notes",
-            "discount_rates", "discount_rate_list",
+            "discount_rates", "discount_rate_list", "signup_bonus_points",
         ]
 
 
@@ -83,6 +84,7 @@ class MemberCreateSerializer(serializers.ModelSerializer):
         model = Member
         fields = ["phone", "name", "marketing_opt_in"]
 
+    @db_transaction.atomic
     def create(self, validated_data):
         store = Store.objects.first()
         if store is None:
@@ -91,7 +93,19 @@ class MemberCreateSerializer(serializers.ModelSerializer):
             from .nickname import generate_nickname
 
             validated_data["name"] = generate_nickname()
-        return Member.objects.create(store=store, **validated_data)
+
+        # 가입 축하 포인트. 잔액만 올리지 않고 원장에도 남긴다 —
+        # 원장이 진실의 원천이라, 여기서 빠뜨리면 잔액과 내역이 어긋난다.
+        bonus = max(0, store.signup_bonus_points)
+        member = Member.objects.create(store=store, points=bonus, **validated_data)
+        if bonus:
+            PointEntry.objects.create(
+                member=member,
+                delta=bonus,
+                reason=PointEntry.Reason.SIGNUP,
+                balance_after=bonus,
+            )
+        return member
 
 
 class PointEntrySerializer(serializers.ModelSerializer):

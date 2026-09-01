@@ -449,6 +449,7 @@
   const CAT_ORDER = [["all","전체"],["coffee","커피"],["coldbrew","콜드브루"],["ade","스무디·에이드"],["noncoffee","논커피"],["tea","티"],["dessert","디저트"]];
 
   let store=null, menu=[], cat="all", cart={}, member=null, method="CARD", earnRate=0.05;
+  let justJoined=false;   // 방금 가입했는가 — 손님 화면 축하 문구용(1회성)
   let optPrice=500, setDiscount=500, prepNotes="";
 
   function toast(m){ const t=$("toast"); t.textContent=m; t.style.display="block";
@@ -805,11 +806,19 @@
     } catch(e){
       // 미등록 → 손님 화면에 안내하고, 가입 여부는 직원이 자기 화면에서 결정
       sendDisplay({ type:"lookup_fail" });
-      if(confirm("미등록 번호입니다. 신규 회원으로 가입하고 적립할까요?")){
+      // 가입 축하 포인트는 손님을 설득하는 카드다. 직원이 바로 말할 수 있게
+      // 확인창에 금액을 띄운다.
+      const bonus = Number(store && store.signup_bonus_points) || 0;
+      const ask = bonus
+        ? `미등록 번호입니다. 지금 가입하면 ${bonus.toLocaleString("ko-KR")}P를 바로 드립니다. 가입할까요?`
+        : "미등록 번호입니다. 신규 회원으로 가입하고 적립할까요?";
+      if(confirm(ask)){
         // 실명은 받지 않는다 — 서버가 '행동 + 동물' 닉네임을 자동으로 붙여준다.
         try { member = await api("/api/v1/members", { method:"POST",
           body: JSON.stringify({ phone, marketing_opt_in:true }) });
-          toast(`가입 완료 · ${member.name}`); showConfirm();
+          toast(bonus ? `가입 완료 · ${member.name} · ${bonus.toLocaleString("ko-KR")}P 지급`
+                      : `가입 완료 · ${member.name}`);
+          justJoined = true; showConfirm();
         } catch(err){ toast(err.message); }
       }
     }
@@ -831,7 +840,8 @@
     discPct = 0; renderDisc();
     loadCoupons();
     recalcPay();
-    sendDisplay(member ? { type:"greet", member } : { type:"guest_ok" });
+    sendDisplay(member ? { type:"greet", member, fresh: justJoined } : { type:"guest_ok" });
+    justJoined = false;   // 축하 문구는 가입 직후 한 번만
   }
 
   /* ── 쿠폰 ─────────────────────────────────────────────

@@ -2135,3 +2135,72 @@ class DateFilterTests(TestCase):
     def test_summary_needs_staff_token(self):
         anon = self.client_class()
         self.assertEqual(anon.get("/api/v1/sales/summary").status_code, 403)
+
+
+class SignupBonusTests(TestCase):
+    """신규 가입 축하 포인트 — 잔액·원장·이관 구분."""
+
+    URL = "/api/v1/members"
+
+    def setUp(self):
+        self.store = make_store()
+        authenticate(self.client)
+
+    def _join(self, phone="01011112222", **extra):
+        return self.client.post(
+            self.URL,
+            data={"phone": phone, "marketing_opt_in": True, **extra},
+            content_type="application/json",
+        )
+
+    def test_new_member_starts_with_bonus_points(self):
+        res = self._join()
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.json()["points"], 1000)
+        self.assertEqual(Member.objects.get(phone="01011112222").points, 1000)
+
+    def test_bonus_is_recorded_in_ledger(self):
+        # 잔액만 올리고 원장을 빼먹으면 내역 화면과 잔액이 어긋난다.
+        self._join()
+        entry = Member.objects.get(phone="01011112222").point_entries.get()
+        self.assertEqual(entry.delta, 1000)
+        self.assertEqual(entry.reason, "signup")
+        self.assertEqual(entry.balance_after, 1000)
+
+    def test_bonus_amount_follows_store_setting(self):
+        self.store.signup_bonus_points = 2500
+        self.store.save(update_fields=["signup_bonus_points"])
+        self.assertEqual(self._join().json()["points"], 2500)
+
+    def test_zero_bonus_creates_no_ledger_entry(self):
+        # 0으로 꺼두면 '+0P' 같은 빈 줄이 내역에 남지 않아야 한다.
+        self.store.signup_bonus_points = 0
+        self.store.save(update_fields=["signup_bonus_points"])
+        self.assertEqual(self._join().json()["points"], 0)
+        self.assertEqual(Member.objects.get(phone="01011112222").point_entries.count(), 0)
+
+    def test_new_member_starts_bronze(self):
+        # 축하 포인트는 포인트일 뿐, 누적 결제액이 아니다 — 등급은 브론즈.
+        self._join()
+        m = Member.objects.get(phone="01011112222")
+        self.assertEqual(m.tier, Member.Tier.BRONZE)
+        self.assertEqual(m.total_spent, 0)
+
+    def test_imported_member_does_not_get_bonus(self):
+        # 이관 회원은 기존 잔액을 그대로 옮겨 받는다. 여기에 축하금까지
+        # 얹으면 옮겨온 사람만 1,000P를 더 받는다.
+        res = self.client.post(
+            "/api/v1/members/import",
+            data={"csv": "이름,연락처,포인트\n,010-3957-6036,13574\n"},
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        m = Member.objects.get(phone="01039576036")
+        self.assertEqual(m.points, 13574)
+        self.assertEqual([e.reason for e in m.point_entries.all()], ["adjust"])
+
+    def test_store_api_exposes_bonus(self):
+        # POS가 확인창에 금액을 띄우려면 설정값을 내려받아야 한다.
+        self.assertEqual(
+            self.client.get("/api/v1/store").json()["signup_bonus_points"], 1000
+        )
