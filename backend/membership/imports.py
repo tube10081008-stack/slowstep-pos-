@@ -244,7 +244,15 @@ def _persist(store: Store, to_create: list[dict]) -> None:
     for data in to_create:
         joined_at = data.pop("joined_at")
         points = data.pop("points")
-        member = Member.objects.create(store=store, points=points, **data)
+        member = Member.objects.create(
+            store=store,
+            points=points,
+            # 미션은 이 기준선 이후만 센다 — 이관 회원도 오늘 가입한 손님과
+            # 같은 출발선에서 미션을 시작한다(models.Mission.member_value).
+            baseline_visit_count=data["visit_count"],
+            baseline_total_spent=data["total_spent"],
+            **data,
+        )
         member.tier = member.compute_tier()
         member.save(update_fields=["tier"])
         apply_baseline(member)
@@ -264,12 +272,18 @@ def apply_baseline(member: Member) -> None:
     """
     이관 회원이 **이미 충족한 것**을 보상 없이 달성 처리한다.
 
-    이관 회원은 등급도 미션 조건도 이미 채운 상태로 들어온다. 그대로 두면
-    첫 결제 한 번에 등급 쿠폰과 미션 보상이 통째로 소급 지급된다
-    (누적 38만원 회원 기준 2,500P + 1+1 쿠폰 4장. 220명이면 감당이 안 된다).
+    이관 회원은 등급을 이미 채운 상태로 들어온다. 그대로 두면 첫 결제 한 번에
+    등급 쿠폰이 통째로 소급 지급된다(누적 38만원 회원 기준 1+1 쿠폰 4장.
+    220명이면 감당이 안 된다).
 
     보상은 **우리 앱에서 앞으로 하는 것**에 붙어야 한다. 지난 기록은
     등급·방문수로 이미 인정하고 있으므로, 여기서 또 지급하면 이중이다.
+
+    **미션은 여기서 손대지 않는다.** 이관 시점을 기준선으로 잡아
+    `Mission.member_value` 가 그 이후만 세므로(models.py), 이관 회원의 미션
+    진행도는 0에서 시작한다 — 달성 처리로 막아둘 필요가 없고, 막아두면
+    오래 다닌 손님만 미션 보상을 못 받는 거꾸로 된 상황이 된다.
+    아래 로직은 기준선이 없던 시절 데이터를 위한 안전망으로 남겨 둔다.
     """
     if member.tier_rewarded != member.tier:
         member.tier_rewarded = member.tier

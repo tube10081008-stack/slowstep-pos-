@@ -16,7 +16,7 @@ from django.db import IntegrityError, transaction as db_transaction
 from django.test import TestCase
 from django.utils import timezone
 
-from .models import Member, MenuItem, Store, Transaction
+from .models import Member, MenuItem, Mission, Store, Transaction
 from .services import CheckoutError, cancel_transaction, checkout
 
 
@@ -2465,3 +2465,99 @@ class PayhereMigrationTests(TestCase):
         self.assertEqual(Store.objects.count(), 0)
         self._load()._load(None, None)
         self.assertEqual(Member.objects.count(), 0)
+
+
+class MissionBaselineTests(TestCase):
+    """미션은 이관 기준선 이후만 센다 — 오래 다닌 손님도 같은 출발선."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99)
+        self.menu = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=5000
+        )
+        self.mission = Mission.objects.create(
+            store=self.store, title="이번 시즌 5회 방문",
+            condition_type=Mission.Condition.VISIT_COUNT,
+            target_value=5, reward_points=1000, is_active=True,
+        )
+
+    def _import(self, phone="01039576036", points=13574, visits=25):
+        from .imports import import_members_csv
+
+        import_members_csv(
+            csv_text=f"이름,연락처,포인트,방문횟수\n,{phone},{points},{visits}\n"
+        )
+        return Member.objects.get(phone=phone)
+
+    def _buy(self, member, oid):
+        return checkout(
+            member=member, gross_amount=self.menu.price, points_to_use=0,
+            payment_method="CARD",
+            items=[{"menu_item_id": self.menu.id, "quantity": 1}],
+            toss_order_id=oid,
+        )
+
+    def test_imported_member_starts_missions_at_zero(self):
+        m = self._import()
+        self.assertEqual(m.visit_count, 25)          # 이력은 그대로 인정
+        self.assertEqual(m.baseline_visit_count, 25)
+        self.assertEqual(self.mission.member_value(m), 0)   # 미션은 0부터
+
+    def test_imported_member_can_actually_earn_the_mission(self):
+        # 예전에는 '달성' 상태로 잠겨 있어 영영 받을 수 없었다.
+        m = self._import()
+        for i in range(4):
+            self._buy(m, f"b{i}")
+        m.refresh_from_db()
+        self.assertEqual(self.mission.member_value(m), 4)
+        r = self._buy(m, "b4")                        # 5번째 — 달성
+        got = [x for x in r.rewards if x.get("title") == "이번 시즌 5회 방문"]
+        self.assertTrue(got, f"미션 보상이 안 나왔다: {r.rewards}")
+        self.assertEqual(got[0]["points"], 1000)
+
+    def test_ordinary_member_unaffected(self):
+        m = Member.objects.create(
+            store=self.store, phone="01011112222", name="새 손님"
+        )
+        self.assertEqual(m.baseline_visit_count, 0)
+        for i in range(4):
+            self._buy(m, f"n{i}")
+        m.refresh_from_db()
+        self.assertEqual(self.mission.member_value(m), 4)
+        r = self._buy(m, "n4")
+        self.assertTrue([x for x in r.rewards if x.get("points") == 1000])
+
+    def test_tier_still_uses_full_history(self):
+        # 등급은 지난 기록을 인정해야 하는 값이라 기준선을 빼지 않는다.
+        from .imports import import_members_csv
+
+        import_members_csv(
+            csv_text="이름,연락처,포인트,누적결제액\n,01077778888,0,350000\n"
+        )
+        m = Member.objects.get(phone="01077778888")
+        self.assertEqual(m.total_spent, 350000)
+        self.assertEqual(m.tier, Member.Tier.GOLD)
+        # 다만 등급 쿠폰은 소급 지급되지 않는다
+        self.assertEqual(m.tier_rewarded, Member.Tier.GOLD)
+        self.assertEqual(m.coupons.count(), 0)
+
+    def test_baseline_survives_purchases_made_before_backfill(self):
+        # 백필은 '지금 값 − 앱에서 쌓은 값'으로 기준선을 되살린다.
+        m = self._import()
+        self._buy(m, "p1")
+        self._buy(m, "p2")
+        m.refresh_from_db()
+        Member.objects.filter(pk=m.pk).update(
+            baseline_visit_count=0, baseline_total_spent=0
+        )   # 기준선이 없던 시절 상태로 되돌림
+
+        import importlib
+        mod = importlib.import_module(
+            "membership.migrations.0022_backfill_baseline_and_mission"
+        )
+        from django.apps import apps as global_apps
+        mod._forward(global_apps, None)
+
+        m.refresh_from_db()
+        self.assertEqual(m.baseline_visit_count, 25)      # 이관값 정확히 복원
+        self.assertEqual(self.mission.member_value(m), 2)  # 앱에서 온 2회만

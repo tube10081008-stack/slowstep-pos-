@@ -136,6 +136,13 @@ class Member(models.Model):
     )
     # 초대 코드를 쓴 시각 — 초대한 쪽의 '하루 1명' 제한을 세는 기준
     referral_used_at = models.DateTimeField("초대 사용 시각", null=True, blank=True)
+    # 이관 시점의 방문·누적 스냅샷. **미션은 이 기준선 이후만 센다.**
+    # 25번 오신 단골을 그냥 넣으면 '3회 방문' 미션이 처음부터 달성 상태가 되어
+    # 보상을 받을 길이 없다 — 오늘 처음 온 손님은 같은 미션으로 500P를 받는데
+    # 오래 다닌 분만 0P가 되는 셈이라 거꾸로다.
+    # 등급·랭킹은 기준선을 빼지 않는다(그건 지난 기록을 인정해야 하는 값).
+    baseline_visit_count = models.IntegerField("이관 시점 방문수", default=0)
+    baseline_total_spent = models.IntegerField("이관 시점 누적결제", default=0)
     joined_at = models.DateTimeField("가입 시각", auto_now_add=True)
 
     class Meta:
@@ -438,11 +445,18 @@ class Mission(models.Model):
         return self.title
 
     def member_value(self, member: Member) -> int:
-        """회원의 현재 조건 진행값."""
+        """
+        회원의 현재 조건 진행값 — **이관 기준선 이후만** 센다.
+
+        이관해 온 누적치를 그대로 쓰면 오래 다닌 손님일수록 미션이 처음부터
+        달성 상태로 들어와 보상을 받을 길이 없다. 미션은 지난 기록에 대한
+        상이 아니라 앞으로의 행동에 붙는 것이라, 모두 같은 출발선에서 센다.
+        (이관하지 않은 회원은 기준선이 0이라 계산이 그대로다)
+        """
         if self.condition_type == self.Condition.VISIT_COUNT:
-            return member.visit_count
+            return max(0, member.visit_count - member.baseline_visit_count)
         if self.condition_type == self.Condition.TOTAL_SPENT:
-            return member.total_spent
+            return max(0, member.total_spent - member.baseline_total_spent)
         return 0
 
 
