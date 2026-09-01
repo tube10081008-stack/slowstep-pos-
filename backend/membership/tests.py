@@ -2382,3 +2382,21 @@ class RewardTuningTests(TestCase):
         self._buy(mocha, "s3")                   # 커피 카테고리 정복
         keys = {q.key for q in build_candidates(self.m)}
         self.assertIn("collection:coffee", keys)
+
+
+class HappyHourDefaultTests(TestCase):
+    """해피아워는 꺼진 채로 시작해야 한다 — 예전 시드가 14~16시 ×2를 넣었었다."""
+
+    def test_seed_demo_does_not_enable_happy_hour(self):
+        from django.core.management import call_command
+
+        call_command("seed_demo", "--no-members", verbosity=0)
+        store = Store.objects.first()
+        self.assertEqual((store.happy_start, store.happy_end), (0, 0))
+        self.assertFalse(store.happy_hour_active)
+
+    def test_happy_hour_off_means_no_multiplier(self):
+        from .rewards import earn_multiplier
+
+        store = make_store(happy_start=0, happy_end=0, happy_multiplier=2)
+        self.assertEqual(earn_multiplier(store), 1)
