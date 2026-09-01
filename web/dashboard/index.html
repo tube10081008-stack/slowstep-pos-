@@ -40,6 +40,15 @@
   .today .t-biz { font-size:11px; font-weight:700; padding:5px 11px; border-radius:999px;
     background:rgba(255,255,255,.22); white-space:nowrap; }
   .today .t-sub { font-size:12.5px; color:rgba(255,255,255,.78); margin-top:8px; }
+  .today .t-nav { display:flex; align-items:center; gap:6px; margin-top:14px; }
+  .today .t-nav button { background:rgba(255,255,255,.18); color:#fff; border:0;
+    border-radius:8px; padding:7px 11px; font-size:14px; font-weight:700; line-height:1;
+    cursor:pointer; }
+  .today .t-nav button:disabled { opacity:.35; cursor:default; }
+  .today .t-nav button.t-today { font-size:12px; padding:8px 12px; }
+  .today .t-nav input { flex:1; min-width:0; background:rgba(255,255,255,.18); border:0;
+    color:#fff; border-radius:8px; padding:7px 10px; font-size:13px; font-family:inherit;
+    color-scheme:dark; }
   .today .t-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
     margin-top:18px; padding-top:16px; border-top:1px solid rgba(255,255,255,.22); }
   .today .t-grid div { font-size:11px; color:rgba(255,255,255,.72); }
@@ -96,6 +105,13 @@
     border-radius:5px 5px 0 0; min-height:3px; position:relative; }
   .bars .b span { position:absolute; bottom:-18px; left:50%; transform:translateX(-50%);
     font-size:9px; color:var(--muted); white-space:nowrap; }
+  /* 막대 위 금액(만원). 값이 없는 날은 표시하지 않는다 — 0이 줄줄이 뜨면 지저분하다 */
+  .bars .b em { position:absolute; top:-16px; left:50%; transform:translateX(-50%);
+    font-size:9.5px; font-weight:700; color:var(--txt); font-style:normal;
+    white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .bars .b.today { background:linear-gradient(180deg,#ffb703,#f59e0b); }
+  .bars .b.today em { color:#b45309; }
+  .bars { padding-top:18px; }
   .tier-bar { display:flex; height:12px; border-radius:6px; overflow:hidden; margin:10px 0; background:var(--card2); }
   .tier-bar i { display:block; height:100%; }
   .legend { display:flex; gap:14px; font-size:12px; color:var(--muted); flex-wrap:wrap; }
@@ -166,10 +182,16 @@
   <div class="card today" id="todayCard">
     <div class="t-head">
       <div>
-        <div class="t-lb">오늘 매출</div>
+        <div class="t-lb" id="tLb">오늘 매출</div>
         <div class="t-val" id="tRevenue">—</div>
       </div>
       <span class="t-biz" id="tBiz">—</span>
+    </div>
+    <div class="t-nav">
+      <button onclick="shiftDay(-1)" aria-label="이전 날">‹</button>
+      <input type="date" id="tDate" onchange="pickDay(this.value)" />
+      <button onclick="shiftDay(1)" id="tNext" aria-label="다음 날">›</button>
+      <button class="t-today" onclick="pickDay('')">오늘</button>
     </div>
     <div class="t-sub" id="tSub">불러오는 중…</div>
     <div class="t-grid" id="tGrid"></div>
@@ -178,8 +200,8 @@
   <!-- 오늘 주문 내역 -->
   <div class="card" style="margin-top:14px">
     <div class="ohead">
-      <h3 style="margin:0">주문 내역</h3>
-      <button class="ghost sm" onclick="loadOrders()">새로고침</button>
+      <h3 style="margin:0">주문 내역 <span class="muted" style="font-weight:400" id="oDate"></span></h3>
+      <button class="ghost sm" onclick="loadDay()">새로고침</button>
     </div>
     <div id="orders" class="muted">불러오는 중…</div>
   </div>
@@ -190,7 +212,7 @@
   <div class="grid cols" style="margin-top:14px;">
     <!-- 매출 추세 -->
     <div class="card">
-      <h3>최근 14일 매출</h3>
+      <h3>최근 14일 매출 <span class="muted" style="font-weight:400">· 만원</span></h3>
       <div class="bars" id="trend"></div>
       <div style="height:22px"></div>
     </div>
@@ -372,9 +394,13 @@
 
     // 매출 추세
     const max = Math.max(1, ...d.trend_14d.map(t=>t.revenue));
-    $("trend").innerHTML = d.trend_14d.map(t=>
-      `<div class="b" style="height:${Math.round(t.revenue/max*100)}%" title="${t.date} ${won(t.revenue)}"><span>${t.date}</span></div>`
-    ).join("");
+    const today = localDate();
+    $("trend").innerHTML = d.trend_14d.map(t=>{
+      const isToday = t.date === today || t.date.endsWith(today.slice(5));
+      return `<div class="b${isToday?" today":""}" style="height:${Math.round(t.revenue/max*100)}%"
+        title="${t.date} ${won(t.revenue)}">
+        ${t.revenue ? `<em>${manwon(t.revenue)}</em>` : ""}<span>${t.date}</span></div>`;
+    }).join("");
 
     // 등급 분포
     const tb = d.members.tier_breakdown, tot = d.members.total || 1;
@@ -595,17 +621,58 @@
     }
   }
 
+  /* 만원 단위로 줄여 쓴다 — 14개 막대에 ₩54,150 을 다 적으면 겹친다.
+     10만원 미만은 소수 한 자리(5.4), 그 이상은 정수(32). */
+  const manwon = (v) => {
+    const m = (v || 0) / 10000;
+    return m < 10 ? (Math.round(m * 10) / 10).toString() : Math.round(m).toString();
+  };
+  const localDate = (d) => {
+    d = d || new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  };
+
+  /* ── 날짜 선택 ───────────────────────────────────────
+     빈 문자열이면 '오늘'. 서버에 date 를 안 보내면 서버가 오늘로 처리하므로
+     시계가 어긋나도 매장 기준 날짜가 맞는다. */
+  let viewDate = "";
+
+  function pickDay(v){
+    const today = localDate();
+    viewDate = (!v || v === today) ? "" : v;
+    loadDay();
+  }
+  function shiftDay(delta){
+    const base = new Date((viewDate || localDate()) + "T00:00:00");
+    base.setDate(base.getDate() + delta);
+    if(localDate(base) > localDate()) return;      // 미래는 볼 게 없다
+    pickDay(localDate(base));
+  }
+  async function loadDay(){
+    const today = localDate();
+    const shown = viewDate || today;
+    $("tDate").value = shown;
+    $("tDate").max = today;
+    $("tNext").disabled = shown >= today;
+    $("tLb").textContent = viewDate ? "그날 매출" : "오늘 매출";
+    $("oDate").textContent = viewDate ? `· ${viewDate}` : "· 오늘";
+    await Promise.all([loadToday(), loadOrders()]);
+  }
+
   /* ── 오늘 요약 ─────────────────────────────────────── */
   async function loadToday(){
     let d;
-    try { d = await api("/api/v1/sales/summary"); }
-    catch(e){ $("tSub").textContent = "오늘 매출을 불러오지 못했습니다."; return; }
+    const q = viewDate ? "?date=" + viewDate : "";
+    try { d = await api("/api/v1/sales/summary" + q); }
+    catch(e){ $("tSub").textContent = "매출을 불러오지 못했습니다."; return; }
     $("tRevenue").textContent = won(d.net);
+    // 영업 상태는 '지금' 값이라 지난 날짜에는 의미가 없다
+    $("tBiz").style.display = viewDate ? "none" : "";
     $("tBiz").textContent = d.is_open ? "영업 중" : "영업 종료";
     const m = d.margin || {};
     $("tSub").textContent = d.count
       ? `${d.date} · ${num(d.count)}건`
-      : `${d.date} · 아직 결제가 없습니다`;
+      : `${d.date} · 결제 내역이 없습니다`;
     const avg = d.count ? Math.round(d.net / d.count) : 0;
     $("tGrid").innerHTML = [
       ["건수", num(d.count) + "건"],
@@ -621,17 +688,22 @@
   let orders = [], openOrder = null;
 
   async function loadOrders(){
-    try { orders = await api("/api/v1/transactions"); }
+    const q = viewDate ? "?date=" + viewDate : "";
+    try { orders = await api("/api/v1/transactions" + q); }
     catch(e){ $("orders").innerHTML = `<p class="muted">주문 내역을 불러오지 못했습니다.</p>`; return; }
     renderOrders();
   }
 
   function renderOrders(){
-    const today = new Date().toISOString().slice(0, 10);
-    const list = orders.filter(t => (t.paid_at || t.created_at || "").slice(0, 10) === today);
+    // 날짜를 지정하면 서버가 그날치만 준다. 지정 안 하면 최근 100건이라
+    // 오늘만 남기는 건 여기서 한 번 더 거른다.
+    const today = localDate();
+    const list = viewDate ? orders
+      : orders.filter(t => (t.paid_at || t.created_at || "").slice(0, 10) === today);
     const box = $("orders");
     if(!list.length){
-      box.innerHTML = `<p class="muted">오늘 주문이 아직 없습니다.</p>`;
+      box.className = "muted";
+      box.innerHTML = `<p class="muted">${viewDate ? "그날" : "오늘"} 주문이 없습니다.</p>`;
       return;
     }
     box.className = "";
@@ -667,7 +739,7 @@
     await StorePin.require("점주 대시보드");   // 원가·고객정보 노출 → PIN 필수
     checkStorage();
     // 오늘 요약·주문 내역을 먼저 그린다 — 폰으로 여는 대부분의 이유가 이 둘이다
-    try { await loadToday(); await loadOrders(); } catch(e){}
+    try { await loadDay(); } catch(e){}
     try { await loadDashboard(); await loadMargins(); await loadSegments(); doPreview(); }
     catch(e){ $("sub").textContent = "백엔드 연결 안됨: "+e.message; }
   })();

@@ -1,6 +1,8 @@
 """
 API 뷰. API 계약(docs/API-CONTRACT.md, Base: /api/v1)에 맞춰 구현.
 """
+from datetime import datetime
+
 from django.conf import settings
 from django.db import connection
 from django.db.models import Count, F, Q, Sum
@@ -49,6 +51,17 @@ from .services import (
     checkout,
 )
 from .services import spin as spin_service
+
+
+def _query_date(request):
+    """?date=YYYY-MM-DD → date. 없거나 형식이 틀리면 None(호출부가 오늘로 처리)."""
+    raw = (request.query_params.get("date") or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def _resolve_member(member_id):
@@ -275,7 +288,7 @@ class SalesSummaryView(APIView):
 
     def get(self, request):
         store = Store.objects.first()
-        today = timezone.localdate()
+        today = _query_date(request) or timezone.localdate()
         paid = Transaction.objects.filter(status=Transaction.Status.PAID)
         today_qs = paid.filter(paid_at__date=today)
         agg = today_qs.aggregate(
@@ -514,9 +527,14 @@ class TransactionViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         # 목록은 최근 결제/취소 100건(대기 제외), 그 외 액션은 전체 대상.
         base = Transaction.objects.select_related("member").prefetch_related("items")
-        if self.action == "list":
-            return base.exclude(status=Transaction.Status.PENDING)[:100]
-        return base.all()
+        if self.action != "list":
+            return base.all()
+        qs = base.exclude(status=Transaction.Status.PENDING)
+        # ?date=YYYY-MM-DD 면 그날치만. 날짜를 안 주면 최근 100건(기존 동작).
+        day = _query_date(self.request)
+        if day:
+            return qs.filter(paid_at__date=day)
+        return qs[:100]
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):

@@ -411,9 +411,16 @@ GET    /api/v1/menu?all=1  🔒  판매중지분까지(관리 목록용)
 ### `POST /api/v1/store/session`
 영업 시작/마감. `{ "action": "open" | "close" }` → 갱신된 store 반환.
 
-### `GET /api/v1/sales/summary`
-오늘 정산: `{ count, gross, discount, net, points, by_method, is_open, opened_at, margin }`.
-`margin` = 오늘 기여이익 `{ supply_revenue, material_cost, reward_cost, contribution, margin_rate }`.
+### `GET /api/v1/sales/summary?date=YYYY-MM-DD`
+하루 정산: `{ count, gross, discount, net, points, by_method, is_open, opened_at, margin }`.
+`margin` = 그날 기여이익 `{ supply_revenue, material_cost, reward_cost, contribution, margin_rate }`.
+
+- `date`를 비우면 **오늘**. 지난 날짜를 주면 그날 마감 기준으로 다시 계산한다.
+- **형식이 틀린 `date`는 400이 아니라 오늘로 처리한다.** 점주 대시보드는 계산대
+  옆에서 보는 화면이라, 주소가 이상하다고 빈 화면을 띄우는 것보다 오늘 매출을
+  보여주는 쪽이 낫다.
+- `is_open`·`opened_at`은 **지금** 영업 상태라서 과거 날짜에는 의미가 없다
+  (대시보드는 과거를 볼 때 영업 배지를 감춘다).
 
 ### `GET /api/v1/margins/summary?days=30`
 **원가·마진 분석**(점주 전용). 기준: **공급가(매출÷(1+vat))** − **재료원가** −
@@ -436,8 +443,12 @@ GET    /api/v1/menu?all=1  🔒  판매중지분까지(관리 목록용)
   부가세율은 `Store.vat_rate`. 원가는 결제 시점에 `OrderItem.unit_cost`로 스냅샷되어
   나중에 원가를 바꿔도 과거 마진은 불변. `has_cost=false`는 원가 미입력 메뉴.
 
-### `GET /api/v1/transactions`
-주문 내역: 최근 결제완료 100건(주문 항목·회원명·수단 포함).
+### `GET /api/v1/transactions?date=YYYY-MM-DD`
+주문 내역(주문 항목·회원명·수단 포함).
+
+- `date`를 주면 **그날 결제된 건 전부**(`paid_at` 기준, 매장 시간대).
+- 비우면 날짜 무관 **최근 100건**. `sales/summary`와 같은 규칙으로, 형식이
+  틀린 `date`는 무시하고 최근 목록을 준다.
 
 ### `GET /api/v1/members?q=<검색어>`
 고객 관리: 이름·연락처로 검색(누적결제 내림차순).

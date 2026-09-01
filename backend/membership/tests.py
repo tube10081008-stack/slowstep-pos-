@@ -2067,3 +2067,71 @@ class MenuReorderTests(TestCase):
         res = anon.post("/api/v1/menu/reorder",
                         data={"ids": [self.items[0].id]}, content_type="application/json")
         self.assertEqual(res.status_code, 403)
+
+
+class DateFilterTests(TestCase):
+    """날짜 선택 — 어제 매출·주문 조회."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99, set_discount_amount=0)
+        self.menu = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000,
+            category=MenuItem.Category.COFFEE, cost=600,
+        )
+        authenticate(self.client)
+        self.today = timezone.localdate()
+        self.yesterday = self.today - timedelta(days=1)
+        self._buy("t1", qty=1)                          # 오늘 4,000
+        r = self._buy("y1", qty=2)                      # 어제 8,000
+        Transaction.objects.filter(pk=r.transaction.pk).update(
+            paid_at=timezone.now() - timedelta(days=1)
+        )
+
+    def _buy(self, oid, qty=1):
+        return checkout(
+            member=None, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.menu.id, "quantity": qty}],
+            toss_order_id=oid,
+        )
+
+    def test_summary_defaults_to_today(self):
+        d = self.client.get("/api/v1/sales/summary").json()
+        self.assertEqual(d["date"], self.today.isoformat())
+        self.assertEqual(d["net"], 4000)
+        self.assertEqual(d["count"], 1)
+
+    def test_summary_for_a_past_day(self):
+        d = self.client.get(f"/api/v1/sales/summary?date={self.yesterday}").json()
+        self.assertEqual(d["date"], self.yesterday.isoformat())
+        self.assertEqual(d["net"], 8000)
+        self.assertEqual(d["count"], 1)
+
+    def test_orders_filtered_by_date(self):
+        today = self.client.get(f"/api/v1/transactions?date={self.today}").json()
+        past = self.client.get(f"/api/v1/transactions?date={self.yesterday}").json()
+        self.assertEqual([t["net_amount"] for t in today], [4000])
+        self.assertEqual([t["net_amount"] for t in past], [8000])
+
+    def test_orders_without_date_returns_recent(self):
+        """날짜를 안 주면 기존대로 최근 목록 — 화면이 갑자기 비면 안 된다."""
+        rows = self.client.get("/api/v1/transactions").json()
+        self.assertEqual(len(rows), 2)
+
+    def test_bad_date_falls_back_to_today(self):
+        """형식이 틀려도 500이 아니라 오늘로 처리한다."""
+        d = self.client.get("/api/v1/sales/summary?date=어제").json()
+        self.assertEqual(d["date"], self.today.isoformat())
+        rows = self.client.get("/api/v1/transactions?date=2026-13-45").json()
+        self.assertEqual(len(rows), 2)
+
+    def test_empty_day(self):
+        far = (self.today - timedelta(days=90)).isoformat()
+        d = self.client.get(f"/api/v1/sales/summary?date={far}").json()
+        self.assertEqual(d["count"], 0)
+        self.assertEqual(d["net"], 0)
+        self.assertEqual(self.client.get(f"/api/v1/transactions?date={far}").json(), [])
+
+    def test_summary_needs_staff_token(self):
+        anon = self.client_class()
+        self.assertEqual(anon.get("/api/v1/sales/summary").status_code, 403)
