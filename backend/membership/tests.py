@@ -2400,3 +2400,68 @@ class HappyHourDefaultTests(TestCase):
 
         store = make_store(happy_start=0, happy_end=0, happy_multiplier=2)
         self.assertEqual(earn_multiplier(store), 1)
+
+
+class PayhereMigrationTests(TestCase):
+    """이관 마이그레이션 — 42명·소급 지급 없음·중복 안전."""
+
+    def _load(self):
+        import importlib
+
+        mod = importlib.import_module(
+            "membership.migrations.0020_import_payhere_members"
+        )
+        return mod
+
+    def test_member_list_is_wellformed(self):
+        mod = self._load()
+        self.assertEqual(len(mod.MEMBERS), 42)
+        phones = [p for p, _pt, _v in mod.MEMBERS]
+        self.assertEqual(len(set(phones)), 42, "연락처 중복")
+        for phone, points, visits in mod.MEMBERS:
+            self.assertRegex(phone, r"^010\d{8}$")
+            self.assertGreaterEqual(points, 2000, "2,000P 미만은 제외 대상")
+            self.assertGreater(visits, 0)
+
+    def test_load_creates_members_without_retroactive_rewards(self):
+        from collections import Counter
+
+        from .models import Coupon, PointEntry
+
+        make_store()
+        mod = self._load()
+        mod._load(None, None)
+
+        phones = [p for p, _pt, _v in mod.MEMBERS]
+        ms = Member.objects.filter(phone__in=phones)
+        self.assertEqual(ms.count(), 42)
+        self.assertEqual(sum(m.points for m in ms), 176_807)
+        self.assertEqual({m.tier for m in ms}, {Member.Tier.BRONZE})
+        self.assertEqual(Coupon.objects.filter(member__in=ms).count(), 0)
+        reasons = Counter(
+            PointEntry.objects.filter(member__in=ms).values_list("reason", flat=True)
+        )
+        self.assertEqual(dict(reasons), {"adjust": 42})
+        # 가입 축하 포인트는 이관 회원에게 붙지 않는다
+        self.assertEqual(len(set(m.name for m in ms)), 42, "닉네임 중복")
+
+    def test_running_twice_does_not_duplicate(self):
+        # 사장님이 대시보드로 같은 CSV를 또 올려도 안전해야 한다.
+        from .models import PointEntry
+
+        make_store()
+        mod = self._load()
+        mod._load(None, None)
+        mod._load(None, None)
+
+        phones = [p for p, _pt, _v in mod.MEMBERS]
+        ms = Member.objects.filter(phone__in=phones)
+        self.assertEqual(ms.count(), 42)
+        self.assertEqual(sum(m.points for m in ms), 176_807)
+        self.assertEqual(PointEntry.objects.filter(member__in=ms).count(), 42)
+
+    def test_no_store_is_survivable(self):
+        # 빈 DB에 처음부터 migrate 하는 경우 — 죽지 않고 조용히 넘어간다.
+        self.assertEqual(Store.objects.count(), 0)
+        self._load()._load(None, None)
+        self.assertEqual(Member.objects.count(), 0)
