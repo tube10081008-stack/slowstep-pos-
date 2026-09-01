@@ -613,7 +613,7 @@ def apply_referral(member: Member, code: str) -> dict:
     ).count()
     if today_count >= REFERRAL_DAILY_LIMIT:
         raise ReferralError(
-            f"이 코드는 오늘 이미 사용됐어요. 초대는 하루 {REFERRAL_DAILY_LIMIT}명까지예요."
+            f"이 코드는 오늘 몫을 다 썼어요. 초대는 하루 {REFERRAL_DAILY_LIMIT}명까지예요."
         )
 
     me.referred_by = host

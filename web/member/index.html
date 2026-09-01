@@ -606,7 +606,7 @@
       // 지갑에 바로 꽂아 준다 — 새로고침을 시키면 당첨의 여운이 끊긴다
       lastData.coupons = [{
         id:c.id, kind:c.kind, name:c.name, source:"룰렛", note:"",
-        discount_pct:(c.kind==="discount_5"?5:c.kind==="discount_10"?10:0),
+        discount_pct:(c.kind==="discount_10"?10:c.kind==="discount_20"?20:0),
         expires_at:c.expires_at, days_left:days,
       }, ...(lastData.coupons || [])];
       renderCoupons(lastData.coupons);
@@ -701,7 +701,10 @@
     let sh = "";
     for(let i=0;i<goal;i++) sh += `<div class="stamp ${i<m.stamps?"on":""}">${CUP}</div>`;
     $("stamps").innerHTML = sh;
-    $("stampHint").textContent = goal-m.stamps>0 ? `${goal-m.stamps}잔 더 모으면 보상 포인트가 적립됩니다.` : "보상 적립이 완료되었습니다.";
+    // 스탬프를 다 모으면 나가는 건 포인트가 아니라 **룰렛 기회**다.
+    $("stampHint").textContent = goal-m.stamps>0
+      ? `${goal-m.stamps}잔 더 모으면 룰렛 기회가 1번 생겨요.`
+      : "룰렛 기회를 받았어요! 위에서 돌려보세요.";
 
     // 타임라인
     if(!d.timeline.length){
@@ -735,9 +738,14 @@
         </div>`;
       }).join("");
       const bonus = $("qgBonus");
-      if(qg.bonus && !qg.bonus_earned){
+      // 도장깨기는 포인트가 아니라 룰렛 기회를 준다 — 보상 종류가 다르므로
+      // 문구도 달라야 한다. 둘 다 없으면 아예 감춘다.
+      const reward = qg.bonus_spins
+        ? `<b>룰렛 기회 ${qg.bonus_spins}번</b>`
+        : (qg.bonus ? `<b>+${won(qg.bonus)}P</b>` : "");
+      if(reward && !qg.bonus_earned){
         bonus.style.display = "";
-        bonus.innerHTML = `이 챕터를 완주하면 <b>+${won(qg.bonus)}P</b>`;
+        bonus.innerHTML = `이 챕터를 완주하면 ${reward}`;
       } else { bonus.style.display = "none"; }
     } else { $("questCard").style.display = "none"; }
 
@@ -806,8 +814,10 @@
     const rf = d.referral || {};
     if(rf.code){
       $("refCard").style.display = "";
+      // 하루 한도를 미리 알려준다 — 코드를 뿌렸다가 거절당하면 기분이 상한다.
       $("refDesc").textContent =
         `친구가 아래 코드를 입력하면 둘 다 ${won(rf.reward)}P를 받아요` +
+        (rf.daily_limit ? ` · 하루 ${rf.daily_limit}명까지` : "") +
         (rf.invited ? ` · 지금까지 ${rf.invited}명 초대` : "");
       $("refCode").textContent = rf.code;
       $("refInput").style.display = rf.referred ? "none" : "";

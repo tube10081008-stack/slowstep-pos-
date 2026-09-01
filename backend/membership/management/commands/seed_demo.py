@@ -77,7 +77,7 @@ class Command(BaseCommand):
             defaults={
                 "point_earn_rate": "0.03",
                 "stamp_goal": 10,
-                "stamp_reward_points": 3000,
+                "stamp_reward_points": 0,
             },
         )
         # 정책 갱신(기존 매장도 반영)

@@ -14,15 +14,15 @@ from .models import Coupon
 
 # 룰렛 칸: (쿠폰 종류, 확률 %)
 #
-# 사장님 지정: **할인쿠폰(5%·10%) 합쳐서 60%**, 1+1과 무료음료 각 20%,
-# 원두 200g은 0%. 할인 60%를 두 장으로 나눌 때 싼 쪽(5%)에 더 실었다 —
+# 사장님 지정: **할인쿠폰(10%·20%) 합쳐서 60%**, 1+1과 무료음료 각 20%,
+# 원두 200g은 0%. 할인 60%를 두 장으로 나눌 때 싼 쪽(10%)에 더 실었다 —
 # 40/20 이 아니라 30/30 을 원하시면 이 두 줄만 바꾸면 된다.
 #
 # 원두 200g은 **확률 0** — 화면에는 보이지만 당첨되지 않는 '보여주기용' 칸이다.
 # 눈에 보이는 큰 상품이 있어야 돌릴 맛이 나고, 실제 지급 부담은 지지 않는다.
 ROULETTE = (
-    (Coupon.Kind.DISCOUNT_5, 40),
-    (Coupon.Kind.DISCOUNT_10, 20),
+    (Coupon.Kind.DISCOUNT_10, 40),
+    (Coupon.Kind.DISCOUNT_20, 20),
     (Coupon.Kind.BOGO, 20),
     (Coupon.Kind.FREE_DRINK, 20),
     (Coupon.Kind.BEANS_200, 0),
@@ -30,8 +30,8 @@ ROULETTE = (
 
 # 룰렛 칸 표시용 (라벨, 부제)
 WHEEL_LABELS = {
-    Coupon.Kind.DISCOUNT_5: ("5%", "할인 쿠폰"),
     Coupon.Kind.DISCOUNT_10: ("10%", "할인 쿠폰"),
+    Coupon.Kind.DISCOUNT_20: ("20%", "할인 쿠폰"),
     Coupon.Kind.BOGO: ("1+1", "음료 쿠폰"),
     Coupon.Kind.FREE_DRINK: ("FREE", "무료 음료"),
     Coupon.Kind.BEANS_200: ("원두", "200g"),
@@ -39,8 +39,8 @@ WHEEL_LABELS = {
 
 # 친구 초대 보상 (초대한 사람 / 초대받은 사람 각각)
 REFERRAL_REWARD = 1000
-# 초대는 하루에 한 명까지만 — 지인끼리 코드를 돌려쓰는 걸 막는다
-REFERRAL_DAILY_LIMIT = 1
+# 초대는 하루에 두 명까지만 — 지인끼리 코드를 돌려쓰는 걸 막는다
+REFERRAL_DAILY_LIMIT = 2
 
 # 룰렛 기회를 주는 연속 방문 조건
 DAILY_STREAK_GOAL = 5     # 5일 연속 방문

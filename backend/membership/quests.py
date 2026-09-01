@@ -31,17 +31,25 @@ MAX_REWARD = 2000               # 퀘스트 1개 보상 상한
 MAX_REWARD_PER_CHECKOUT = 3000  # 결제 1건에서 나갈 수 있는 퀘스트 보상 총액
 GROUP_SIZE = 3                  # 한 그룹에 담는 퀘스트 수 상한
 
-# 그룹(챕터) 정의 — 위에서부터 우선순위. (키, 제목, 한 줄 설명, 클리어 보너스)
+TASTE_REWARD = 200      # '처음 만나기' 1건 — 문턱이 낮으니 보상도 낮게
+GROUP_CLEAR_BONUS = 500  # 챕터 완주 보너스(공통)
+COLLECTION_MIN_KINDS = 3  # 이 종류 수 미만인 갈래는 도장깨기로 치지 않는다
+
+# 그룹(챕터) 정의 — 위에서부터 우선순위.
+# (키, 제목, 한 줄 설명, 클리어 보너스 포인트, 클리어 시 룰렛 기회)
 # 미달성 퀘스트가 남은 **첫 번째** 그룹 하나만 손님에게 보여 준다.
+#
+# 도장깨기는 포인트 대신 **룰렛 기회**로 준다 — 메뉴를 전부 도는 건 가장
+# 품이 드는 챕터라, 숫자로 주는 것보다 한 번 돌리는 재미가 남는 게 낫다.
 GROUPS = (
-    ("comeback", "다시 만나기", "오랜만이에요. 발걸음만 해주시면 돼요", 0),
-    ("collection", "도장깨기", "거의 다 모으셨어요. 마무리만 남았습니다", 1000),
-    ("taste", "취향 탐험대", "아직 안 드셔본 갈래를 하나씩", 1000),
-    ("rhythm", "나만의 리듬", "평소 오시던 박자를 이어가요", 1000),
-    ("option", "한 끗 다르게", "늘 마시던 잔을 조금만 바꿔서", 500),
-    ("timeslot", "다른 시간의 슬로우스텝", "같은 자리도 시간에 따라 달라요", 500),
+    ("comeback", "다시 만나기", "오랜만이에요. 발걸음만 해주시면 돼요", 0, 0),
+    ("collection", "도장깨기", "거의 다 모으셨어요. 마무리만 남았습니다", 0, 1),
+    ("taste", "취향 탐험대", "아직 안 드셔본 갈래를 하나씩", GROUP_CLEAR_BONUS, 0),
+    ("rhythm", "나만의 리듬", "평소 오시던 박자를 이어가요", GROUP_CLEAR_BONUS, 0),
+    ("option", "한 끗 다르게", "늘 마시던 잔을 조금만 바꿔서", GROUP_CLEAR_BONUS, 0),
+    ("timeslot", "다른 시간의 슬로우스텝", "같은 자리도 시간에 따라 달라요", GROUP_CLEAR_BONUS, 0),
 )
-GROUP_META = {k: (t, d, b) for k, t, d, b in GROUPS}
+GROUP_META = {k: (t, d, b, s) for k, t, d, b, s in GROUPS}
 GROUP_ORDER = [k for k, *_ in GROUPS]
 
 
@@ -182,14 +190,24 @@ def build_candidates(member) -> list[Quest]:
                 progress=1 if last_gap >= threshold else 0, target=1, reward=1000,
             ))
 
-    # ── 2) 컬렉션 마무리: 거의 다 모은 카테고리(1~2종 남음) ──
+    # ── 2) 컬렉션 마무리: 거의 다 모은 카테고리(2종 이내로 남음) ──
+    # **다 모은 것(left==0)도 후보에 남긴다.** 예전에는 1~2종 남은 것만 뽑았는데,
+    # 마지막 한 잔을 마시는 순간 후보에서 사라져 보상을 줄 기회가 없었다
+    # (취향 탐험대 쪽에 적어둔 것과 같은 함정). 후보는 두고 진행률로 판정한다.
+    # 정렬은 아직 남은 것 먼저 — 다 깬 칸이 앞자리를 차지하면 화면에
+    # 할 일이 안 보인다.
     picked = 0
-    for cat, c in sorted(coll.items(), key=lambda kv: kv[1]["total"] - kv[1]["tried"]):
+    for cat, c in sorted(coll.items(),
+                         key=lambda kv: (kv[1]["total"] == kv[1]["tried"],
+                                         kv[1]["total"] - kv[1]["tried"])):
         left = c["total"] - c["tried"]
-        if c["tried"] > 0 and 1 <= left <= 2:
+        # 종류가 3개는 돼야 '정복'이라 부를 만하다. 1~2종짜리 갈래(그날의
+        # 디저트 등)까지 세면 한 잔 마시고 챕터가 끝나 룰렛이 공짜로 나간다.
+        if c["total"] >= COLLECTION_MIN_KINDS and c["tried"] > 0 and 0 <= left <= 2:
             out.append(Quest(
                 key=f"collection:{cat}", kind="collection",
-                title=f"{labels.get(cat, cat)} 정복까지 {left}종",
+                title=(f"{labels.get(cat, cat)} 정복까지 {left}종" if left
+                       else f"{labels.get(cat, cat)} 정복"),
                 description=(f"다음 도전: {c['next']}" if c["next"] else "마지막 한 잔!"),
                 progress=c["tried"], target=c["total"], reward=1000,
             ))
@@ -209,7 +227,7 @@ def build_candidates(member) -> list[Quest]:
             title=f"{labels.get(cat, cat)} 처음 만나기",
             description=(f"{coll[cat]['next']} 어떠세요?" if coll[cat]["next"]
                          else "새로운 맛을 만나요"),
-            progress=min(1, cats.get(cat, 0)), target=1, reward=500,
+            progress=min(1, cats.get(cat, 0)), target=1, reward=TASTE_REWARD,
         ))
         picked += 1
         if picked >= GROUP_SIZE:
@@ -312,12 +330,13 @@ def active_group(member) -> dict | None:
             continue
         if all(q.is_completed for q in items):
             continue                       # 다 깬 챕터 — 다음으로 넘어간다
-        title, desc, bonus = GROUP_META[key]
+        title, desc, bonus, bonus_spins = GROUP_META[key]
         return {
             "key": key,
             "title": title,
             "description": desc,
             "bonus": bonus,
+            "bonus_spins": bonus_spins,
             "bonus_earned": group_key(key) in done,
             "done": sum(1 for q in items if q.is_completed),
             "total": len(items),
@@ -338,8 +357,13 @@ def evaluate_and_award(member, txn, record_point) -> list[dict]:
     awarded: list[dict] = []
     budget = MAX_REWARD_PER_CHECKOUT
 
-    def _pay(key, kind, title, points, label) -> bool:
-        """예산 안에서 1회만 지급. 예산을 넘으면 기록하지 않아 다음 방문에 지급된다."""
+    def _pay(key, kind, title, points, label, spins=0) -> bool:
+        """
+        예산 안에서 1회만 지급. 예산을 넘으면 기록하지 않아 다음 방문에 지급된다.
+
+        spins 는 룰렛 기회 — 포인트가 아니라 예산에 잡히지 않는다(당첨 쿠폰은
+        손님이 직접 돌려서 받고, 종류마다 부담이 달라 미리 세지 못한다).
+        """
         nonlocal budget
         if key in done or points > budget:
             return False
@@ -353,7 +377,12 @@ def evaluate_and_award(member, txn, record_point) -> list[dict]:
         budget -= points
         if points:
             record_point(member, txn, points, PointEntry.Reason.MISSION)
-        awarded.append({"type": label, "title": title, "points": points})
+        item = {"type": label, "title": title, "points": points}
+        if spins:
+            member.spins += 1               # 저장은 호출부(_apply_stamp_and_tier 뒤)에서
+            item["spins"] = spins
+            item["description"] = "룰렛 기회 1번! 멤버십에서 돌려보세요"
+        awarded.append(item)
         return True
 
     # 화면에 뜬 챕터가 아니라 **후보 전체**를 본다 — 달성하는 순간 다음 챕터로
@@ -364,7 +393,8 @@ def evaluate_and_award(member, txn, record_point) -> list[dict]:
             if q.is_completed:
                 _pay(q.key, q.kind, q.title, q.reward, "quest")
         # 챕터 완주 보너스 — 퀘스트가 전부 지급 완료된 뒤에만.
-        title, _desc, bonus = GROUP_META[gkey]
-        if bonus and items and all(q.key in done for q in items):
-            _pay(group_key(gkey), "group", f"{title} 완주", bonus, "quest_group")
+        title, _desc, bonus, spins = GROUP_META[gkey]
+        if (bonus or spins) and items and all(q.key in done for q in items):
+            _pay(group_key(gkey), "group", f"{title} 완주", bonus,
+                 "quest_group", spins=spins)
     return awarded

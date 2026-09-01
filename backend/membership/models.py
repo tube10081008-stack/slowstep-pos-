@@ -21,8 +21,13 @@ class Store(models.Model):
     # 이관 회원에게는 주지 않는다 — 그쪽은 기존 잔액을 그대로 옮겨 받는다.
     signup_bonus_points = models.PositiveIntegerField("가입 축하 포인트", default=1000)
     stamp_goal = models.PositiveSmallIntegerField("스탬프 목표", default=10)
+    # 스탬프를 다 모으면 나가는 건 포인트가 아니라 **룰렛 기회 1번**이다.
+    # 이 값은 어디서도 읽지 않는다 — 관리자에서 '3000점이 나간다'고 오해하지
+    # 않도록 이름과 설명을 사실에 맞춘다. (열 자체는 과거 데이터 때문에 남겨둔다)
     stamp_reward_points = models.PositiveIntegerField(
-        "스탬프 달성 보상 포인트", default=3000
+        "스탬프 보상 포인트(미사용)",
+        default=0,
+        help_text="사용하지 않는 값입니다. 스탬프를 다 모으면 룰렛 기회 1번이 지급됩니다.",
     )
     # 커피+디저트 세트 시 디저트 1건당 할인액
     set_discount_amount = models.IntegerField("세트 할인액", default=500)
@@ -508,8 +513,8 @@ class Coupon(models.Model):
     """
 
     class Kind(models.TextChoices):
-        DISCOUNT_5 = "discount_5", "5% 할인"
         DISCOUNT_10 = "discount_10", "10% 할인"
+        DISCOUNT_20 = "discount_20", "20% 할인"
         BOGO = "bogo", "음료 1+1"
         FREE_DRINK = "free_drink", "무료 음료"
         BEANS_200 = "beans_200", "원두 200g"
@@ -521,7 +526,7 @@ class Coupon(models.Model):
         MANUAL = "manual", "수기 지급"
 
     # 할인율 쿠폰은 결제 금액에서 그만큼 깎는다(0이면 금액 할인이 아님)
-    DISCOUNT_PCT = {Kind.DISCOUNT_5: 5, Kind.DISCOUNT_10: 10}
+    DISCOUNT_PCT = {Kind.DISCOUNT_10: 10, Kind.DISCOUNT_20: 20}
     DEFAULT_VALID_DAYS = 90
 
     member = models.ForeignKey(

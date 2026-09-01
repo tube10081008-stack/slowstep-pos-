@@ -910,7 +910,7 @@ class GamificationTests(TestCase):
         w = dict(ROULETTE)
         total = sum(w.values())
         self.assertEqual(total, 100)
-        discount = w[Coupon.Kind.DISCOUNT_5] + w[Coupon.Kind.DISCOUNT_10]
+        discount = w[Coupon.Kind.DISCOUNT_10] + w[Coupon.Kind.DISCOUNT_20]
         self.assertEqual(discount, 60)
         self.assertEqual(w[Coupon.Kind.BOGO], 20)
         self.assertEqual(w[Coupon.Kind.FREE_DRINK], 20)
@@ -1102,6 +1102,11 @@ class QuestTests(TestCase):
     def test_taste_quest_offered_for_untried_category(self):
         from .quests import build_candidates
 
+        # 도장깨기는 3종 이상인 갈래만 센다(1~2종짜리는 '정복'이 아니다).
+        mocha = MenuItem.objects.create(
+            store=self.store, name="카페 모카", price=5000,
+            category=MenuItem.Category.COFFEE,
+        )
         self._buy(self.amer, "q1")
         # 디저트 미경험 → 후보에 오른다
         self.assertIn("taste:dessert", {q.key for q in build_candidates(self.m)})
@@ -1109,6 +1114,7 @@ class QuestTests(TestCase):
         self.assertEqual(self._active_keys(), {"collection:coffee"})
         # 그 챕터를 깨면 '취향 탐험대'가 열린다
         self._buy(self.latte, "q2")
+        self._buy(mocha, "q3")
         self.assertIn("taste:dessert", self._active_keys())
 
     def test_quest_completed_awards_points_once(self):
@@ -1442,7 +1448,7 @@ class StreakSpinTests(TestCase):
 
 
 class ReferralLimitTests(TestCase):
-    """초대 — 하루 1명, 각 1,000P."""
+    """초대 — 하루 2명, 각 1,000P."""
 
     def setUp(self):
         self.store = make_store()
@@ -1467,24 +1473,35 @@ class ReferralLimitTests(TestCase):
         self.assertEqual(g.points, 1000)
         self.assertEqual(self.host.points, 1000)
 
-    def test_second_invite_same_day_rejected(self):
+    def test_second_invite_same_day_allowed(self):
+        # 한도는 2명 — 두 번째까지는 통과해야 한다.
+        from .services import apply_referral
+
+        apply_referral(self._guest(1), self.code)
+        apply_referral(self._guest(2), self.code)
+        self.host.refresh_from_db()
+        self.assertEqual(self.host.points, 2000)
+
+    def test_third_invite_same_day_rejected(self):
         from .services import ReferralError, apply_referral
 
         apply_referral(self._guest(1), self.code)
+        apply_referral(self._guest(2), self.code)
         with self.assertRaises(ReferralError):
-            apply_referral(self._guest(2), self.code)
+            apply_referral(self._guest(3), self.code)
 
     def test_invite_allowed_again_next_day(self):
         from .services import apply_referral
 
-        g1 = self._guest(1)
+        g1, g2 = self._guest(1), self._guest(2)
         apply_referral(g1, self.code)
-        Member.objects.filter(pk=g1.pk).update(
+        apply_referral(g2, self.code)              # 오늘 한도(2명) 소진
+        Member.objects.filter(pk__in=[g1.pk, g2.pk]).update(
             referral_used_at=timezone.now() - timedelta(days=1)
         )
-        apply_referral(self._guest(2), self.code)   # 어제 것은 오늘 한도에 안 든다
+        apply_referral(self._guest(3), self.code)  # 어제 것은 오늘 한도에 안 든다
         self.host.refresh_from_db()
-        self.assertEqual(self.host.points, 2000)
+        self.assertEqual(self.host.points, 3000)
 
 
 class MissionClearTests(TestCase):
@@ -1763,7 +1780,7 @@ class CouponRedeemTests(TestCase):
     def test_coupon_consumed_once(self):
         from .services import CouponError
 
-        c = self._coupon(self.Coupon.Kind.DISCOUNT_5)
+        c = self._coupon(self.Coupon.Kind.DISCOUNT_20)
         self._buy([{"menu_item_id": self.amer.id, "quantity": 1}], "c6", c)
         c.refresh_from_db()
         self.assertIsNotNone(c.used_at)
@@ -1773,7 +1790,7 @@ class CouponRedeemTests(TestCase):
     def test_expired_coupon_rejected(self):
         from .services import CouponError
 
-        c = self._coupon(self.Coupon.Kind.DISCOUNT_5)
+        c = self._coupon(self.Coupon.Kind.DISCOUNT_20)
         self.Coupon.objects.filter(pk=c.pk).update(
             expires_at=timezone.now() - timedelta(days=1)
         )
@@ -1785,7 +1802,7 @@ class CouponRedeemTests(TestCase):
         from .services import CouponError
 
         other = Member.objects.create(store=self.store, phone="01077771111", name="다른 손님")
-        c = self.Coupon.objects.create(member=other, kind=self.Coupon.Kind.DISCOUNT_5)
+        c = self.Coupon.objects.create(member=other, kind=self.Coupon.Kind.DISCOUNT_20)
         with self.assertRaises(CouponError):
             self._buy([{"menu_item_id": self.amer.id, "quantity": 1}], "c9", c)
 
@@ -2258,3 +2275,110 @@ class HealthPinConfigTests(TestCase):
         self.assertIn("마이그레이션", joined)
         self.assertIn("STORE_PIN", joined)
         self.assertIn("마이그레이션", body["warning"])
+
+
+class RewardTuningTests(TestCase):
+    """보상 조정 — 처음 만나기 200P · 완주 500P · 도장깨기는 룰렛."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99)     # 스탬프 룰렛이 끼어들지 않게
+        self.m = Member.objects.create(
+            store=self.store, phone="01055550000", name="느긋한 수달"
+        )
+        self.amer = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000,
+            category=MenuItem.Category.COFFEE,
+        )
+        self.cake = MenuItem.objects.create(
+            store=self.store, name="치즈케이크", price=6000,
+            category=MenuItem.Category.DESSERT, temp_option=MenuItem.Temp.NONE,
+        )
+
+    def _buy(self, menu, oid):
+        return checkout(
+            member=self.m, gross_amount=menu.price, points_to_use=0,
+            payment_method="CARD",
+            items=[{"menu_item_id": menu.id, "quantity": 1}],
+            toss_order_id=oid,
+        )
+
+    def test_first_meet_quest_pays_200(self):
+        from .quests import TASTE_REWARD
+
+        self.assertEqual(TASTE_REWARD, 200)
+        self._buy(self.amer, "t1")
+        r = self._buy(self.cake, "t2")           # '디저트 처음 만나기' 달성
+        first = [x for x in r.rewards
+                 if x["type"] == "quest" and "처음 만나기" in x["title"]]
+        self.assertTrue(first)
+        self.assertEqual(first[0]["points"], 200)
+
+    def test_group_clear_bonus_is_500(self):
+        from .quests import GROUP_CLEAR_BONUS
+
+        self.assertEqual(GROUP_CLEAR_BONUS, 500)
+        self._buy(self.amer, "g1")
+        r = self._buy(self.cake, "g2")           # taste 챕터 완주
+        bonus = [x for x in r.rewards if x["type"] == "quest_group"]
+        self.assertTrue(bonus)
+        self.assertEqual(bonus[0]["points"], 500)
+
+    def test_collection_clear_gives_spin_not_points(self):
+        # 도장깨기 완주는 포인트 대신 룰렛 기회 1번.
+        from .quests import GROUP_META
+
+        _title, _desc, bonus, spins = GROUP_META["collection"]
+        self.assertEqual(bonus, 0)
+        self.assertEqual(spins, 1)
+
+    def test_collection_clear_grants_spin_on_checkout(self):
+        # 커피 2종 중 1종만 마신 상태 → '정복까지 1종' 퀘스트가 생기고,
+        # 나머지 한 잔을 마시면 챕터가 완주되며 룰렛 기회가 붙는다.
+        latte = MenuItem.objects.create(
+            store=self.store, name="카페 라떼", price=4500,
+            category=MenuItem.Category.COFFEE,
+        )
+        mocha = MenuItem.objects.create(
+            store=self.store, name="카페 모카", price=5000,
+            category=MenuItem.Category.COFFEE,
+        )
+        self._buy(self.amer, "c1")
+        self._buy(latte, "c2")
+        before = Member.objects.get(pk=self.m.pk).spins
+        r = self._buy(mocha, "c3")
+        got = [x for x in r.rewards
+               if x["type"] == "quest_group" and x.get("spins")]
+        self.assertTrue(got, f"룰렛 기회가 안 붙었다: {r.rewards}")
+        self.assertEqual(got[0]["points"], 0)
+        self.assertEqual(Member.objects.get(pk=self.m.pk).spins, before + 1)
+
+    def test_roulette_coupons_are_10_and_20(self):
+        from .models import Coupon
+
+        self.assertEqual(Coupon.DISCOUNT_PCT[Coupon.Kind.DISCOUNT_10], 10)
+        self.assertEqual(Coupon.DISCOUNT_PCT[Coupon.Kind.DISCOUNT_20], 20)
+        self.assertNotIn("discount_5", dict(Coupon.Kind.choices))
+
+    def test_referral_daily_limit_is_two(self):
+        from .rewards import REFERRAL_DAILY_LIMIT
+
+        self.assertEqual(REFERRAL_DAILY_LIMIT, 2)
+
+    def test_collection_quest_survives_completion(self):
+        # 마지막 한 잔을 마셔도 후보에서 사라지면 안 된다 —
+        # 사라지면 보상을 지급할 기회 자체가 없어진다.
+        from .quests import build_candidates
+
+        latte = MenuItem.objects.create(
+            store=self.store, name="카페 라떼", price=4500,
+            category=MenuItem.Category.COFFEE,
+        )
+        mocha = MenuItem.objects.create(
+            store=self.store, name="카페 모카", price=5000,
+            category=MenuItem.Category.COFFEE,
+        )
+        self._buy(self.amer, "s1")
+        self._buy(latte, "s2")
+        self._buy(mocha, "s3")                   # 커피 카테고리 정복
+        keys = {q.key for q in build_candidates(self.m)}
+        self.assertIn("collection:coffee", keys)
