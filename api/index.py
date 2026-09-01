@@ -78,6 +78,13 @@ def _ensure_database() -> None:
 
             if not MenuItem.objects.exclude(recipe="").exists():
                 call_command("seed_recipes")
+
+            # 사이즈업 추가금도 메뉴가 만들어진 뒤 추가된 설정이라 여기서 보장한다.
+            # 이미 값이 있으면(사장님이 바꿨으면) 건드리지 않는다.
+            from membership.management.commands.seed_demo import SIZE_UP
+
+            for _name, _up in SIZE_UP.items():
+                MenuItem.objects.filter(name=_name, size_up_price=0).update(size_up_price=_up)
         except Exception as exc:
             log.warning("seed_recipes skipped: %s", exc)
 

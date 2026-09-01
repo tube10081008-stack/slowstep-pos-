@@ -19,6 +19,7 @@ from .serializers import (
     MemberMissionSerializer,
     MemberSerializer,
     MenuItemSerializer,
+    MenuItemWriteSerializer,
     MissionSerializer,
     PointEntrySerializer,
     QuoteRequestSerializer,
@@ -153,11 +154,65 @@ class StoreView(APIView):
 
 
 class MenuView(APIView):
-    """판매 중인 메뉴 목록(POS 주문 화면용)."""
+    """
+    메뉴 목록(공개) + 등록(직원).
+
+    GET  판매 중인 메뉴. `?all=1` 이면 판매중지분까지(직원 전용 — 관리 화면용).
+    POST 새 메뉴 등록 🔒 — 디저트가 매일 바뀌므로 POS에서 바로 추가한다.
+    """
 
     def get(self, request):
-        qs = MenuItem.objects.filter(is_available=True)
+        qs = MenuItem.objects.all()
+        if request.query_params.get("all") in ("1", "true", "yes"):
+            if not request_authorized(request):
+                return Response({"detail": "권한이 없습니다."}, status=403)
+        else:
+            qs = qs.filter(is_available=True)
         return Response(MenuItemSerializer(qs, many=True).data)
+
+    def post(self, request):
+        if not request_authorized(request):
+            return Response({"detail": "권한이 없습니다."}, status=403)
+        store = Store.objects.first()
+        if store is None:
+            return Response({"detail": "매장 설정이 없습니다."}, status=404)
+        ser = MenuItemWriteSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        item = ser.save(store=store)
+        return Response(MenuItemSerializer(item).data, status=201)
+
+
+class MenuDetailView(APIView):
+    """메뉴 수정·삭제 🔒."""
+
+    permission_classes = [StorePinPermission]
+
+    def patch(self, request, pk):
+        item = get_object_or_404(MenuItem, pk=pk)
+        ser = MenuItemWriteSerializer(item, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        return Response(MenuItemSerializer(ser.save()).data)
+
+    def delete(self, request, pk):
+        """
+        메뉴 삭제. 지난 주문 기록은 남는다 — OrderItem 이 이름·단가를
+        스냅샷으로 갖고 있고 메뉴 참조는 SET_NULL 이라 매출이 사라지지 않는다.
+        그래도 오늘 판 메뉴라면 지우는 대신 '판매중지'를 권한다.
+        """
+        item = get_object_or_404(MenuItem, pk=pk)
+        today = timezone.localdate()
+        sold_today = OrderItem.objects.filter(
+            menu_item=item, transaction__paid_at__date=today
+        ).exists()
+        if sold_today and request.query_params.get("force") not in ("1", "true", "yes"):
+            return Response(
+                {"detail": "오늘 판매된 메뉴입니다. 판매중지로 내리거나 force=1 로 삭제하세요.",
+                 "sold_today": True},
+                status=409,
+            )
+        name = item.name
+        item.delete()
+        return Response({"deleted": name})
 
 
 class StoreSessionView(APIView):

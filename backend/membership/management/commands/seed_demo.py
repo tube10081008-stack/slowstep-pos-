@@ -52,6 +52,16 @@ MENU = [
 ]
 
 
+# 사이즈업 추가금 — 메뉴마다 다르므로 매장 공통 옵션가와 별개로 둔다.
+# 여기 없는 메뉴는 사이즈업을 팔지 않는다(추가금 0).
+SIZE_UP = {
+    "아메리카노": 1500,
+    "카페 라떼": 1500,
+    "아이스티": 1500,
+    "바닐라 라떼": 2000,
+}
+
+
 class Command(BaseCommand):
     help = "슬로우스텝 기본 데이터(매장·메뉴·미션) 시드 (+샘플 회원)"
 
@@ -140,5 +150,9 @@ class Command(BaseCommand):
         removed = stale.count()
         stale.delete()
         self.stdout.write(f"메뉴 {len(names)}종 시드 (정리 {removed}종)")
+
+        # 사이즈업 추가금 — 사장님이 관리 화면에서 바꾼 값은 건드리지 않는다
+        for name, up in SIZE_UP.items():
+            MenuItem.objects.filter(name=name, size_up_price=0).update(size_up_price=up)
 
         self.stdout.write(self.style.SUCCESS("시드 완료 ✅"))

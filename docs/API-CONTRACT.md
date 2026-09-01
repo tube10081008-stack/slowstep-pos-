@@ -245,7 +245,7 @@ POST → 200 { "index": 0, "spins_left": 1,
 
 ## 메뉴 (Menu)
 
-### `GET /api/v1/menu`
+### `GET /api/v1/menu` · `POST /api/v1/menu` 🔒 · `PATCH|DELETE /api/v1/menu/{id}` 🔒
 판매 중인 메뉴 목록(POS 주문 화면용). **레시피**(`recipe`·`recipe_hot`·`topping`·
 `recipe_note`)가 함께 내려간다 — POS가 제조 화면에서 쓴다.
 - `recipe_hot` 은 **HOT 배합이 다를 때만** 채운다. 비어 있으면 HOT 주문에도
@@ -254,6 +254,32 @@ POST → 200 { "index": 0, "spins_left": 1,
   `GET /api/v1/store` 의 `prep_notes` 에 있다. POS는 레시피 아래에 항상 붙인다.
 - 최초 입력은 `python manage.py seed_recipes`, 이후 수정은 관리자 화면(메뉴 → 레시피).
   메뉴명이 안 맞는 레시피와 레시피 없는 메뉴를 실행 끝에 보고한다.
+
+#### 메뉴 추가·수정·삭제 (POS 매장 관리 탭)
+디저트가 매일 바뀌는데 그때마다 `/admin/` 에 들어가는 건 현실적이지 않아
+POS에서 바로 처리한다.
+```json
+POST   /api/v1/menu           { "name": "말차 휘낭시에", "price": 3500,
+                                "category": "dessert", "temp_option": "none" }
+PATCH  /api/v1/menu/{id}      { "is_available": false }      ← 잠깐 내리기
+DELETE /api/v1/menu/{id}                                      ← 완전 삭제
+GET    /api/v1/menu?all=1  🔒  판매중지분까지(관리 목록용)
+```
+- **삭제해도 지난 매출은 남는다.** OrderItem이 이름·단가를 스냅샷으로 갖고
+  메뉴 참조는 `SET_NULL` 이라 과거 거래·정산이 흔들리지 않는다.
+- 다만 **오늘 판매된 메뉴는 409로 한 번 막는다**(`?force=1` 로 강행).
+  실수로 지우는 게 더 흔하고, 대부분은 '판매중지'가 맞는 선택이다.
+- 같은 이름은 등록되지 않는다 — 주문 화면에서 구분이 안 된다.
+
+#### `size_up_price` — 사이즈업 추가금
+메뉴마다 값이 달라(아메리카노 1,500 / 바닐라 라떼 2,000) 매장 공통
+옵션 추가금(디카페인·오트·샷)과 따로 둔다. **0이면 그 메뉴는 사이즈업을
+팔지 않는다** — POS 옵션창에도 안 뜨고, 요청에 `size_up: true` 가 와도
+서버가 무시한다.
+- 주문 항목의 `size_up` 은 결제 시점 스냅샷이고 `option_label` 에 함께 나온다.
+- 사이즈업 **원가**는 아직 따로 두지 않았다(재료 마스터를 붙일 때 함께 정리).
+  그때까지 사이즈업 매출은 마진 분석에서 원가 없이 계산되어 마진이 실제보다
+  좋게 나온다.
 ```json
 200 [ { "id":1, "name":"아메리카노", "price":4000,
         "category":"coffee", "category_display":"커피", "emoji":"☕",

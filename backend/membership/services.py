@@ -60,6 +60,7 @@ class OrderLine:
     decaf: bool
     oatmilk: bool
     shot: bool
+    size_up: bool
     unit_price: int  # 옵션 포함
     unit_cost: int = 0  # 재료원가(옵션 원가 포함) 스냅샷
 
@@ -146,6 +147,8 @@ def resolve_order(items: list | None, store: Store) -> ResolvedOrder | None:
         decaf = bool(raw.get("decaf")) and mi.decaf_available
         oatmilk = bool(raw.get("oatmilk")) and mi.oatmilk_available
         shot = bool(raw.get("shot")) and mi.shot_available
+        # 사이즈업 추가금이 0인 메뉴는 사이즈업을 팔지 않는다
+        size_up = bool(raw.get("size_up")) and mi.size_up_price > 0
         temperature = (raw.get("temperature") or "").lower()
         if mi.temp_option == MenuItem.Temp.HOTICE:
             if temperature not in ("hot", "ice"):
@@ -156,10 +159,12 @@ def resolve_order(items: list | None, store: Store) -> ResolvedOrder | None:
             temperature = ""
 
         n_opts = int(decaf) + int(oatmilk) + int(shot)
-        unit_price = mi.price + opt * n_opts
+        unit_price = mi.price + opt * n_opts + (mi.size_up_price if size_up else 0)
         # 재료원가 스냅샷: 메뉴 원가 + 옵션당 추가 원가.
+        # 사이즈업 원가는 아직 따로 두지 않았다 — 재료 마스터를 붙일 때 함께 정리한다.
         unit_cost = mi.cost + opt_cost * n_opts
-        lines.append(OrderLine(mi, qty, temperature, decaf, oatmilk, shot, unit_price, unit_cost))
+        lines.append(OrderLine(mi, qty, temperature, decaf, oatmilk, shot, size_up,
+                               unit_price, unit_cost))
         if mi.category == MenuItem.Category.DESSERT:
             dessert_qty += qty
         else:
@@ -423,6 +428,7 @@ def _checkout_atomic(
                 transaction=txn, menu_item=l.menu_item, name=l.menu_item.name,
                 unit_price=l.unit_price, unit_cost=l.unit_cost, quantity=l.quantity,
                 temperature=l.temperature, decaf=l.decaf, oatmilk=l.oatmilk, shot=l.shot,
+                size_up=l.size_up,
             )
             # 재고 차감: 조건부 UPDATE로 확인→차감 사이 초과판매(TOCTOU) 방지.
             # (null=무제한은 차감 없음)

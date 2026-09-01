@@ -25,7 +25,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "price", "category", "category_display", "emoji",
             "temp_option", "decaf_available", "oatmilk_available", "shot_available",
-            "stock", "sold_out",
+            "size_up_price", "cost", "stock", "sold_out", "is_available", "sort_order",
             # 레시피 — POS가 제조 화면에서 쓴다(손님 화면에는 내려가지 않는다)
             "recipe", "recipe_hot", "topping", "recipe_note",
         ]
@@ -41,7 +41,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
         model = OrderItem
         fields = [
             "name", "menu_item_id", "unit_price", "quantity", "line_total",
-            "temperature", "decaf", "oatmilk", "option_label",
+            "temperature", "decaf", "oatmilk", "shot", "size_up", "option_label",
         ]
 
 
@@ -146,6 +146,7 @@ class OrderLineSerializer(serializers.Serializer):
     decaf = serializers.BooleanField(required=False, default=False)
     oatmilk = serializers.BooleanField(required=False, default=False)
     shot = serializers.BooleanField(required=False, default=False)
+    size_up = serializers.BooleanField(required=False, default=False)
 
 
 class CheckoutRequestSerializer(serializers.Serializer):
@@ -164,3 +165,38 @@ class CheckoutRequestSerializer(serializers.Serializer):
         if not attrs.get("items") and not attrs.get("gross_amount"):
             raise serializers.ValidationError("items 또는 gross_amount가 필요합니다.")
         return attrs
+
+
+class MenuItemWriteSerializer(serializers.ModelSerializer):
+    """
+    POS에서 메뉴를 바로 추가·수정할 때 쓴다.
+
+    디저트가 매일 바뀌는데 그때마다 관리자 화면에 들어가는 건 현실적이지 않다.
+    store 는 서버가 붙인다(클라이언트가 다른 매장을 지정하지 못하게).
+    """
+
+    class Meta:
+        model = MenuItem
+        fields = [
+            "name", "price", "cost", "category", "temp_option",
+            "decaf_available", "oatmilk_available", "shot_available",
+            "size_up_price", "stock", "is_available", "sort_order",
+            "recipe", "recipe_hot", "topping", "recipe_note",
+        ]
+        extra_kwargs = {f: {"required": False} for f in fields if f not in ("name", "price")}
+
+    def validate_name(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("메뉴 이름을 입력하세요.")
+        qs = MenuItem.objects.filter(name=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("같은 이름의 메뉴가 이미 있습니다.")
+        return value
+
+    def validate_price(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("가격은 0보다 커야 합니다.")
+        return value

@@ -376,6 +376,20 @@
     </div>
 
     <div class="card msec">
+      <div class="mh">메뉴 관리 <span class="muted" style="font-weight:400">· 오늘의 디저트·신메뉴</span></div>
+      <div class="mm-add">
+        <div class="pill-row" id="mmCat"></div>
+        <div class="mm-row">
+          <input id="mmName" placeholder="메뉴 이름" />
+          <input id="mmPrice" inputmode="numeric" placeholder="가격" />
+        </div>
+        <button class="confirm" style="width:100%;margin-top:10px" onclick="addMenu()">메뉴 추가</button>
+        <div id="mmMsg" class="muted" style="margin-top:8px"></div>
+      </div>
+      <div id="mmList" style="margin-top:16px"></div>
+    </div>
+
+    <div class="card msec">
       <div class="mh">고객 관리</div>
       <input id="custSearch" placeholder="이름 또는 연락처 검색" oninput="searchCust()" />
       <div id="custList" style="margin-top:12px;"></div>
@@ -558,9 +572,14 @@
 
   const tempLabel = (t)=> t==="hot"?"HOT":(t==="ice"?"ICE":"");
   const optLabel = (e)=>{ const p=[]; const t=tempLabel(e.temp); if(t)p.push(t);
-    if(e.decaf)p.push("디카페인"); if(e.oatmilk)p.push("오트밀크"); if(e.shot)p.push("샷추가"); return p.join(" · "); };
+    if(e.decaf)p.push("디카페인");
+    if(e.oatmilk||e.oat)p.push("오트밀크");
+    if(e.shot)p.push("샷추가");
+    if(e.size_up||e.up)p.push("사이즈업");
+    return p.join(" · "); };
   const itemQty = (id)=> Object.values(cart).filter(c=>c.item.id===id).reduce((s,c)=>s+c.qty,0);
-  const needsOptions = (m)=> m.temp_option==="hotice" || m.decaf_available || m.oatmilk_available || m.shot_available;
+  const needsOptions = (m)=> m.temp_option==="hotice" || m.decaf_available
+    || m.oatmilk_available || m.shot_available || m.size_up_price > 0;
 
   function renderMenu(){
     const items = menu.filter(m => cat==="all" || m.category===cat);
@@ -636,14 +655,14 @@
   function tapItem(id){
     const m = menu.find(x=>x.id===id);
     if(needsOptions(m)) openOpt(m);
-    else addLine(m, m.temp_option==="ice"?"ice":"", false, false, false);
+    else addLine(m, m.temp_option==="ice"?"ice":"", false, false, false, false);
   }
 
   // ── 옵션 모달 ──
-  let optItem=null, optTemp="ice", optDecaf=false, optOat=false, optShot=false;
+  let optItem=null, optTemp="ice", optDecaf=false, optOat=false, optShot=false, optUp=false;
   function openOpt(m){
     optItem=m; optTemp = m.temp_option==="hotice"?"ice":(m.temp_option==="ice"?"ice":"");
-    optDecaf=false; optOat=false; optShot=false;
+    optDecaf=false; optOat=false; optShot=false; optUp=false;
     $("optTitle").innerHTML = m.name + `<small>기본 ${won(m.price)}</small>`;
     if(m.temp_option==="hotice"){ $("optTempSec").classList.remove("hidden"); setTempUI(); }
     else $("optTempSec").classList.add("hidden");
@@ -651,6 +670,8 @@
     if(m.decaf_available) ex += `<div class="opt" id="optDecaf" onclick="toggleExtra('decaf')">디카페인<small>+${won(optPrice)}</small></div>`;
     if(m.oatmilk_available) ex += `<div class="opt" id="optOat" onclick="toggleExtra('oat')">오트밀크<small>+${won(optPrice)}</small></div>`;
     if(m.shot_available) ex += `<div class="opt" id="optShot" onclick="toggleExtra('shot')">샷 추가<small>+${won(optPrice)}</small></div>`;
+    // 사이즈업은 메뉴마다 금액이 달라 매장 공통 옵션가를 쓰지 않는다
+    if(m.size_up_price > 0) ex += `<div class="opt" id="optUp" onclick="toggleExtra('up')">사이즈업<small>+${won(m.size_up_price)}</small></div>`;
     if(ex){ $("optExtraSec").classList.remove("hidden"); $("optExtraRow").innerHTML=ex; }
     else $("optExtraSec").classList.add("hidden");
     updateOptPrice();
@@ -661,18 +682,23 @@
   function toggleExtra(k){
     if(k==="decaf"){ optDecaf=!optDecaf; $("optDecaf").classList.toggle("on",optDecaf); }
     else if(k==="oat"){ optOat=!optOat; $("optOat").classList.toggle("on",optOat); }
-    else { optShot=!optShot; $("optShot").classList.toggle("on",optShot); }
+    else if(k==="shot"){ optShot=!optShot; $("optShot").classList.toggle("on",optShot); }
+    else { optUp=!optUp; $("optUp").classList.toggle("on",optUp); }
     updateOptPrice();
   }
-  function updateOptPrice(){ $("optPrice").textContent = won(optItem.price + (optDecaf?optPrice:0) + (optOat?optPrice:0) + (optShot?optPrice:0)); }
+  function updateOptPrice(){
+    $("optPrice").textContent = won(optItem.price + (optDecaf?optPrice:0)
+      + (optOat?optPrice:0) + (optShot?optPrice:0) + (optUp?optItem.size_up_price:0));
+  }
   function closeOpt(){ $("optModal").classList.add("hidden"); }
-  function addFromOpt(){ addLine(optItem, optTemp, optDecaf, optOat, optShot); closeOpt(); }
+  function addFromOpt(){ addLine(optItem, optTemp, optDecaf, optOat, optShot, optUp); closeOpt(); }
 
-  const sig = (id,t,d,o,sh)=> id+"|"+t+"|"+(d?1:0)+"|"+(o?1:0)+"|"+(sh?1:0);
-  function addLine(m, temp, decaf, oat, shot){
-    const s = sig(m.id,temp,decaf,oat,shot);
-    const unit = m.price + (decaf?optPrice:0) + (oat?optPrice:0) + (shot?optPrice:0);
-    if(!cart[s]) cart[s] = { item:m, temp, decaf, oat, shot, qty:0, unit };
+  const sig = (id,t,d,o,sh,up)=> id+"|"+t+"|"+(d?1:0)+"|"+(o?1:0)+"|"+(sh?1:0)+"|"+(up?1:0);
+  function addLine(m, temp, decaf, oat, shot, up){
+    const s = sig(m.id,temp,decaf,oat,shot,up);
+    const unit = m.price + (decaf?optPrice:0) + (oat?optPrice:0) + (shot?optPrice:0)
+      + (up ? (m.size_up_price||0) : 0);
+    if(!cart[s]) cart[s] = { item:m, temp, decaf, oat, shot, up:!!up, qty:0, unit };
     cart[s].qty++;
     renderMenu(); renderCart();
   }
@@ -681,7 +707,7 @@
    * 옵션까지 똑같은 줄을 먼저 찾고, 없으면 같은 메뉴의 다른 줄에서 뺀다.
    * ("아메리카노 빼줘"라고만 하면 핫인지 아이스인지 알 수 없다)
    */
-  function removeLine(m, temp, decaf, oat, shot, qty){
+  function removeLine(m, temp, decaf, oat, shot, qty, up){
     let left = qty, removed = 0;
     const take = (key)=>{
       if(!cart[key] || left <= 0) return;
@@ -689,7 +715,7 @@
       cart[key].qty -= n; left -= n; removed += n;
       if(cart[key].qty <= 0) delete cart[key];
     };
-    take(sig(m.id,temp,decaf,oat,shot));
+    take(sig(m.id,temp,decaf,oat,shot,up));
     if(left > 0){
       Object.keys(cart)
         .filter(k => cart[k].item.id === m.id)
@@ -874,7 +900,7 @@
   async function approve(){
     const use = member ? Math.max(0, parseInt($("usePoints").value||"0",10)) : 0;
     const items = Object.values(cart).map(c=>({ menu_item_id:c.item.id, quantity:c.qty,
-      temperature:c.temp, decaf:c.decaf, oatmilk:c.oat, shot:c.shot }));
+      temperature:c.temp, decaf:c.decaf, oatmilk:c.oat, shot:c.shot, size_up:!!c.up }));
     $("approveBtn").disabled=true; $("approveBtn").textContent="처리 중…";
     try {
       const res = await api("/api/v1/transactions", { method:"POST", body: JSON.stringify({
@@ -970,13 +996,107 @@
 
   // ── 하단 탭 전환 ──
   let lastOrder=null, storeState=null;
+  /* ── 메뉴 관리 ───────────────────────────────────────
+     디저트가 매일 바뀌는데 그때마다 /admin/ 에 들어가는 건 현실적이지 않다.
+     이름·가격만 넣으면 바로 추가되고, 목록에서 내리거나 지울 수 있다. */
+  const MM_CATS = [["dessert","디저트"], ["coffee","커피"], ["coldbrew","콜드브루"],
+                   ["ade","스무디·에이드"], ["noncoffee","논커피"], ["tea","티"]];
+  let mmCat = "dessert", mmAll = [];
+
+  function renderMmCats(){
+    $("mmCat").innerHTML = MM_CATS.map(([k,ko])=>
+      `<span class="pill${k===mmCat?" on":""}" onclick="pickMmCat('${k}')">${ko}</span>`).join("");
+  }
+  function pickMmCat(k){ mmCat = k; renderMmCats(); }
+
+  async function loadMenuAdmin(){
+    renderMmCats();
+    try { mmAll = await api("/api/v1/menu?all=1"); }
+    catch(e){ $("mmList").innerHTML = `<p class="muted">메뉴를 불러오지 못했습니다.</p>`; return; }
+    renderMenuAdmin();
+  }
+
+  function renderMenuAdmin(){
+    const byCat = {};
+    mmAll.forEach(m => (byCat[m.category] = byCat[m.category] || []).push(m));
+    $("mmList").innerHTML = MM_CATS.map(([k,ko])=>{
+      const list = byCat[k] || [];
+      if(!list.length) return "";
+      return `<div class="mm-h">${ko} ${list.length}</div>` + list.map(m=>{
+        const opt = [];
+        if(m.size_up_price > 0) opt.push(`사이즈업 +${won(m.size_up_price)}`);
+        if(!m.is_available) opt.push("판매중지");
+        return `<div class="mm-i${m.is_available?"":" off"}">
+          <span class="n">${m.name}${opt.length?`<small>${opt.join(" · ")}</small>`:""}</span>
+          <span class="p">${won(m.price)}</span>
+          <button onclick="toggleMenu(${m.id}, ${m.is_available?"false":"true"})">${m.is_available?"내리기":"올리기"}</button>
+          <button class="del" onclick="deleteMenu(${m.id})">삭제</button>
+        </div>`;
+      }).join("");
+    }).join("");
+  }
+
+  async function addMenu(){
+    const name = ($("mmName").value||"").trim();
+    const price = parseInt(($("mmPrice").value||"").replace(/[^\d]/g,""), 10);
+    const msg = $("mmMsg");
+    if(!name || !price){ msg.textContent = "이름과 가격을 모두 입력하세요."; return; }
+    msg.textContent = "추가하는 중…";
+    // 디저트는 온도 선택이 없고, 음료는 핫/아이스를 고를 수 있게 기본값을 나눈다
+    const isDessert = mmCat === "dessert";
+    try {
+      await api("/api/v1/menu", { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          name, price, category: mmCat,
+          temp_option: isDessert ? "none" : "hotice",
+          shot_available: mmCat === "coffee",
+          sort_order: 99,
+        })});
+      $("mmName").value = ""; $("mmPrice").value = "";
+      msg.textContent = `${name} 추가됨`;
+      await refreshMenus();
+    } catch(e){ msg.textContent = "❌ " + e.message; }
+  }
+
+  async function toggleMenu(id, on){
+    try {
+      await api(`/api/v1/menu/${id}`, { method:"PATCH",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ is_available: on }) });
+      await refreshMenus();
+    } catch(e){ $("mmMsg").textContent = "❌ " + e.message; }
+  }
+
+  async function deleteMenu(id){
+    const m = mmAll.find(x => x.id === id);
+    if(!confirm(`'${m ? m.name : ""}' 을(를) 삭제할까요?\n지난 주문 기록은 그대로 남습니다.`)) return;
+    try {
+      await api(`/api/v1/menu/${id}`, { method:"DELETE" });
+      $("mmMsg").textContent = "삭제됨";
+      await refreshMenus();
+    } catch(e){
+      // 오늘 판 메뉴는 서버가 막는다 — 실수로 지우는 걸 한 번 되묻는다
+      if(confirm(e.message + "\n\n그래도 삭제할까요?")){
+        try { await api(`/api/v1/menu/${id}?force=1`, { method:"DELETE" });
+          $("mmMsg").textContent = "삭제됨"; await refreshMenus();
+        } catch(e2){ $("mmMsg").textContent = "❌ " + e2.message; }
+      }
+    }
+  }
+
+  /** 주문 화면과 관리 목록을 같이 새로 읽는다 — 둘이 어긋나면 안 된다. */
+  async function refreshMenus(){
+    try { menu = await api("/api/v1/menu"); renderCats(); renderMenu(); } catch(e){}
+    try { mmAll = await api("/api/v1/menu?all=1"); renderMenuAdmin(); } catch(e){}
+  }
+
   function switchTab(name){
     ["order","history","manage"].forEach(t=>{
       $("tab"+t[0].toUpperCase()+t.slice(1)).classList.toggle("hidden", t!==name);
       $("tabbtn-"+t).classList.toggle("on", t===name);
     });
     if(name==="history") loadHistory();
-    if(name==="manage") loadManage();
+    if(name==="manage"){ loadManage(); loadMenuAdmin(); }
   }
 
   const METHOD_KR = { CARD:"카드", NAVERPAY:"네이버페이", EASYPAY:"간편결제", CASH:"현금", TOSS_CARD:"카드", TOSS_EASY:"간편결제" };

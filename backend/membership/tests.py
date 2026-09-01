@@ -1806,3 +1806,138 @@ class CouponRedeemTests(TestCase):
         res = self.client.get(f"/api/v1/members/{self.m.id}/coupons")
         self.assertEqual(res.status_code, 200)
         self.assertEqual(len(res.json()), 1)
+
+
+class SizeUpTests(TestCase):
+    """사이즈업 — 메뉴마다 추가금이 다르다."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99, set_discount_amount=0)
+        self.m = Member.objects.create(
+            store=self.store, phone="01022220001", name="느긋한 수달"
+        )
+        self.amer = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000,
+            category=MenuItem.Category.COFFEE, size_up_price=1500,
+        )
+        self.vanilla = MenuItem.objects.create(
+            store=self.store, name="바닐라 라떼", price=5000,
+            category=MenuItem.Category.COFFEE, size_up_price=2000,
+        )
+        self.tea = MenuItem.objects.create(
+            store=self.store, name="히비스커스", price=4000,
+            category=MenuItem.Category.TEA,          # 사이즈업 없음(0)
+        )
+
+    def _buy(self, items, oid):
+        return checkout(
+            member=self.m, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD, items=items, toss_order_id=oid,
+        )
+
+    def test_price_differs_per_menu(self):
+        r = self._buy([
+            {"menu_item_id": self.amer.id, "quantity": 1, "size_up": True},
+            {"menu_item_id": self.vanilla.id, "quantity": 1, "size_up": True},
+        ], "u1")
+        prices = {i.name: i.unit_price for i in r.transaction.items.all()}
+        self.assertEqual(prices["아메리카노"], 5500)      # 4000 + 1500
+        self.assertEqual(prices["바닐라 라떼"], 7000)     # 5000 + 2000
+
+    def test_ignored_when_menu_has_no_size_up(self):
+        """추가금이 0인 메뉴에 사이즈업을 보내도 돈을 더 받지 않는다."""
+        r = self._buy([{"menu_item_id": self.tea.id, "quantity": 1, "size_up": True}], "u2")
+        item = r.transaction.items.get()
+        self.assertEqual(item.unit_price, 4000)
+        self.assertFalse(item.size_up)
+
+    def test_same_menu_with_and_without_size_up_are_separate_lines(self):
+        r = self._buy([
+            {"menu_item_id": self.amer.id, "quantity": 1, "size_up": True},
+            {"menu_item_id": self.amer.id, "quantity": 2},
+        ], "u3")
+        self.assertEqual(r.transaction.gross_amount, 5500 + 8000)
+
+    def test_option_label_shows_size_up(self):
+        r = self._buy([{"menu_item_id": self.amer.id, "quantity": 1,
+                        "temperature": "ice", "size_up": True}], "u4")
+        self.assertIn("사이즈업", r.transaction.items.get().option_label)
+
+
+class MenuAdminApiTests(TestCase):
+    """POS에서 메뉴 추가·수정·삭제 — 디저트가 매일 바뀐다."""
+
+    def setUp(self):
+        self.store = make_store()
+        self.menu = MenuItem.objects.create(
+            store=self.store, name="플레인 휘낭시에", price=2500,
+            category=MenuItem.Category.DESSERT, temp_option=MenuItem.Temp.NONE,
+        )
+        authenticate(self.client)
+
+    def _post(self, **data):
+        return self.client.post("/api/v1/menu", data=data, content_type="application/json")
+
+    def test_add_dessert(self):
+        res = self._post(name="말차 휘낭시에", price=3500, category="dessert",
+                         temp_option="none")
+        self.assertEqual(res.status_code, 201)
+        self.assertTrue(MenuItem.objects.filter(name="말차 휘낭시에").exists())
+
+    def test_duplicate_name_rejected(self):
+        res = self._post(name="플레인 휘낭시에", price=2500, category="dessert")
+        self.assertEqual(res.status_code, 400)
+
+    def test_price_must_be_positive(self):
+        res = self._post(name="공짜 디저트", price=0, category="dessert")
+        self.assertEqual(res.status_code, 400)
+
+    def test_requires_staff_token(self):
+        anon = self.client_class()
+        res = anon.post("/api/v1/menu", data={"name": "몰래 추가", "price": 100},
+                        content_type="application/json")
+        self.assertEqual(res.status_code, 403)
+        self.assertFalse(MenuItem.objects.filter(name="몰래 추가").exists())
+
+    def test_toggle_availability(self):
+        res = self.client.patch(f"/api/v1/menu/{self.menu.id}",
+                                data={"is_available": False},
+                                content_type="application/json")
+        self.assertEqual(res.status_code, 200)
+        self.menu.refresh_from_db()
+        self.assertFalse(self.menu.is_available)
+        # 판매중지된 메뉴는 주문 화면 목록에서 빠진다
+        names = [m["name"] for m in self.client.get("/api/v1/menu").json()]
+        self.assertNotIn("플레인 휘낭시에", names)
+
+    def test_delete_keeps_past_orders(self):
+        """메뉴를 지워도 지난 매출은 남아야 한다."""
+        r = checkout(
+            member=None, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.menu.id, "quantity": 1}],
+            toss_order_id="d1",
+        )
+        # 오늘 판 메뉴는 실수 방지로 한 번 막는다
+        res = self.client.delete(f"/api/v1/menu/{self.menu.id}")
+        self.assertEqual(res.status_code, 409)
+        res = self.client.delete(f"/api/v1/menu/{self.menu.id}?force=1")
+        self.assertEqual(res.status_code, 200)
+
+        item = r.transaction.items.get()
+        item.refresh_from_db()
+        self.assertEqual(item.name, "플레인 휘낭시에")     # 이름 스냅샷 보존
+        self.assertEqual(item.unit_price, 2500)
+        self.assertIsNone(item.menu_item)                  # 참조만 끊긴다
+        r.transaction.refresh_from_db()
+        self.assertEqual(r.transaction.gross_amount, 2500)
+
+    def test_unsold_menu_deletes_without_force(self):
+        res = self.client.delete(f"/api/v1/menu/{self.menu.id}")
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(MenuItem.objects.filter(pk=self.menu.id).exists())
+
+    def test_all_flag_needs_token(self):
+        anon = self.client_class()
+        self.assertEqual(anon.get("/api/v1/menu?all=1").status_code, 403)
+        self.assertEqual(self.client.get("/api/v1/menu?all=1").status_code, 200)

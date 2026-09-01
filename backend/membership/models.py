@@ -180,6 +180,9 @@ class MenuItem(models.Model):
     decaf_available = models.BooleanField("디카페인 선택", default=False)
     oatmilk_available = models.BooleanField("오트밀크 선택", default=False)
     shot_available = models.BooleanField("샷 추가 선택", default=False)
+    # 사이즈업 추가금. 0이면 이 메뉴는 사이즈업을 팔지 않는다.
+    # 옵션 추가금(디카페인·오트·샷)과 달리 메뉴마다 값이 달라 여기에 둔다.
+    size_up_price = models.IntegerField("사이즈업 추가금", default=0)
     # ── 레시피 (직원 참고용) ──
     # HOT/ICE로 배합이 달라지는 메뉴가 있어 따로 둔다. recipe_hot 이 비어 있으면
     # HOT 주문에도 recipe 를 쓴다 — 대부분은 온도만 다르고 배합은 같다.
@@ -306,6 +309,7 @@ class OrderItem(models.Model):
     decaf = models.BooleanField("디카페인", default=False)
     oatmilk = models.BooleanField("오트밀크", default=False)
     shot = models.BooleanField("샷 추가", default=False)
+    size_up = models.BooleanField("사이즈업", default=False)
 
     class Meta:
         verbose_name = "주문 항목"
@@ -332,6 +336,8 @@ class OrderItem(models.Model):
             parts.append("오트밀크")
         if self.shot:
             parts.append("샷추가")
+        if self.size_up:
+            parts.append("사이즈업")
         return " · ".join(parts)
 
     def __str__(self) -> str:
