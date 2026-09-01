@@ -8,7 +8,9 @@
 - 이중 취소 방지
 - /api/v1/health 저장 모드 보고
 """
+import os
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.db import IntegrityError, transaction as db_transaction
 from django.test import TestCase
@@ -1292,7 +1294,10 @@ class HealthEndpointTests(TestCase):
         self.assertIn("마이그레이션", body["warning"])
 
     def test_health_reports_persistent_storage(self):
-        res = self.client.get("/api/v1/health")
+        # PIN은 이 테스트의 관심사가 아니다 — 설정된 것으로 고정해두고
+        # 저장소 보고만 본다(안 그러면 PIN 경고에 걸려 같이 깨진다).
+        with patch.dict(os.environ, {"STORE_PIN": "4821"}):
+            res = self.client.get("/api/v1/health")
         self.assertEqual(res.status_code, 200)
         body = res.json()
         self.assertEqual(body["status"], "ok")
@@ -2204,3 +2209,52 @@ class SignupBonusTests(TestCase):
         self.assertEqual(
             self.client.get("/api/v1/store").json()["signup_bonus_points"], 1000
         )
+
+
+class HealthPinConfigTests(TestCase):
+    """/health 가 매장 PIN 설정 출처를 보고한다 — 값은 절대 싣지 않는다."""
+
+    def setUp(self):
+        make_store()
+
+    def test_reports_env_when_set(self):
+        with self.settings(DEBUG=False), patch.dict(os.environ, {"STORE_PIN": "4821"}):
+            body = self.client.get("/api/v1/health").json()
+        self.assertEqual(body["config"]["store_pin"], "env")
+        self.assertNotIn("warning", body)
+
+    def test_warns_when_default_in_production(self):
+        env = {k: v for k, v in os.environ.items() if k != "STORE_PIN"}
+        with self.settings(DEBUG=False), patch.dict(os.environ, env, clear=True):
+            body = self.client.get("/api/v1/health").json()
+        self.assertEqual(body["config"]["store_pin"], "default")
+        self.assertEqual(body["status"], "degraded")
+        self.assertIn("STORE_PIN", body["warning"])
+
+    def test_never_leaks_the_pin_value(self):
+        # 헬스 응답은 공개다. PIN이 본문 어디에도 나타나면 안 된다.
+        with self.settings(DEBUG=False), patch.dict(os.environ, {"STORE_PIN": "4821"}):
+            raw = self.client.get("/api/v1/health").content.decode()
+        self.assertNotIn("4821", raw)
+        self.assertNotIn("0812", raw)
+
+    def test_quiet_in_local_dev(self):
+        # 로컬 개발까지 degraded 로 만들면 진짜 경고가 묻힌다.
+        env = {k: v for k, v in os.environ.items() if k != "STORE_PIN"}
+        with self.settings(DEBUG=True), patch.dict(os.environ, env, clear=True):
+            body = self.client.get("/api/v1/health").json()
+        self.assertEqual(body["config"]["store_pin"], "default")
+        self.assertEqual(body["status"], "ok")
+
+    def test_pin_warning_does_not_hide_migration_warning(self):
+        # 경고가 한 칸을 두고 다투면 안 된다 — 마이그레이션 경고는
+        # 실제로 배포에서 500을 냈던 신호라 묻히면 곤란하다.
+        env = {k: v for k, v in os.environ.items() if k != "STORE_PIN"}
+        with self.settings(DEBUG=False), patch.dict(os.environ, env, clear=True), \
+                patch("django.db.migrations.executor.MigrationExecutor.migration_plan",
+                      return_value=[("membership", "9999_fake")]):
+            body = self.client.get("/api/v1/health").json()
+        joined = " ".join(body["warnings"])
+        self.assertIn("마이그레이션", joined)
+        self.assertIn("STORE_PIN", joined)
+        self.assertIn("마이그레이션", body["warning"])

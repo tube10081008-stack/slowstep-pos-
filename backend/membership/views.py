@@ -1,6 +1,7 @@
 """
 API 뷰. API 계약(docs/API-CONTRACT.md, Base: /api/v1)에 맞춰 구현.
 """
+import os
 from datetime import datetime
 
 from django.conf import settings
@@ -110,22 +111,42 @@ class HealthView(APIView):
             "status": "ok" if db_ok else "degraded",
             "db": {"ok": db_ok, "engine": engine, "persistent": persistent},
         }
+        # 경고는 **모아서** 싣는다. 한 칸에 덮어쓰면 마지막 것만 남아,
+        # 실제로 500을 냈던 '미적용 마이그레이션' 경고가 조용히 사라진다.
+        warnings: list[str] = []
+
         if pending is not None:
             body["db"]["pending_migrations"] = pending
             if pending:
-                body["status"] = "degraded"
-                body["warning"] = (
+                warnings.append(
                     f"적용되지 않은 마이그레이션이 {pending}건 있습니다. "
                     "스키마가 코드보다 뒤처져 일부 API가 실패할 수 있습니다."
                 )
+        # 매장 PIN이 코드 기본값 그대로인지. **값은 절대 싣지 않는다** — 출처만 본다.
+        # 저장소가 공개라 기본값을 쓰면 매출·고객 명단이 사실상 무방비다.
+        # (환경변수를 넣었는데 반영이 안 된 경우를 눈으로 확인할 수단이기도 하다)
+        pin_from_env = bool(os.environ.get("STORE_PIN"))
+        body["config"] = {"store_pin": "env" if pin_from_env else "default"}
+        if not pin_from_env and not settings.DEBUG:
+            warnings.append(
+                "매장 PIN이 코드 기본값입니다. 저장소가 공개라면 누구나 "
+                "POS·대시보드에 들어올 수 있습니다. 배포 환경변수 STORE_PIN을 "
+                "설정하고 재배포하세요."
+            )
         if db_error:
             body["db"]["error"] = db_error
         if not persistent:
-            body["warning"] = (
+            warnings.append(
                 "임시 저장소 모드: 주문·회원 데이터가 콜드스타트 시 초기화되고 "
                 "동시 접속 간 불일치할 수 있습니다. DATABASE_URL(Neon 등)을 "
                 "설정해 영구 저장으로 전환하세요."
             )
+
+        if warnings:
+            body["status"] = "degraded"
+            body["warnings"] = warnings
+            # 기존 클라이언트가 읽는 단일 문자열도 유지한다(하나로 합쳐서).
+            body["warning"] = " / ".join(warnings)
         return Response(body, status=200 if db_ok else 503)
 
 
