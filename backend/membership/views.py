@@ -182,6 +182,38 @@ class MenuView(APIView):
         return Response(MenuItemSerializer(item).data, status=201)
 
 
+class MenuReorderView(APIView):
+    """
+    메뉴 순서 저장 🔒 — `{"ids": [3, 1, 7, ...]}` 순서대로 sort_order 를 매긴다.
+
+    한 건씩 PATCH 하면 드래그 한 번에 여러 요청이 나가고, 중간에 하나만
+    실패하면 순서가 어긋난 채로 남는다. 한 번에 받아 통째로 저장한다.
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def post(self, request):
+        ids = request.data.get("ids")
+        if not isinstance(ids, list) or not ids:
+            return Response({"detail": "ids 목록이 필요합니다."}, status=400)
+        try:
+            ids = [int(i) for i in ids]
+        except (TypeError, ValueError):
+            return Response({"detail": "ids 는 숫자 목록이어야 합니다."}, status=400)
+
+        found = {m.id: m for m in MenuItem.objects.filter(id__in=ids)}
+        missing = [i for i in ids if i not in found]
+        if missing:
+            return Response({"detail": f"없는 메뉴가 포함됐습니다: {missing}"}, status=400)
+
+        for order, mid in enumerate(ids, start=1):
+            item = found[mid]
+            if item.sort_order != order:
+                item.sort_order = order
+                item.save(update_fields=["sort_order"])
+        return Response({"updated": len(ids)})
+
+
 class MenuDetailView(APIView):
     """메뉴 수정·삭제 🔒."""
 

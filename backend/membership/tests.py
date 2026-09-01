@@ -2015,3 +2015,55 @@ class ManualDiscountTests(TestCase):
         t = self._buy("d8", 99).transaction
         self.assertLessEqual(t.discount, t.gross_amount)
         self.assertGreaterEqual(t.net_amount, 0)
+
+
+class MenuReorderTests(TestCase):
+    """메뉴 순서 저장 — 드래그 한 번에 한 요청."""
+
+    def setUp(self):
+        self.store = make_store()
+        self.items = [
+            MenuItem.objects.create(store=self.store, name=n, price=4000,
+                                    category=MenuItem.Category.COFFEE, sort_order=i)
+            for i, n in enumerate(["아메리카노", "카페 라떼", "바닐라 라떼"], start=1)
+        ]
+        authenticate(self.client)
+
+    def _order(self, ids):
+        return self.client.post("/api/v1/menu/reorder", data={"ids": ids},
+                                content_type="application/json")
+
+    def _names(self):
+        return list(
+            MenuItem.objects.order_by("sort_order", "id").values_list("name", flat=True)
+        )
+
+    def test_reorder(self):
+        a, b, c = self.items
+        res = self._order([c.id, a.id, b.id])
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(self._names(), ["바닐라 라떼", "아메리카노", "카페 라떼"])
+
+    def test_menu_list_follows_new_order(self):
+        a, b, c = self.items
+        self._order([c.id, b.id, a.id])
+        names = [m["name"] for m in self.client.get("/api/v1/menu").json()]
+        self.assertEqual(names, ["바닐라 라떼", "카페 라떼", "아메리카노"])
+
+    def test_unknown_id_rejected_without_partial_write(self):
+        """일부만 반영되면 순서가 어긋난 채로 남는다 — 통째로 거절한다."""
+        a, b, c = self.items
+        before = self._names()
+        res = self._order([c.id, a.id, 99999])
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(self._names(), before)
+
+    def test_bad_payload(self):
+        self.assertEqual(self._order([]).status_code, 400)
+        self.assertEqual(self._order(["가나다"]).status_code, 400)
+
+    def test_requires_staff_token(self):
+        anon = self.client_class()
+        res = anon.post("/api/v1/menu/reorder",
+                        data={"ids": [self.items[0].id]}, content_type="application/json")
+        self.assertEqual(res.status_code, 403)

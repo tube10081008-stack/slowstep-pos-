@@ -1046,13 +1046,14 @@
     const byCat = {};
     mmAll.forEach(m => (byCat[m.category] = byCat[m.category] || []).push(m));
     $("mmList").innerHTML = MM_CATS.map(([k,ko])=>{
-      const list = byCat[k] || [];
+      const list = (byCat[k] || []).sort((a,b)=> a.sort_order - b.sort_order || a.id - b.id);
       if(!list.length) return "";
       return `<div class="mm-h">${ko} ${list.length}</div>` + list.map(m=>{
         const opt = [];
         if(m.size_up_price > 0) opt.push(`사이즈업 +${won(m.size_up_price)}`);
         if(!m.is_available) opt.push("판매중지");
-        return `<div class="mm-i${m.is_available?"":" off"}">
+        return `<div class="mm-i${m.is_available?"":" off"}" data-id="${m.id}" data-cat="${k}">
+          <span class="mm-grip" onpointerdown="dragStart(event, ${m.id})" title="끌어서 순서 변경">≡</span>
           <span class="n">${m.name}${opt.length?`<small>${opt.join(" · ")}</small>`:""}</span>
           <span class="p">${won(m.price)}</span>
           <button onclick="toggleMenu(${m.id}, ${m.is_available?"false":"true"})">${m.is_available?"내리기":"올리기"}</button>
@@ -1060,6 +1061,63 @@
         </div>`;
       }).join("");
     }).join("");
+  }
+
+  /* ── 순서 드래그 ──────────────────────────────────────
+     HTML5 draggable 은 터치에서 안 먹는다. 포인터 이벤트로 직접 처리해
+     매장 태블릿과 PC 둘 다에서 같게 동작하게 한다.
+     같은 카테고리 안에서만 옮긴다 — 카테고리를 넘으면 분류가 바뀌어 버린다. */
+  let dragId = null, dragCat = null;
+
+  function dragStart(e, id){
+    e.preventDefault();
+    const row = e.target.closest(".mm-i");
+    if(!row) return;
+    dragId = id; dragCat = row.dataset.cat;
+    row.classList.add("dragging");
+    e.target.setPointerCapture(e.pointerId);
+    e.target.onpointermove = dragMove;
+    e.target.onpointerup = e.target.onpointercancel = dragEnd;
+  }
+
+  function rowUnder(y){
+    return document.elementFromPoint(innerWidth/2, y)?.closest?.(".mm-i") || null;
+  }
+
+  function dragMove(e){
+    if(dragId == null) return;
+    const over = rowUnder(e.clientY);
+    document.querySelectorAll(".mm-i.over").forEach(r=>r.classList.remove("over"));
+    if(over && over.dataset.cat === dragCat && +over.dataset.id !== dragId) over.classList.add("over");
+  }
+
+  async function dragEnd(e){
+    const id = dragId; dragId = null;
+    document.querySelectorAll(".mm-i.dragging").forEach(r=>r.classList.remove("dragging"));
+    const over = rowUnder(e.clientY);
+    document.querySelectorAll(".mm-i.over").forEach(r=>r.classList.remove("over"));
+    if(e.target){ e.target.onpointermove = e.target.onpointerup = e.target.onpointercancel = null; }
+    if(id == null || !over || over.dataset.cat !== dragCat || +over.dataset.id === id) return;
+
+    // 같은 카테고리 목록에서 위치를 바꾼 뒤 전체 순서를 한 번에 저장한다
+    const list = mmAll.filter(m => m.category === dragCat)
+                      .sort((a,b)=> a.sort_order - b.sort_order || a.id - b.id);
+    const from = list.findIndex(m => m.id === id);
+    const to = list.findIndex(m => m.id === +over.dataset.id);
+    if(from < 0 || to < 0) return;
+    list.splice(to, 0, list.splice(from, 1)[0]);
+    list.forEach((m, i) => { m.sort_order = i + 1; });
+    renderMenuAdmin();                       // 먼저 그려서 손이 기다리지 않게
+    try {
+      await api("/api/v1/menu/reorder", { method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ ids: list.map(m => m.id) }) });
+      $("mmMsg").textContent = "순서 저장됨";
+      try { menu = await api("/api/v1/menu"); renderMenu(); } catch(e2){}
+    } catch(err){
+      $("mmMsg").textContent = "❌ 순서 저장 실패 — " + err.message;
+      await loadMenuAdmin();                 // 서버 순서로 되돌린다
+    }
   }
 
   async function addMenu(){

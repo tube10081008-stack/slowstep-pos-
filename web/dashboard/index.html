@@ -30,6 +30,61 @@
   .cols { grid-template-columns:1.4fr 1fr; align-items:start; }
   @media (max-width:820px){ .cols{ grid-template-columns:1fr; } }
   h3 { font-size:15px; margin:0 0 16px; color:var(--txt); }
+
+  /* ── 오늘 요약 ── */
+  .today { background:linear-gradient(135deg,#4b6bff 0%,#6a4cff 100%); border:0; color:#fff; }
+  .today .t-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .today .t-lb { font-size:12px; color:rgba(255,255,255,.75); font-weight:500; }
+  .today .t-val { font-size:34px; font-weight:800; letter-spacing:-.03em; margin-top:4px;
+    line-height:1.1; font-variant-numeric:tabular-nums; }
+  .today .t-biz { font-size:11px; font-weight:700; padding:5px 11px; border-radius:999px;
+    background:rgba(255,255,255,.22); white-space:nowrap; }
+  .today .t-sub { font-size:12.5px; color:rgba(255,255,255,.78); margin-top:8px; }
+  .today .t-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
+    margin-top:18px; padding-top:16px; border-top:1px solid rgba(255,255,255,.22); }
+  .today .t-grid div { font-size:11px; color:rgba(255,255,255,.72); }
+  .today .t-grid b { display:block; font-size:17px; font-weight:700; color:#fff; margin-top:4px;
+    font-variant-numeric:tabular-nums; }
+
+  /* ── 주문 내역 (표 대신 줄 — 폰에서 표는 가로로 밀린다) ── */
+  .ohead { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; }
+  button.sm { padding:7px 12px; font-size:12px; }
+  .o { border-bottom:1px solid var(--line); padding:12px 0; cursor:pointer; }
+  .o:last-child { border-bottom:0; }
+  .o-top { display:flex; align-items:baseline; gap:8px; }
+  .o-t { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; flex:0 0 auto; }
+  .o-w { flex:1; font-size:14px; font-weight:600; min-width:0; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; }
+  .o-a { font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .o-sub { font-size:12px; color:var(--muted); margin-top:4px; display:flex;
+    flex-wrap:wrap; gap:4px 10px; }
+  .o-sub .hl { color:var(--green); font-weight:600; }
+  .o-sub .cx { color:var(--red); font-weight:700; }
+  .o-items { margin-top:9px; padding:10px 12px; background:var(--card2);
+    border:1px solid var(--line); border-radius:10px; font-size:13px; line-height:1.7; }
+  .o-items .row2 { display:flex; justify-content:space-between; gap:10px; }
+
+  /* ── 폰 ── */
+  @media (max-width:600px){
+    .wrap { padding:16px 14px 56px; }
+    header { gap:10px; margin-bottom:16px; }
+    header nav { margin-left:0 !important; width:100%; }
+    header .sub { display:none; }          /* 폰에서는 설명문보다 숫자가 먼저다 */
+    .kpis { grid-template-columns:repeat(2,1fr); }
+    .card { padding:15px; border-radius:14px; }
+    .kpi .val { font-size:21px; }
+    .today .t-val { font-size:30px; }
+    /* 표는 가로 스크롤 상자 안에서만 밀리게 한다 — 페이지 전체가 밀리면 안 된다.
+       카드 안쪽 어디에 있든 잡아야 한다(마진 표는 한 겹 더 들어가 있다).
+       display:block 만 주면 열 너비가 무너지므로 min-width 로 폭을 확보한다. */
+    /* 그리드 칸은 기본이 min-width:auto 라 내용이 넓으면 칸째로 늘어난다.
+       0으로 눌러야 표만 스크롤되고 페이지는 안 밀린다. */
+    .grid > .card, .card { min-width:0; }
+    .card table { display:block; max-width:100%; overflow-x:auto; white-space:nowrap; }
+    .card table thead, .card table tbody { display:table; width:100%; min-width:520px; }
+    .card table tr { display:table-row; }
+    .card table th, .card table td { display:table-cell; }
+  }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th, td { text-align:left; padding:10px 6px; border-bottom:1px solid var(--line); }
   th { color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
@@ -107,8 +162,30 @@
   <div id="storageBanner" style="display:none;margin:8px 0;padding:10px 14px;border-radius:10px;
        background:#fff3cd;color:#7a5b00;border:1px solid #ffe08a;font-size:13px;line-height:1.5"></div>
 
+  <!-- 오늘 (점주가 폰으로 가장 자주 보는 화면 — 맨 위에 둔다) -->
+  <div class="card today" id="todayCard">
+    <div class="t-head">
+      <div>
+        <div class="t-lb">오늘 매출</div>
+        <div class="t-val" id="tRevenue">—</div>
+      </div>
+      <span class="t-biz" id="tBiz">—</span>
+    </div>
+    <div class="t-sub" id="tSub">불러오는 중…</div>
+    <div class="t-grid" id="tGrid"></div>
+  </div>
+
+  <!-- 오늘 주문 내역 -->
+  <div class="card" style="margin-top:14px">
+    <div class="ohead">
+      <h3 style="margin:0">주문 내역</h3>
+      <button class="ghost sm" onclick="loadOrders()">새로고침</button>
+    </div>
+    <div id="orders" class="muted">불러오는 중…</div>
+  </div>
+
   <!-- KPI -->
-  <div class="grid kpis" id="kpis"></div>
+  <div class="grid kpis" id="kpis" style="margin-top:14px"></div>
 
   <div class="grid cols" style="margin-top:14px;">
     <!-- 매출 추세 -->
@@ -518,9 +595,79 @@
     }
   }
 
+  /* ── 오늘 요약 ─────────────────────────────────────── */
+  async function loadToday(){
+    let d;
+    try { d = await api("/api/v1/sales/summary"); }
+    catch(e){ $("tSub").textContent = "오늘 매출을 불러오지 못했습니다."; return; }
+    $("tRevenue").textContent = won(d.net);
+    $("tBiz").textContent = d.is_open ? "영업 중" : "영업 종료";
+    const m = d.margin || {};
+    $("tSub").textContent = d.count
+      ? `${d.date} · ${num(d.count)}건`
+      : `${d.date} · 아직 결제가 없습니다`;
+    const avg = d.count ? Math.round(d.net / d.count) : 0;
+    $("tGrid").innerHTML = [
+      ["건수", num(d.count) + "건"],
+      ["객단가", won(avg)],
+      // 기여이익 = 공급가 − 재료원가 − 적립비용 (margins.py 기준)
+      ["기여이익", m.contribution != null ? won(m.contribution) : "—"],
+    ].map(([l, v]) => `<div>${l}<b>${v}</b></div>`).join("");
+  }
+
+  /* ── 주문 내역 ─────────────────────────────────────
+     폰에서 표는 가로로 밀려 읽기 어렵다. 한 줄에 시간·손님·금액을 담고
+     누르면 그 주문에 뭐가 들어 있었는지 펼친다. */
+  let orders = [], openOrder = null;
+
+  async function loadOrders(){
+    try { orders = await api("/api/v1/transactions"); }
+    catch(e){ $("orders").innerHTML = `<p class="muted">주문 내역을 불러오지 못했습니다.</p>`; return; }
+    renderOrders();
+  }
+
+  function renderOrders(){
+    const today = new Date().toISOString().slice(0, 10);
+    const list = orders.filter(t => (t.paid_at || t.created_at || "").slice(0, 10) === today);
+    const box = $("orders");
+    if(!list.length){
+      box.innerHTML = `<p class="muted">오늘 주문이 아직 없습니다.</p>`;
+      return;
+    }
+    box.className = "";
+    box.innerHTML = list.map(t=>{
+      const hhmm = (t.paid_at || t.created_at || "").slice(11, 16);
+      const who = t.member_name || "비회원";
+      const canceled = t.status === "canceled";
+      const sub = [];
+      if(t.discount > 0) sub.push(`할인 −${won(t.discount)}`
+        + (t.manual_discount_pct ? ` (${t.manual_discount_pct}%)` : ""));
+      if(t.points_used > 0) sub.push(`포인트 −${won(t.points_used)}`);
+      if(t.points_earned > 0) sub.push(`<span class="hl">+${num(t.points_earned)}P</span>`);
+      sub.push(t.method_display || t.payment_method);
+      if(canceled) sub.unshift(`<span class="cx">취소됨</span>`);
+      const items = (t.items || []).map(i =>
+        `<div class="row2"><span>${i.name}${i.option_label ? ` <span class="muted">${i.option_label}</span>` : ""} × ${i.quantity}</span><span>${won(i.line_total)}</span></div>`
+      ).join("");
+      return `<div class="o" onclick="toggleOrder(${t.id})">
+        <div class="o-top">
+          <span class="o-t">${hhmm}</span>
+          <span class="o-w">${who}</span>
+          <span class="o-a"${canceled ? ' style="text-decoration:line-through;color:var(--muted)"' : ""}>${won(t.net_amount)}</span>
+        </div>
+        <div class="o-sub">${sub.join("")}</div>
+        ${openOrder === t.id && items ? `<div class="o-items">${items}</div>` : ""}
+      </div>`;
+    }).join("");
+  }
+
+  function toggleOrder(id){ openOrder = (openOrder === id) ? null : id; renderOrders(); }
+
   (async ()=>{
     await StorePin.require("점주 대시보드");   // 원가·고객정보 노출 → PIN 필수
     checkStorage();
+    // 오늘 요약·주문 내역을 먼저 그린다 — 폰으로 여는 대부분의 이유가 이 둘이다
+    try { await loadToday(); await loadOrders(); } catch(e){}
     try { await loadDashboard(); await loadMargins(); await loadSegments(); doPreview(); }
     catch(e){ $("sub").textContent = "백엔드 연결 안됨: "+e.message; }
   })();
