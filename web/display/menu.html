@@ -57,28 +57,39 @@
     text-transform:uppercase; }
   .page h2 .rule { flex:1; height:1px; background:var(--line); }
 
+  /* 메뉴판은 카드에 담지 않는다 — 상자 테두리가 줄마다 반복되면 시선이
+     끊겨 오히려 안 읽힌다. 이름 · 리더선 · 가격으로 흐르게 두고
+     글자를 키우는 편이 멀리서 훨씬 잘 보인다(시안과 같은 구성). */
   .items { display:grid; grid-template-columns:repeat(2, minmax(0,1fr));
-    gap:1.6vh 3.6vw; align-content:space-evenly; flex:1; min-height:0; }
-  /* 항목이 많은 날은 3열로 — 잘리는 것보다 작게라도 다 보이는 게 낫다 */
-  .items.dense { grid-template-columns:repeat(3, minmax(0,1fr)); gap:1.2vh 2.6vw; }
+    gap:0 6vw; align-content:space-evenly; flex:1; min-height:0; }
+  /* 한 장에 10개를 넘는 날은 3열로 — 잘리는 것보다 작게라도 다 보이는 게 낫다 */
+  .items.dense { grid-template-columns:repeat(3, minmax(0,1fr)); gap:0 3.6vw; }
+  /* 그래도 넘치면 단계적으로 줄인다. 디저트가 매일 바뀌어 개수를 미리
+     알 수 없으므로, 임계값 하나로 맞추는 대신 그린 뒤에 재서 조인다. */
+  .items.t1 .it { padding:1vh 0; }
+  .items.t1 .it .nm { font-size:3vh; }  .items.t1 .it .pr { font-size:2.9vh; }
+  .items.t1.dense .it .nm { font-size:2.5vh; }  .items.t1.dense .it .pr { font-size:2.4vh; }
+  .items.t2 .it { padding:.6vh 0; }
+  .items.t2 .it .nm { font-size:2.5vh; }  .items.t2 .it .pr { font-size:2.4vh; }
+  .items.t2.dense .it .nm { font-size:2.1vh; }  .items.t2.dense .it .pr { font-size:2vh; }
+  .items.t2 .tag { font-size:1.25vh; }
 
-  .it { min-width:0; background:var(--card); border:1px solid var(--line);
-    border-radius:14px; box-shadow:var(--shadow); padding:1.8vh 1.5vw; }
-  .items.dense .it { padding:1.4vh 1.1vw; border-radius:12px; }
-  .it .hd { display:flex; align-items:baseline; gap:.6vw; }
-  .it .nm { font-size:2.5vh; font-weight:700; letter-spacing:-.01em; line-height:1.25;
-    word-break:keep-all; flex:1; min-width:0; }
-  .items.dense .it .nm { font-size:2.1vh; }
-  .it .pr { font-size:2.5vh; font-weight:800; color:var(--brand); white-space:nowrap;
+  .it { min-width:0; padding:1.5vh 0; }
+  .it .nm { font-size:3.6vh; font-weight:700; letter-spacing:-.02em; line-height:1.2;
+    word-break:keep-all; }
+  .items.dense .it .nm { font-size:2.9vh; }
+  .it .ln { display:flex; align-items:baseline; gap:.7vw; margin-top:.7vh; }
+  .it .sub { display:flex; gap:.3vw; align-items:center; flex:0 0 auto; }
+  .it .lead { flex:1 1 1vw; min-width:1vw; height:1px; background:var(--line);
+    transform:translateY(-.35vh); }
+  .it .pr { font-size:3.4vh; font-weight:800; color:var(--brand); white-space:nowrap;
     font-variant-numeric:tabular-nums; }
-  .items.dense .it .pr { font-size:2.1vh; }
-  .it .tags { display:flex; gap:.35vw; margin-top:.9vh; align-items:center; }
-  .tag { font-size:1.35vh; font-weight:700; padding:.35vh .55vw; border-radius:6px;
+  .items.dense .it .pr { font-size:2.8vh; }
+  .tag { font-size:1.5vh; font-weight:700; padding:.35vh .6vw; border-radius:6px;
     letter-spacing:.02em; }
   .tag.hot { background:#fff1ec; color:#c2410c; }
   .tag.ice { background:var(--brand-soft); color:var(--brand-dk); }
   .tag.out { background:#fee2e2; color:var(--red); }
-  .it.out { opacity:.55; }
   .it.out .nm, .it.out .pr { color:var(--muted); text-decoration:line-through; }
 
   /* ── 좌우 넘김 버튼: 화면 양옆, 크게 ── */
@@ -210,24 +221,39 @@
     $("track").innerHTML = pages.map(p => `
       <div class="page">
         <h2><span class="ko">${p.ko}</span><span class="en">${p.en}</span><span class="rule"></span></h2>
-        <div class="items${p.items.length > 8 ? " dense" : ""}">
-          ${p.items.map(m => {
-            const tg = tags(m);
-            return `<div class="it${m.sold_out ? " out" : ""}">
-              <div class="hd">
-                <span class="nm">${m.name}</span>
+        <div class="items${p.items.length > 10 ? " dense" : ""}">
+          ${p.items.map(m => `
+            <div class="it${m.sold_out ? " out" : ""}">
+              <div class="nm">${m.name}</div>
+              <div class="ln">
+                <span class="sub">${tags(m)}</span>
+                <span class="lead"></span>
                 <span class="pr">${won(m.price)}</span>
               </div>
-              ${tg ? `<div class="tags">${tg}</div>` : ""}
-            </div>`;
-          }).join("")}
+            </div>`).join("")}
         </div>
       </div>`).join("");
 
     $("tabs").innerHTML = pages.map((p, i) => `<button data-i="${i}">${p.ko}</button>`).join("");
     $("dots").innerHTML = pages.map((_, i) => `<i data-i="${i}"></i>`).join("");
     paint();
+    fit();
   }
+
+  /* 그려 놓고 실제로 넘치는 장만 한 단계씩 조인다.
+     메뉴 개수·이름 길이가 매일 달라서 CSS 임계값만으로는 못 맞춘다. */
+  function fit(){
+    const h = $("stage").clientHeight;
+    if(!h) return;
+    document.querySelectorAll(".page").forEach(pg => {
+      const box = pg.querySelector(".items");
+      if(!box) return;
+      box.classList.remove("t1", "t2");
+      if(pg.scrollHeight > h) box.classList.add("t1");
+      if(pg.scrollHeight > h) { box.classList.remove("t1"); box.classList.add("t2"); }
+    });
+  }
+  addEventListener("resize", fit);
 
   function paint(){
     // 트랙 폭 = 무대 폭이므로 100%가 정확히 한 장이다
