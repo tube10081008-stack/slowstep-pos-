@@ -179,6 +179,8 @@ class CheckoutRequestSerializer(serializers.Serializer):
     toss_order_id = serializers.CharField(required=False, allow_blank=True, default="")
     coupon_id = serializers.IntegerField(required=False, allow_null=True)
     discount_pct = serializers.IntegerField(required=False, min_value=0, max_value=100, default=0)
+    # 세트 할인은 직원이 눌렀을 때만 붙는다(자동 적용 아님).
+    set_discount = serializers.BooleanField(required=False, default=False)
 
     def validate(self, attrs):
         if not attrs.get("items") and not attrs.get("gross_amount"):

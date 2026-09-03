@@ -74,6 +74,7 @@ class ResolvedOrder:
     lines: list  # list[OrderLine]
     gross: int
     discount: int
+    set_pairs: int = 0   # 세트 할인이 가능한 쌍 수(눌렀을 때만 discount 에 반영)
 
 
 @dataclass
@@ -119,11 +120,16 @@ def build_quote(
     )
 
 
-def resolve_order(items: list | None, store: Store) -> ResolvedOrder | None:
+def resolve_order(
+    items: list | None, store: Store, set_discount: bool = False
+) -> ResolvedOrder | None:
     """
     주문 항목([{menu_item_id, quantity, temperature, decaf, oatmilk}])을 검증하고
-    옵션 포함 단가·총액·세트할인을 계산. 총액은 서버가 계산(위변조 방지).
-    세트 할인: 커피(음료)+디저트 동시 주문 시 min(음료수, 디저트수)만큼 건당 할인.
+    옵션 포함 단가·총액을 계산. 총액은 서버가 계산(위변조 방지).
+
+    세트 할인은 **직원이 눌렀을 때만**(set_discount=True) 붙는다.
+    자동으로 먹이면 손님이 모르는 채 할인이 나가고, 안 깎아도 될 주문까지
+    깎인다. 금액은 min(음료수, 디저트수) × store.set_discount_amount.
     """
     if not items:
         return None
@@ -174,8 +180,11 @@ def resolve_order(items: list | None, store: Store) -> ResolvedOrder | None:
         raise CheckoutError("주문 항목이 비어 있습니다.")
 
     gross = sum(l.line_total for l in lines)
-    discount = min(drink_qty, dessert_qty) * store.set_discount_amount
-    return ResolvedOrder(lines=lines, gross=gross, discount=discount)
+    pairs = min(drink_qty, dessert_qty)
+    discount = pairs * store.set_discount_amount if set_discount else 0
+    return ResolvedOrder(
+        lines=lines, gross=gross, discount=discount, set_pairs=pairs
+    )
 
 
 def _record_point(member, txn, delta, reason) -> int:
@@ -295,6 +304,7 @@ def checkout(
     toss_order_id: str = "",
     coupon_id=None,
     discount_pct: int = 0,
+    set_discount: bool = False,
 ) -> CheckoutResult:
     """결제 확정(멱등 래퍼). 동일 order_id 중복 요청은 기존 거래를 반환한다.
 
@@ -313,6 +323,7 @@ def checkout(
             toss_order_id=toss_order_id,
             coupon_id=coupon_id,
             discount_pct=discount_pct,
+            set_discount=set_discount,
         )
     except _DuplicateOrder as dup:
         existing = Transaction.objects.filter(
@@ -336,6 +347,7 @@ def _checkout_atomic(
     toss_order_id: str = "",
     coupon_id=None,
     discount_pct: int = 0,
+    set_discount: bool = False,
 ) -> CheckoutResult:
     """
     결제 확정 전체 플로우(원자적):
@@ -366,7 +378,7 @@ def _checkout_atomic(
     if store is None:
         raise CheckoutError("매장 설정이 없습니다. seed_demo를 실행하세요.")
 
-    resolved = resolve_order(items, store)
+    resolved = resolve_order(items, store, set_discount=set_discount)
     discount = 0
     if resolved:
         gross_amount = resolved.gross

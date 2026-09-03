@@ -2561,3 +2561,123 @@ class MissionBaselineTests(TestCase):
         m.refresh_from_db()
         self.assertEqual(m.baseline_visit_count, 25)      # 이관값 정확히 복원
         self.assertEqual(self.mission.member_value(m), 2)  # 앱에서 온 2회만
+
+
+class SetDiscountManualTests(TestCase):
+    """세트 할인은 직원이 눌렀을 때만 붙는다(자동 적용 아님)."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99, set_discount_amount=500)
+        self.coffee = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000,
+            category=MenuItem.Category.COFFEE,
+        )
+        self.cake = MenuItem.objects.create(
+            store=self.store, name="휘낭시에", price=3000,
+            category=MenuItem.Category.DESSERT, temp_option=MenuItem.Temp.NONE,
+        )
+        self.m = Member.objects.create(
+            store=self.store, phone="01044445555", name="느긋한 수달"
+        )
+
+    def _items(self):
+        return [
+            {"menu_item_id": self.coffee.id, "quantity": 1},
+            {"menu_item_id": self.cake.id, "quantity": 1},
+        ]
+
+    def _pay(self, oid, **kw):
+        return checkout(
+            member=self.m, gross_amount=0, points_to_use=0,
+            payment_method="CARD", items=self._items(), toss_order_id=oid, **kw
+        )
+
+    def test_not_applied_by_default(self):
+        r = self._pay("s1")
+        self.assertEqual(r.transaction.discount, 0)
+        self.assertEqual(r.transaction.net_amount, 7000)
+
+    def test_applied_when_pressed(self):
+        r = self._pay("s2", set_discount=True)
+        self.assertEqual(r.transaction.discount, 500)
+        self.assertEqual(r.transaction.net_amount, 6500)
+
+    def test_pairs_counted_per_set(self):
+        # 커피 2 + 디저트 3 → 2세트만 할인
+        r = checkout(
+            member=self.m, gross_amount=0, points_to_use=0, payment_method="CARD",
+            items=[{"menu_item_id": self.coffee.id, "quantity": 2},
+                   {"menu_item_id": self.cake.id, "quantity": 3}],
+            toss_order_id="s3", set_discount=True,
+        )
+        self.assertEqual(r.transaction.discount, 1000)
+
+    def test_no_discount_without_dessert(self):
+        r = checkout(
+            member=self.m, gross_amount=0, points_to_use=0, payment_method="CARD",
+            items=[{"menu_item_id": self.coffee.id, "quantity": 2}],
+            toss_order_id="s4", set_discount=True,
+        )
+        self.assertEqual(r.transaction.discount, 0)
+
+    def test_api_forwards_the_flag(self):
+        # 멱등 래퍼가 인자를 안 넘겨 할인이 조용히 무시된 적이 있다.
+        authenticate(self.client)
+        res = self.client.post(
+            "/api/v1/transactions",
+            data={"member_id": self.m.id, "items": self._items(),
+                  "points_to_use": 0, "payment_method": "CARD",
+                  "toss_order_id": "s5", "set_discount": True},
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()["discount"], 500)
+
+    def test_api_default_is_off(self):
+        authenticate(self.client)
+        res = self.client.post(
+            "/api/v1/transactions",
+            data={"member_id": self.m.id, "items": self._items(),
+                  "points_to_use": 0, "payment_method": "CARD",
+                  "toss_order_id": "s6"},
+            content_type="application/json",
+        )
+        self.assertEqual(res.json()["discount"], 0)
+
+
+class SalesSummaryBreakdownTests(TestCase):
+    """정산 요약이 결제수단별 내역과 포인트 사용액을 함께 준다."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99)
+        self.menu = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=5000
+        )
+        self.m = Member.objects.create(
+            store=self.store, phone="01066667777", name="느긋한 수달", points=3500
+        )
+        authenticate(self.client)
+
+    def _pay(self, oid, method="CARD", points=0):
+        return checkout(
+            member=self.m, gross_amount=0, points_to_use=points,
+            payment_method=method,
+            items=[{"menu_item_id": self.menu.id, "quantity": 1}],
+            toss_order_id=oid,
+        )
+
+    def test_net_excludes_points_used(self):
+        # 매출(net)에 포인트 결제분이 섞이면 단말기 합계와 어긋난다.
+        self._pay("m1", points=3500)
+        d = self.client.get("/api/v1/sales/summary").json()
+        self.assertEqual(d["gross"], 5000)
+        self.assertEqual(d["points_used"], 3500)
+        self.assertEqual(d["net"], 1500)
+
+    def test_by_method_splits_cash_and_card(self):
+        self._pay("m2", method="CARD")
+        self._pay("m3", method="CASH")
+        d = self.client.get("/api/v1/sales/summary").json()
+        self.assertEqual(d["by_method"], {"CARD": 5000, "CASH": 5000})
+        # 카드 단말기에는 5,000원만 찍히지만 매출은 10,000원이다
+        self.assertEqual(d["net"], 10000)

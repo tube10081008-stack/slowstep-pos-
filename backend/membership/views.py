@@ -315,7 +315,7 @@ class SalesSummaryView(APIView):
         agg = today_qs.aggregate(
             n=Count("id"), gross=Sum("gross_amount"),
             discount=Sum("discount"), net=Sum("net_amount"),
-            points=Sum("points_earned"),
+            points=Sum("points_earned"), points_used=Sum("points_used"),
         )
         methods = {
             row["payment_method"]: row["s"]
@@ -342,6 +342,9 @@ class SalesSummaryView(APIView):
             "discount": agg["discount"] or 0,
             "net": net_today,
             "points": agg["points"] or 0,
+            # 포인트로 받은 금액. net 에는 이미 빠져 있지만, 단말기 합계와
+            # 대조할 때 "어디로 샜지"를 설명해 주는 값이라 따로 싣는다.
+            "points_used": agg["points_used"] or 0,
             "by_method": methods,
             "margin": {
                 "supply_revenue": supply,
@@ -611,6 +614,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 toss_order_id=data.get("toss_order_id", ""),
                 coupon_id=data.get("coupon_id"),
                 discount_pct=data.get("discount_pct") or 0,
+                set_discount=data.get("set_discount") or False,
             )
         except (CheckoutError, CouponError) as exc:
             return Response({"detail": str(exc)}, status=400)

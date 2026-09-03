@@ -152,6 +152,12 @@ POST → 200 { "index": 0, "spins_left": 1,
   POS도 같은 식으로 미리 보여주지만 판정은 서버가 한다.
 - 세트 할인 위에 더해지고, 포인트 사용보다 **먼저** 적용된다 —
   적립은 실제로 받은 금액 기준이어야 한다.
+
+##### 세트 할인 — `POST /api/v1/transactions` 의 `set_discount`
+음료+디저트를 함께 주문했을 때 `min(음료수, 디저트수) × Store.set_discount_amount`
+만큼 깎는다. **기본값은 꺼짐이고, 직원이 POS에서 눌렀을 때만 적용된다.**
+자동으로 먹이면 손님도 직원도 모르는 채 할인이 나가고, 안 깎아도 될 주문까지
+깎인다. 조건이 안 되면(디저트가 빠지면) 값을 보내도 0원이다.
 - 거래가 **확정되는 순간에만** 소진하고, 취소하면 되돌린다. 취소했는데
   쿠폰만 사라지면 손님이 손해를 본다.
 - 400 사유 — 다른 회원의 쿠폰 / 이미 사용 / 기한 만료 /
@@ -436,7 +442,12 @@ GET    /api/v1/menu?all=1  🔒  판매중지분까지(관리 목록용)
 영업 시작/마감. `{ "action": "open" | "close" }` → 갱신된 store 반환.
 
 ### `GET /api/v1/sales/summary?date=YYYY-MM-DD`
-하루 정산: `{ count, gross, discount, net, points, by_method, is_open, opened_at, margin }`.
+하루 정산: `{ count, gross, discount, net, points, points_used, by_method, is_open, opened_at, margin }`.
+
+- `net` = `gross − discount − points_used`. **포인트로 받은 금액은 매출이 아니다.**
+- `by_method` 는 수단별 `net` 합계. **카드 단말기 합계와 대조하는 값**이다 —
+  현금·간편결제가 섞이면 단말기보다 크게 나오는 게 정상이고, 수단을 안 쪼개면
+  그 차액이 어디서 왔는지 알 방법이 없다.
 `margin` = 그날 기여이익 `{ supply_revenue, material_cost, reward_cost, contribution, margin_rate }`.
 
 - `date`를 비우면 **오늘**. 지난 날짜를 주면 그날 마감 기준으로 다시 계산한다.

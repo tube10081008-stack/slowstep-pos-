@@ -61,14 +61,39 @@
   .cart h3 { font-size:15px; font-weight:700; margin:0 0 12px; display:flex; justify-content:space-between; }
   .cart .clear { font-size:12px; color:var(--muted); cursor:pointer; font-weight:400; }
   .empty { color:var(--muted); font-size:13px; text-align:center; padding:30px 0; }
-  .ci { display:flex; align-items:center; gap:8px; padding:9px 0; border-bottom:1px solid var(--line); }
-  .ci .cn { flex:1; font-size:14px; font-weight:500; }
-  .ci .cn small { display:block; color:var(--muted); font-size:11px; font-weight:400; }
+  .ci { display:flex; align-items:center; gap:8px; padding:11px 0; border-bottom:1px solid var(--line); }
+  /* 계산대는 서서 내려다보는 화면이다 — 메뉴명은 크고 진하게. */
+  .ci .cn { flex:1; font-size:16px; font-weight:700; line-height:1.35; cursor:pointer;
+    color:var(--txt); }
+  .ci .cn small { display:block; color:var(--muted); font-size:12px; font-weight:500;
+    margin-top:2px; }
   .stepper { display:flex; align-items:center; gap:8px; }
   .stepper button { width:28px; height:28px; border-radius:8px; border:1px solid var(--line);
     background:var(--card2); color:var(--txt); font-size:16px; font-weight:700; cursor:pointer; padding:0; }
   .stepper b { min-width:18px; text-align:center; font-size:14px; }
-  .ctot { text-align:right; font-size:13px; width:64px; color:var(--brand); font-weight:700; }
+  .ctot { text-align:right; font-size:14px; width:68px; color:var(--brand); font-weight:700; }
+
+  /* 주문 항목 크게 보기 — 손님 앞에서 "이거 맞으세요?" 확인용 */
+  .zoom { position:fixed; inset:0; background:rgba(17,20,28,.55); display:none;
+    align-items:center; justify-content:center; padding:24px; z-index:60; }
+  .zoom.on { display:flex; }
+  .zoom-box { background:#fff; border-radius:20px; padding:30px 34px; max-width:560px; width:100%;
+    box-shadow:0 24px 60px rgba(0,0,0,.28); text-align:center; }
+  .zoom-box .zn { font-size:38px; font-weight:800; line-height:1.25; word-break:keep-all; }
+  .zoom-box .zo { margin-top:12px; font-size:22px; font-weight:600; color:var(--brand); }
+  .zoom-box .zq { margin-top:18px; font-size:20px; color:var(--muted); }
+  .zoom-box .zt { margin-top:6px; font-size:26px; font-weight:800; }
+  .zoom-box .zx { margin-top:22px; }
+
+  /* 오늘 매출 — 주문 내역 아래 빈 자리 */
+  .tsales { margin-top:14px; padding:14px 16px; border:1px solid var(--line);
+    border-radius:14px; background:var(--card2); }
+  .tsales .th { display:flex; justify-content:space-between; align-items:baseline; }
+  .tsales .th span { font-size:12px; color:var(--muted); }
+  .tsales .th b { font-size:20px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .tsales .tr2 { display:flex; justify-content:space-between; margin-top:8px;
+    font-size:12px; color:var(--muted); }
+  .tsales .tr2 b { color:var(--txt); font-weight:700; }
   .total { display:flex; justify-content:space-between; align-items:baseline; margin:14px 0 4px; }
   .total.hidden { display:none; }
   .total b { font-size:26px; color:var(--brand); font-weight:800; letter-spacing:-.02em; }
@@ -281,11 +306,20 @@
       <div class="card cart">
         <h3>주문 내역 <span class="clear" onclick="clearCart()">비우기</span></h3>
         <div id="cartList"><div class="empty">메뉴를 담아주세요</div></div>
-        <div id="discountRow" class="total hidden" style="margin:6px 0 0;">
-          <span class="muted" style="color:var(--gold)">세트 할인</span><b id="cartDiscount" style="color:var(--gold);font-size:15px;">-0원</b>
+        <div id="discountRow" class="hidden" style="margin:8px 0 0;">
+          <button class="setbtn" id="setBtn" onclick="toggleSet()">세트 할인 적용</button>
+          <div class="total" style="margin:6px 0 0;">
+            <span class="muted" style="color:var(--gold)">세트 할인</span><b id="cartDiscount" style="color:var(--gold);font-size:15px;">-0원</b>
+          </div>
         </div>
         <div class="total"><span class="muted">합계</span><b id="cartTotal">0원</b></div>
         <button class="pay" id="payBtn" disabled onclick="goPay()">결제하기</button>
+
+        <!-- 주문 내역 아래 빈 자리 — 오늘 얼마 팔았는지 계산대에서 바로 보이게 -->
+        <div class="tsales" id="tsales">
+          <div class="th"><span>오늘 매출</span><b id="tsAmt">—</b></div>
+          <div class="tr2"><span>건수 <b id="tsCnt">0</b>건</span><span>객단가 <b id="tsAvg">0원</b></span></div>
+        </div>
       </div>
     </div>
   </div>
@@ -442,6 +476,17 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- 주문 항목 크게 보기 (손님 앞에서 확인용) -->
+<div class="zoom" id="zoom" onclick="closeZoom(event)">
+  <div class="zoom-box">
+    <div class="zn" id="zName">—</div>
+    <div class="zo" id="zOpt"></div>
+    <div class="zq" id="zQty"></div>
+    <div class="zt" id="zTot"></div>
+    <div class="zx"><button class="ghost" onclick="closeZoom()">닫기</button></div>
+  </div>
+</div>
+
 <script>
   const API_BASE = location.origin.includes(":5500") ? "http://localhost:8000" : location.origin;
   const $ = (id) => document.getElementById(id);
@@ -566,6 +611,7 @@
       $("storeTag").textContent = store.name + " · 적립 " + Math.round(earnRate*100) + "%";
       menu = await api("/api/v1/menu");
       renderCats(); renderMenu();
+      loadTodaySales();
     } catch(e){ $("storeTag").textContent = "백엔드 연결 안됨"; }
   }
 
@@ -734,11 +780,16 @@
   function clearCart(){ cart={}; renderMenu(); renderCart(); }
 
   const grossTotal = ()=> Object.values(cart).reduce((s,c)=>s+c.unit*c.qty,0);
-  function discountTotal(){
+  // 세트 할인은 **직원이 누를 때만** 붙는다. 자동으로 먹이면 손님도 직원도
+  // 모르는 채 할인이 나가고, 안 깎아도 될 주문까지 깎인다.
+  let setOn = false;
+  function setPairs(){
     let dr=0, de=0;
     Object.values(cart).forEach(c=>{ if(c.item.category==="dessert") de+=c.qty; else dr+=c.qty; });
-    return Math.min(dr,de) * setDiscount;
+    return Math.min(dr,de);
   }
+  function discountTotal(){ return setOn ? setPairs() * setDiscount : 0; }
+  function toggleSet(){ setOn = !setOn; renderCart(); }
   const finalTotal = ()=> grossTotal() - discountTotal();
 
   function renderCart(){
@@ -747,19 +798,57 @@
     else $("cartList").innerHTML = entries.map(([s,c])=>{
       const ol = optLabel(c);
       return `<div class="ci">
-        <div class="cn">${c.item.name}<small>${ol?ol+" · ":""}${won(c.unit)}</small></div>
+        <div class="cn" onclick="zoomItem('${s}')">${c.item.name}<small>${ol?ol+" · ":""}${won(c.unit)}</small></div>
         <div class="stepper">
           <button onclick="chgQty('${s}',-1)">−</button><b>${c.qty}</b><button onclick="chgQty('${s}',1)">+</button>
         </div>
         <div class="ctot">${won(c.unit*c.qty)}</div>
       </div>`;
     }).join("");
+    const pairs = setPairs();
+    if(!pairs) setOn = false;              // 조건이 깨지면 자동 해제
     const disc = discountTotal();
-    $("discountRow").classList.toggle("hidden", disc<=0);
+    $("discountRow").classList.toggle("hidden", pairs<=0);
+    $("setBtn").classList.toggle("on", setOn);
+    $("setBtn").textContent = setOn
+      ? `세트 할인 적용됨 (${pairs}세트)`
+      : `세트 할인 적용 (${pairs}세트 · -${won(pairs*setDiscount)})`;
     $("cartDiscount").textContent = "-" + won(disc);
     $("cartTotal").textContent = won(finalTotal());
     $("payBtn").disabled = entries.length===0;
     sendDisplay(entries.length ? cartSnapshot() : { type:"idle" });
+  }
+
+  /* 주문 항목 크게 보기 — 계산대 화면은 작아서 손님에게 보여주기 어렵다.
+     이름을 누르면 큰 글씨로 띄워 "이거 맞으세요?"를 그대로 확인시킨다. */
+  function zoomItem(key){
+    const c = cart[key];
+    if(!c) return;
+    const ol = optLabel(c);
+    $("zName").textContent = c.item.name;
+    $("zOpt").textContent = ol || "";
+    $("zOpt").style.display = ol ? "" : "none";
+    $("zQty").textContent = `${c.qty}개 · 단가 ${won(c.unit)}`;
+    $("zTot").textContent = won(c.unit * c.qty);
+    $("zoom").classList.add("on");
+  }
+  function closeZoom(e){
+    // 배경을 눌렀을 때만 닫는다(상자 안을 눌러 닫히면 답답하다)
+    if(e && e.target && e.target.id !== "zoom") return;
+    $("zoom").classList.remove("on");
+  }
+  document.addEventListener("keydown", e => {
+    if(e.key === "Escape") $("zoom").classList.remove("on");
+  });
+
+  /* 오늘 매출 — 주문 내역 아래. 결제가 끝날 때마다 갱신한다. */
+  async function loadTodaySales(){
+    try {
+      const s = await api("/api/v1/sales/summary");
+      $("tsAmt").textContent = won(s.net);
+      $("tsCnt").textContent = s.count;
+      $("tsAvg").textContent = won(s.count ? Math.round(s.net / s.count) : 0);
+    } catch(e){ $("tsAmt").textContent = "—"; }
   }
 
   // ── 결제 단말 화면 ──
@@ -936,7 +1025,7 @@
         member_id: member?member.id:null, items, points_to_use:use,
         payment_method:method, approval_no:($("approvalNo").value||"").trim(),
         toss_order_id: orderId || newOrderId(), coupon_id: couponId,
-        discount_pct: discPct,
+        discount_pct: discPct, set_discount: setOn,
       })});
       lastOrder = res;
       if(res.idempotent_replay) toast("이미 처리된 주문입니다 — 기존 결제를 표시합니다");
@@ -947,6 +1036,7 @@
 
   function showDone(res){
     $("payView").classList.add("hidden"); $("doneView").classList.remove("hidden");
+    loadTodaySales();        // 방금 결제분을 바로 반영
     // 결제가 끝나면 이 목록이 곧 '만들 것'이다 — 레시피를 여기 붙인다.
     // 주문 받는 중에 띄우면 손님 앞에서 흐름이 끊긴다.
     const rows = (res.items||[]).map((i, idx)=>{

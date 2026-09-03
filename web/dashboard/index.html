@@ -54,6 +54,14 @@
   .today .t-grid div { font-size:11px; color:rgba(255,255,255,.72); }
   .today .t-grid b { display:block; font-size:17px; font-weight:700; color:#fff; margin-top:4px;
     font-variant-numeric:tabular-nums; }
+  /* 결제수단 — 카드 단말기 합계와 눈으로 맞춰보는 자리 */
+  .today .t-methods:not(:empty) { margin-top:16px; padding-top:14px;
+    border-top:1px solid rgba(255,255,255,.22); }
+  .today .t-mh { font-size:11px; color:rgba(255,255,255,.72); margin-bottom:8px; }
+  .today .t-methods > div { display:flex; justify-content:space-between; align-items:baseline;
+    gap:10px; font-size:13px; color:#fff; padding:3px 0; }
+  .today .t-methods > div.muted { color:rgba(255,255,255,.66); }
+  .today .t-methods b { font-weight:700; font-variant-numeric:tabular-nums; }
 
   /* ── 주문 내역 (표 대신 줄 — 폰에서 표는 가로로 밀린다) ── */
   .ohead { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; }
@@ -195,6 +203,7 @@
     </div>
     <div class="t-sub" id="tSub">불러오는 중…</div>
     <div class="t-grid" id="tGrid"></div>
+    <div class="t-methods" id="tMethods"></div>
   </div>
 
   <!-- 오늘 주문 내역 -->
@@ -418,7 +427,6 @@
     ).join("");
 
     // 최근 결제
-    const METHOD = {CARD:"카드",NAVERPAY:"네이버페이",EASYPAY:"간편결제",CASH:"현금",TOSS_CARD:"카드",TOSS_EASY:"간편결제"};
     $("recentTx").innerHTML = d.recent_transactions.map(t=>
       `<tr><td>${t.member__name||"비회원"}</td><td>${won(t.net_amount)}</td>
        <td>+${t.points_earned}P</td><td>${METHOD[t.payment_method]||t.payment_method}</td></tr>`
@@ -659,6 +667,11 @@
     await Promise.all([loadToday(), loadOrders()]);
   }
 
+  // 결제수단 표기 — 오늘 카드와 최근 결제 표가 함께 쓰므로 공용 스코프에 둔다.
+  // (한쪽 함수 안에 두면 다른 쪽에서 ReferenceError가 나고, Promise.all 안에서는
+  //  그 예외가 조용히 삼켜져 화면만 비어 보인다.)
+  const METHOD = {CARD:"카드",NAVERPAY:"네이버페이",EASYPAY:"간편결제",CASH:"현금",TOSS_CARD:"카드",TOSS_EASY:"간편결제"};
+
   /* ── 오늘 요약 ─────────────────────────────────────── */
   async function loadToday(){
     let d;
@@ -680,6 +693,19 @@
       // 기여이익 = 공급가 − 재료원가 − 적립비용 (margins.py 기준)
       ["기여이익", m.contribution != null ? won(m.contribution) : "—"],
     ].map(([l, v]) => `<div>${l}<b>${v}</b></div>`).join("");
+
+    // 결제수단별 내역 — 카드 단말기 합계와 대조하는 용도다.
+    // 매출(net)에는 현금·포인트 결제가 함께 들어 있어서, 수단을 안 쪼개면
+    // "단말기는 18만인데 여긴 19만"이 왜 생기는지 알 방법이 없다.
+    const by = d.by_method || {};
+    const rows = Object.entries(by)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `<div><span>${METHOD[k] || k}</span><b>${won(v)}</b></div>`);
+    if(d.discount) rows.push(`<div class="muted"><span>할인</span><b>-${won(d.discount)}</b></div>`);
+    if(d.points_used) rows.push(`<div class="muted"><span>포인트 사용</span><b>-${won(d.points_used)}</b></div>`);
+    $("tMethods").innerHTML = rows.length
+      ? `<div class="t-mh">결제수단</div>` + rows.join("")
+      : "";
   }
 
   /* ── 주문 내역 ─────────────────────────────────────
