@@ -81,6 +81,13 @@
     box-shadow:0 24px 60px rgba(0,0,0,.28); text-align:center; }
   .zoom-box .zn { font-size:38px; font-weight:800; line-height:1.25; word-break:keep-all; }
   .zoom-box .zo { margin-top:12px; font-size:22px; font-weight:600; color:var(--brand); }
+  .zoom-box .zlist { margin-top:18px; text-align:left; }
+  .zoom-box .zlist:empty { display:none; }
+  .zoom-box .zlist div { display:flex; justify-content:space-between; gap:16px;
+    font-size:26px; font-weight:700; line-height:1.45; padding:7px 0;
+    border-bottom:1px solid var(--line); }
+  .zoom-box .zlist div:last-child { border-bottom:0; }
+  .zoom-box .zlist small { display:block; font-size:16px; font-weight:600; color:var(--brand); }
   .zoom-box .zq { margin-top:18px; font-size:20px; color:var(--muted); }
   .zoom-box .zt { margin-top:6px; font-size:26px; font-weight:800; }
   .zoom-box .zx { margin-top:22px; }
@@ -91,9 +98,12 @@
   .tsales .th { display:flex; justify-content:space-between; align-items:baseline; }
   .tsales .th span { font-size:12px; color:var(--muted); }
   .tsales .th b { font-size:20px; font-weight:800; font-variant-numeric:tabular-nums; }
-  .tsales .tr2 { display:flex; justify-content:space-between; margin-top:8px;
-    font-size:12px; color:var(--muted); }
+  .tsales .tr2 { display:flex; justify-content:space-between; gap:10px 16px; flex-wrap:wrap;
+    margin-top:8px; font-size:12px; color:var(--muted); }
   .tsales .tr2 b { color:var(--txt); font-weight:700; }
+  .tsales #tsMethods { justify-content:flex-start; padding-top:8px;
+    border-top:1px solid var(--line); }
+  .tsales #tsMethods:empty { display:none; }
   .total { display:flex; justify-content:space-between; align-items:baseline; margin:14px 0 4px; }
   .total.hidden { display:none; }
   .total b { font-size:26px; color:var(--brand); font-weight:800; letter-spacing:-.02em; }
@@ -218,7 +228,12 @@
   .dot.ok { background:var(--green); } .dot.off { background:#cbd5e1; }
   .hist { border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:10px; }
   .hist.canceled { opacity:.55; }
+  .hist { cursor:pointer; }
   .hist .ht { display:flex; justify-content:space-between; font-size:14px; font-weight:600; }
+  /* 메뉴 줄은 '무엇을 팔았나'라서 이 카드에서 제일 중요한 정보다.
+     12px 회색으로 두면 계산대에서 서서 볼 때 안 읽힌다. */
+  .hist .hmenu { font-size:15.5px; font-weight:700; color:var(--txt); margin-top:6px;
+    line-height:1.4; word-break:keep-all; }
   .hist .hi { font-size:12px; color:var(--muted); margin-top:4px; }
   .hist .amt { color:var(--brand); font-weight:700; }
   .hist .cancelbtn { margin-top:8px; font-size:12px; padding:6px 12px; border-radius:8px;
@@ -314,12 +329,6 @@
         </div>
         <div class="total"><span class="muted">합계</span><b id="cartTotal">0원</b></div>
         <button class="pay" id="payBtn" disabled onclick="goPay()">결제하기</button>
-
-        <!-- 주문 내역 아래 빈 자리 — 오늘 얼마 팔았는지 계산대에서 바로 보이게 -->
-        <div class="tsales" id="tsales">
-          <div class="th"><span>오늘 매출</span><b id="tsAmt">—</b></div>
-          <div class="tr2"><span>건수 <b id="tsCnt">0</b>건</span><span>객단가 <b id="tsAvg">0원</b></span></div>
-        </div>
       </div>
     </div>
   </div>
@@ -394,6 +403,13 @@
     <div class="card">
       <h3>주문 내역 <span class="muted" style="font-weight:400" id="histCount"></span></h3>
       <div id="histList" class="muted">불러오는 중…</div>
+
+      <!-- 목록 아래 빈 자리 — 오늘 얼마 팔았는지 여기서 바로 보이게 -->
+      <div class="tsales" id="tsales">
+        <div class="th"><span>오늘 매출</span><b id="tsAmt">—</b></div>
+        <div class="tr2"><span>건수 <b id="tsCnt">0</b>건</span><span>객단가 <b id="tsAvg">0원</b></span></div>
+        <div class="tr2" id="tsMethods"></div>
+      </div>
     </div>
   </div>
 
@@ -481,6 +497,7 @@
   <div class="zoom-box">
     <div class="zn" id="zName">—</div>
     <div class="zo" id="zOpt"></div>
+    <div class="zlist" id="zList"></div>
     <div class="zq" id="zQty"></div>
     <div class="zt" id="zTot"></div>
     <div class="zx"><button class="ghost" onclick="closeZoom()">닫기</button></div>
@@ -611,7 +628,6 @@
       $("storeTag").textContent = store.name + " · 적립 " + Math.round(earnRate*100) + "%";
       menu = await api("/api/v1/menu");
       renderCats(); renderMenu();
-      loadTodaySales();
     } catch(e){ $("storeTag").textContent = "백엔드 연결 안됨"; }
   }
 
@@ -828,8 +844,26 @@
     $("zName").textContent = c.item.name;
     $("zOpt").textContent = ol || "";
     $("zOpt").style.display = ol ? "" : "none";
+    $("zList").innerHTML = "";
     $("zQty").textContent = `${c.qty}개 · 단가 ${won(c.unit)}`;
     $("zTot").textContent = won(c.unit * c.qty);
+    $("zoom").classList.add("on");
+  }
+
+  /* 주문 내역 한 건을 크게 — 목록에서는 메뉴가 한 줄로 눌려 있어
+     "뭐가 나갔더라"를 확인하기 어렵다. */
+  let histList = [];
+  function zoomOrder(id){
+    const t = histList.find(x => x.id === id);
+    if(!t) return;
+    $("zName").textContent = t.member_name || "비회원";
+    $("zOpt").textContent = `${fmtTime(t.paid_at)} · ${t.method_display || METHOD_KR[t.payment_method] || ""}`;
+    $("zOpt").style.display = "";
+    $("zList").innerHTML = (t.items || []).map(i =>
+      `<div><span>${i.name}${i.option_label ? `<small>${i.option_label}</small>` : ""}</span>` +
+      `<span>×${i.quantity}</span></div>`).join("") || "<div>항목 없음</div>";
+    $("zQty").textContent = t.discount > 0 ? `할인 -${won(t.discount)}` : "";
+    $("zTot").textContent = won(t.net_amount);
     $("zoom").classList.add("on");
   }
   function closeZoom(e){
@@ -841,13 +875,19 @@
     if(e.key === "Escape") $("zoom").classList.remove("on");
   });
 
-  /* 오늘 매출 — 주문 내역 아래. 결제가 끝날 때마다 갱신한다. */
+  /* 오늘 매출 — 주문 내역 탭을 열 때마다 갱신한다.
+     결제수단을 같이 보여준다: 카드 단말기 합계와 대조하는 값이고,
+     현금이 섞이면 단말기보다 크게 나오는 게 정상이다. */
   async function loadTodaySales(){
     try {
       const s = await api("/api/v1/sales/summary");
       $("tsAmt").textContent = won(s.net);
       $("tsCnt").textContent = s.count;
       $("tsAvg").textContent = won(s.count ? Math.round(s.net / s.count) : 0);
+      const parts = Object.entries(s.by_method || {})
+        .map(([k, v]) => `<span>${METHOD_KR[k] || k} <b>${won(v)}</b></span>`);
+      if(s.points_used) parts.push(`<span>포인트 <b>-${won(s.points_used)}</b></span>`);
+      $("tsMethods").innerHTML = parts.join("");
     } catch(e){ $("tsAmt").textContent = "—"; }
   }
 
@@ -1036,7 +1076,6 @@
 
   function showDone(res){
     $("payView").classList.add("hidden"); $("doneView").classList.remove("hidden");
-    loadTodaySales();        // 방금 결제분을 바로 반영
     // 결제가 끝나면 이 목록이 곧 '만들 것'이다 — 레시피를 여기 붙인다.
     // 주문 받는 중에 띄우면 손님 앞에서 흐름이 끊긴다.
     const rows = (res.items||[]).map((i, idx)=>{
@@ -1290,16 +1329,18 @@
   async function loadHistory(){
     try {
       const list = await api("/api/v1/transactions");
+      histList = list;
+      loadTodaySales();
       $("histCount").textContent = "· 최근 " + list.length + "건";
       if(!list.length){ $("histList").innerHTML='<p class="muted">주문 내역이 없습니다.</p>'; return; }
       $("histList").innerHTML = list.map(t=>{
         const names = (t.items||[]).map(i=>`${i.name}${i.option_label?`(${i.option_label})`:""}×${i.quantity}`).join(", ");
         const canceled = t.status==="canceled";
-        return `<div class="hist ${canceled?"canceled":""}">
+        return `<div class="hist ${canceled?"canceled":""}" onclick="zoomOrder(${t.id})">
           <div class="ht"><span>${t.member_name||"비회원"}${canceled?'<span class="tag-cancel">취소됨</span>':""}</span><span class="amt">${won(t.net_amount)}</span></div>
-          <div class="hi">${names||"-"}</div>
+          <div class="hmenu">${names||"-"}</div>
           <div class="hi">${fmtTime(t.paid_at)} · ${t.method_display||METHOD_KR[t.payment_method]||""}${t.discount>0?` · 할인 ${won(t.discount)}`:""}${t.points_earned>0?` · +${t.points_earned}P`:""}</div>
-          ${canceled?"":`<button class="cancelbtn" onclick="cancelOrder(${t.id})">결제 취소</button>`}
+          ${canceled?"":`<button class="cancelbtn" onclick="event.stopPropagation();cancelOrder(${t.id})">결제 취소</button>`}
         </div>`;
       }).join("");
     } catch(e){ $("histList").innerHTML = '<p class="muted">불러오기 실패: '+e.message+'</p>'; }

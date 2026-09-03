@@ -350,7 +350,12 @@ class StorePinAuthTests(TestCase):
         from django.core.cache import cache
         cache.clear()  # 시도 카운터 초기화
 
-    def _token(self, pin="0812"):
+    def _token(self, pin=None):
+        # PIN 리터럴을 테스트에 박아두면 설정을 바꿀 때마다 같이 깨진다.
+        # (운영 기본값을 없애면서 실제로 깨졌던 자리)
+        if pin is None:
+            from django.conf import settings as dj_settings
+            pin = dj_settings.STORE_PIN
         res = self.client.post(
             "/api/v1/auth/pin", data={"pin": pin}, content_type="application/json"
         )
@@ -407,11 +412,11 @@ class StorePinAuthTests(TestCase):
     def test_brute_force_rate_limited(self):
         from .auth import ATTEMPT_LIMIT
         for _ in range(ATTEMPT_LIMIT):
-            self._token("0000")
-        res = self._token("0000")
+            self._token("9137")          # 설정된 PIN과 겹치지 않는 값
+        res = self._token("9137")
         self.assertEqual(res.status_code, 429)
         # 제한 중에는 올바른 PIN도 막힘(창 만료까지)
-        self.assertEqual(self._token("0812").status_code, 429)
+        self.assertEqual(self._token().status_code, 429)
 
     def test_tampered_token_rejected(self):
         token = self._token().json()["token"]
@@ -2240,13 +2245,37 @@ class HealthPinConfigTests(TestCase):
         self.assertEqual(body["config"]["store_pin"], "env")
         self.assertNotIn("warning", body)
 
-    def test_warns_when_default_in_production(self):
+    def test_warns_when_unset_in_production(self):
         env = {k: v for k, v in os.environ.items() if k != "STORE_PIN"}
         with self.settings(DEBUG=False), patch.dict(os.environ, env, clear=True):
             body = self.client.get("/api/v1/health").json()
-        self.assertEqual(body["config"]["store_pin"], "default")
+        self.assertEqual(body["config"]["store_pin"], "unset")
         self.assertEqual(body["status"], "degraded")
         self.assertIn("STORE_PIN", body["warning"])
+
+    def test_no_hardcoded_pin_in_production(self):
+        # 저장소가 공개라 코드에 기본 PIN이 남아 있으면 안 된다.
+        from django.test import override_settings
+
+        env = {k: v for k, v in os.environ.items() if k != "STORE_PIN"}
+        with patch.dict(os.environ, env, clear=True):
+            import importlib
+            from config import settings as st
+            with override_settings(DEBUG=False):
+                pass
+            # 설정 모듈을 운영 모드로 다시 읽어 기본값이 비어 있는지 본다
+            src = open(st.__file__, encoding="utf-8").read()
+        self.assertNotIn('"0812"', src)
+        self.assertIn('if DEBUG else ""', src)
+
+    def test_empty_pin_never_authenticates(self):
+        # 빈 PIN이 우연히 통과하면 fail-closed가 아니게 된다.
+        from .auth import check_pin
+
+        request = self.client.request().wsgi_request
+        with self.settings(STORE_PIN=""):
+            self.assertFalse(check_pin(request, ""))
+            self.assertFalse(check_pin(request, "0812"))
 
     def test_never_leaks_the_pin_value(self):
         # 헬스 응답은 공개다. PIN이 본문 어디에도 나타나면 안 된다.
@@ -2260,7 +2289,7 @@ class HealthPinConfigTests(TestCase):
         env = {k: v for k, v in os.environ.items() if k != "STORE_PIN"}
         with self.settings(DEBUG=True), patch.dict(os.environ, env, clear=True):
             body = self.client.get("/api/v1/health").json()
-        self.assertEqual(body["config"]["store_pin"], "default")
+        self.assertEqual(body["config"]["store_pin"], "dev")
         self.assertEqual(body["status"], "ok")
 
     def test_pin_warning_does_not_hide_migration_warning(self):

@@ -122,16 +122,17 @@ class HealthView(APIView):
                     f"적용되지 않은 마이그레이션이 {pending}건 있습니다. "
                     "스키마가 코드보다 뒤처져 일부 API가 실패할 수 있습니다."
                 )
-        # 매장 PIN이 코드 기본값 그대로인지. **값은 절대 싣지 않는다** — 출처만 본다.
-        # 저장소가 공개라 기본값을 쓰면 매출·고객 명단이 사실상 무방비다.
-        # (환경변수를 넣었는데 반영이 안 된 경우를 눈으로 확인할 수단이기도 하다)
+        # 매장 PIN 설정 출처. **값은 절대 싣지 않는다** — 출처만 본다.
+        # 운영에는 코드 기본값이 없으므로, 환경변수가 없으면 직원 로그인이
+        # 아예 막힌다(손님 화면은 계속 열려 있다). 그 상태를 눈에 보이게 한다.
         pin_from_env = bool(os.environ.get("STORE_PIN"))
-        body["config"] = {"store_pin": "env" if pin_from_env else "default"}
+        body["config"] = {
+            "store_pin": "env" if pin_from_env else ("dev" if settings.DEBUG else "unset")
+        }
         if not pin_from_env and not settings.DEBUG:
             warnings.append(
-                "매장 PIN이 코드 기본값입니다. 저장소가 공개라면 누구나 "
-                "POS·대시보드에 들어올 수 있습니다. 배포 환경변수 STORE_PIN을 "
-                "설정하고 재배포하세요."
+                "매장 PIN이 설정되지 않아 POS·대시보드에 로그인할 수 없습니다. "
+                "배포 환경변수 STORE_PIN을 설정하고 재배포하세요."
             )
         if db_error:
             body["db"]["error"] = db_error

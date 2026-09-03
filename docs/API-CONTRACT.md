@@ -17,7 +17,11 @@ Base URL: `/api/v1` · 형식: JSON · 금액: 원(KRW) 정수
 ### `GET /api/v1/auth/pin`
 현재 토큰 유효성 확인 → `{ "authorized": true }`.
 
-- PIN은 환경변수 **`STORE_PIN`** 으로 설정(미설정 시 기본값). 공개 저장소면 반드시 재정의.
+- PIN은 환경변수 **`STORE_PIN`** 으로 설정한다. **운영에는 코드 기본값이 없다** —
+  저장소가 공개라 기본 PIN이 적혀 있으면 매출·고객 명단이 무방비다.
+  미설정 시 직원 로그인만 막히고(빈 PIN은 절대 통과하지 않는다) 손님 멤버십
+  페이지는 계속 열려 있다. 상태는 `GET /api/v1/health` 의 `config.store_pin`
+  (`env` / `dev` / `unset`)로 확인한다. 로컬 개발(DEBUG=True)만 `0000`.
 - 토큰은 `SECRET_KEY`로 서명(유효기간 30일). `SECRET_KEY`를 바꾸면 전부 무효화된다.
 - 무차별 대입 방지: IP당 5분에 7회 초과 시 429.
 
