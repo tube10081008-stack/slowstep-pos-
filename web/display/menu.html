@@ -151,6 +151,7 @@
   <div class="foot">
     <div class="note">
       <div class="n">모든 음료 <b>디카페인 · 오트밀크 · 샷 추가</b> 가능 <b>+500원</b></div>
+      <div class="n"><b>오늘의 디저트</b>는 매일 바뀝니다 — 직원에게 물어봐 주세요</div>
       <div class="n">음료와 디저트를 함께 주문하시면 <b>500원 할인</b></div>
       <div class="n hi">결제하실 때 <b>휴대폰 번호</b>만 남기시면 <b>3% 적립</b></div>
     </div>
@@ -176,12 +177,23 @@
   const won = (n) => (n || 0).toLocaleString("ko-KR") + "원";
 
   /* 페이지 구성 — [한글 제목, 영문 제목, 담을 카테고리들].
-     비어 있는 페이지는 만들지 않는다(디저트가 없는 날 빈 장이 뜨면 안 된다). */
+     비어 있는 페이지는 만들지 않는다(그 갈래가 다 품절인 날 빈 장이 뜨면 안 된다). */
   const PAGES = [
-    ["커피 · 콜드브루", "Coffee",      ["coffee", "coldbrew"]],
-    ["논커피 · 티",     "Non-Coffee",  ["noncoffee", "tea"]],
-    ["에이드 · 디저트", "Ade & Sweet", ["ade", "dessert"]],
+    ["커피 · 콜드브루", "Coffee",     ["coffee", "coldbrew"]],
+    ["논커피 · 티",     "Non-Coffee", ["noncoffee", "tea"]],
+    ["스무디 · 에이드", "Ade",        ["ade"]],
   ];
+
+  /* 메뉴판에서 빼는 것들. **POS에서는 그대로 판다** — 여기서만 안 보인다.
+     - 디저트: 매일 바뀌어서 붙박이 메뉴판에 올리면 틀린 정보가 된다.
+     - 킹 레온: 특정 손님을 위한 주문 상품이라 일반 메뉴로 노출하지 않는다.
+     이름은 띄어쓰기를 무시하고 맞춘다("킹레온"으로 적어도 걸린다). */
+  const HIDE_CATEGORIES = ["dessert"];
+  const HIDE_NAMES = ["킹 레온"];
+  const squash = (t) => (t || "").replace(/\s+/g, "");
+  const hidden = new Set(HIDE_NAMES.map(squash));
+  const showOnBoard = (m) =>
+    !HIDE_CATEGORIES.includes(m.category) && !hidden.has(squash(m.name));
 
   const FALLBACK = [
     ["아메리카노", 4000, "coffee", "hotice"], ["카페 라떼", 4500, "coffee", "hotice"],
@@ -192,7 +204,6 @@
     ["플레인 요거트 스무디", 5000, "ade", "ice"],
     ["초코 라떼", 5000, "noncoffee", "hotice"], ["말차 라떼", 5300, "noncoffee", "hotice"],
     ["얼그레이", 4500, "tea", "hotice"], ["캐모마일", 4500, "tea", "hotice"],
-    ["플레인 휘낭시에", 2500, "dessert", "none"],
   ].map(([name, price, category, temp_option]) =>
     ({ name, price, category, temp_option, sold_out:false }));
 
@@ -210,7 +221,7 @@
 
   function render(items){
     const byCat = {};
-    items.forEach(m => (byCat[m.category] = byCat[m.category] || []).push(m));
+    items.filter(showOnBoard).forEach(m => (byCat[m.category] = byCat[m.category] || []).push(m));
 
     pages = PAGES.map(([ko, en, keys]) => ({
       ko, en, items: keys.flatMap(k => byCat[k] || []),
