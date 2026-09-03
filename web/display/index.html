@@ -31,24 +31,15 @@
   .link.on { display:none; }   /* 정상일 때는 손님에게 보일 이유가 없다 */
   .link.off { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
 
-  /* ── 대기 화면 ── */
-  /* 가로 모니터 → 2단. QR을 세로로 밀어내지 않고 나란히 세워 크게 쓴다. */
-  #idle { flex:1; display:flex; flex-direction:row; align-items:center;
-    justify-content:center; gap:5vw; }
-  .idle-l { display:flex; flex-direction:column; align-items:center; gap:1.6vh; }
-  #idle .big { font-size:clamp(34px,5vw,60px); font-weight:800; letter-spacing:-.03em; }
-  #idle .sub { font-size:clamp(15px,1.7vw,21px); color:var(--muted); font-weight:500; letter-spacing:-.01em; }
-  #idle .mark { width:auto; height:min(30vh,240px); display:block; }
-  /* QR 하나만 있을 때는 가운데로 (직원 화면 연결 전) */
-  #idle:has(.idle-r.hidden) { gap:0; }
-  .qr-card { background:var(--card); border:1px solid var(--line); border-radius:24px;
-    padding:3vh 3vw; box-shadow:var(--shadow); display:flex; flex-direction:column;
-    align-items:center; gap:1.4vh; }
-  .qr-card .qr { width:clamp(220px,40vh,400px); height:clamp(220px,40vh,400px); }
-  .qr-sub { font-size:clamp(13px,1.4vw,18px); color:var(--muted); font-weight:500; }
-  @media (max-aspect-ratio: 1/1) {      /* 세로로 세운 모니터 */
-    #idle { flex-direction:column; gap:3vh; }
-  }
+  /* ── 대기 화면 = 메뉴판 ── */
+  /* 손님이 화면 앞에 서 있는 시간의 대부분은 대기 상태다. 인사말만 띄우고
+     메뉴를 안 보여줄 이유가 없어, menu.html 을 그대로 채워 넣는다.
+     메뉴판이 자기 머리말·QR·안내를 이미 갖고 있으므로 바깥 껍데기(브랜드
+     헤더·바닥 워드마크·여백)는 대기 중에만 걷어낸다. */
+  #idle { flex:1; min-height:0; display:flex; }
+  #menuFrame { flex:1; width:100%; height:100%; border:0; display:block; }
+  body.idling .screen { padding:0; }
+  body.idling .brand, body.idling .foot { display:none; }
 
   /* ── 주문 화면 ── */
   #order { flex:1; display:flex; flex-direction:column; margin-top:2.4vh; min-height:0; }
@@ -181,9 +172,7 @@
   .qr svg { width:100%; height:100%; display:block; }
   .qr svg path { fill:var(--txt); }
   .qr-cap { font-size:clamp(14px,1.7vw,22px); font-weight:600; line-height:1.55; text-align:center; }
-  /* 대기 화면의 QR — 손님이 언제든 찍을 수 있게 상시 노출 */
-  /* 카드 껍데기는 .qr-card 하나로 충분하다 — 여기까지 배경을 주면 흰 상자가 겹친다 */
-  #idleQr.hidden { display:none !important; }
+  /* 대기 화면의 QR은 메뉴판(menu.html) 발치에 들어 있다 */
   .qr-cap b { color:var(--brand); }
   .sd { width:clamp(30px,3.2vw,42px); height:clamp(30px,3.2vw,42px); color:#cfd5e1; }
   .sd svg { width:100%; height:100%; display:block; }
@@ -209,20 +198,9 @@
     <span class="link" id="link"></span>
   </div>
 
-  <!-- 대기 -->
+  <!-- 대기 = 메뉴판 (menu.html 을 그대로 띄운다. 로고·QR·안내가 이미 들어 있다) -->
   <div id="idle">
-    <div class="idle-l">
-      <img class="mark" src="../assets/logo-lockup.png" alt="SLOW STEP · Roasting &amp; Baking" />
-      <div class="big">어서 오세요</div>
-      <div class="sub">오늘도 천천히, 좋은 시간 되세요</div>
-    </div>
-    <div class="idle-r hidden" id="idleQr">
-      <div class="qr-card">
-        <div class="qr" id="qrIdle"></div>
-        <div class="qr-cap"><b>내 적립 내역</b> 보기</div>
-        <div class="qr-sub">휴대폰 카메라로 찍어주세요</div>
-      </div>
-    </div>
+    <iframe id="menuFrame" title="메뉴판" scrolling="no"></iframe>
   </div>
 
   <!-- 주문 중 -->
@@ -316,16 +294,23 @@
   function setQr(svg){ if(svg){ qrSvg = svg; paintQr(); } }
   function paintQr(){
     const has = !!qrSvg;
-    if(has){ $("qr").innerHTML = qrSvg; $("qrIdle").innerHTML = qrSvg; }
+    if(has) $("qr").innerHTML = qrSvg;   // 대기 화면 QR은 메뉴판이 직접 그린다
     $("qrBox").classList.toggle("hidden", !has);
-    $("idleQr").classList.toggle("hidden", !has);
   }
 
   function show(view){
     VIEWS.forEach(v => $(v).classList.toggle("hidden", v !== view));
     $("foot").classList.toggle("hidden", view === "done");
-    // 대기 화면에는 가운데에 큰 로고가 있으므로 상단 워드마크를 숨긴다
+    // 대기 중에는 메뉴판이 화면 전체를 쓴다(바깥 헤더·바닥을 감춘다)
     document.body.classList.toggle("idling", view === "idle");
+    if(view === "idle") mountMenu();
+  }
+
+  /* 메뉴판은 처음 대기로 들어갈 때 한 번만 붙인다.
+     볼 때마다 다시 넣으면 손님이 넘겨 보던 장이 1장으로 되돌아간다. */
+  function mountMenu(){
+    const f = $("menuFrame");
+    if(f && !f.src) f.src = "menu.html";
   }
 
   function tempLabel(t){ return t==="hot" ? "HOT" : (t==="ice" ? "ICE" : ""); }
