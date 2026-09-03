@@ -1677,8 +1677,14 @@ class ImportBaselineTests(TestCase):
         m = self._import(380_000, 95)
         r = self._buy(m)
         self.assertFalse([x for x in r.rewards if x["type"].startswith("mission")])
+        # 미션이 아닌 보상(개인 퀘스트 등)은 **우리 앱에서 방금 한 행동**에
+        # 붙은 것이라 정상이다. 여기서 '적립분 말고는 한 푼도 안 된다'로
+        # 재면 저녁에 오면 뜨는 timeslot 퀘스트에 걸려 오후 6시 이후로는
+        # 항상 깨진다(시간에 따라 결과가 달라지는 테스트가 된다).
+        other = sum(x.get("points", 0) for x in r.rewards
+                    if not x["type"].startswith("mission"))
         m.refresh_from_db()
-        self.assertEqual(m.points, r.transaction.points_earned)   # 적립분만
+        self.assertEqual(m.points, r.transaction.points_earned + other)
 
     def test_partial_progress_still_rewarded_going_forward(self):
         """아직 못 채운 미션은 그대로 살아 있어야 한다 — 앞으로 하는 건 보상한다."""

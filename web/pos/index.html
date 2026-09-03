@@ -101,9 +101,9 @@
   .tsales .tr2 { display:flex; justify-content:space-between; gap:10px 16px; flex-wrap:wrap;
     margin-top:8px; font-size:12px; color:var(--muted); }
   .tsales .tr2 b { color:var(--txt); font-weight:700; }
-  .tsales #tsMethods { justify-content:flex-start; padding-top:8px;
+  .tsales .tsm { justify-content:flex-start; padding-top:8px;
     border-top:1px solid var(--line); }
-  .tsales #tsMethods:empty { display:none; }
+  .tsales .tsm:empty { display:none; }
   .total { display:flex; justify-content:space-between; align-items:baseline; margin:14px 0 4px; }
   .total.hidden { display:none; }
   .total b { font-size:26px; color:var(--brand); font-weight:800; letter-spacing:-.02em; }
@@ -329,6 +329,13 @@
         </div>
         <div class="total"><span class="muted">합계</span><b id="cartTotal">0원</b></div>
         <button class="pay" id="payBtn" disabled onclick="goPay()">결제하기</button>
+
+        <!-- 주문 내역(장바구니) 아래 빈 자리 — 계산대에서 종일 보는 숫자 -->
+        <div class="tsales" id="tsalesOrder">
+          <div class="th"><span>오늘 매출</span><b id="tsoAmt">—</b></div>
+          <div class="tr2"><span>건수 <b id="tsoCnt">0</b>건</span><span>객단가 <b id="tsoAvg">0원</b></span></div>
+          <div class="tr2 tsm" id="tsoMethods"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -408,7 +415,7 @@
       <div class="tsales" id="tsales">
         <div class="th"><span>오늘 매출</span><b id="tsAmt">—</b></div>
         <div class="tr2"><span>건수 <b id="tsCnt">0</b>건</span><span>객단가 <b id="tsAvg">0원</b></span></div>
-        <div class="tr2" id="tsMethods"></div>
+        <div class="tr2 tsm" id="tsMethods"></div>
       </div>
     </div>
   </div>
@@ -628,6 +635,7 @@
       $("storeTag").textContent = store.name + " · 적립 " + Math.round(earnRate*100) + "%";
       menu = await api("/api/v1/menu");
       renderCats(); renderMenu();
+      loadTodaySales();
     } catch(e){ $("storeTag").textContent = "백엔드 연결 안됨"; }
   }
 
@@ -879,16 +887,21 @@
      결제수단을 같이 보여준다: 카드 단말기 합계와 대조하는 값이고,
      현금이 섞이면 단말기보다 크게 나오는 게 정상이다. */
   async function loadTodaySales(){
+    // 주문 화면(tso*)과 주문 내역 탭(ts*) 두 곳에 같은 값을 쓴다.
+    const put = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
     try {
       const s = await api("/api/v1/sales/summary");
-      $("tsAmt").textContent = won(s.net);
-      $("tsCnt").textContent = s.count;
-      $("tsAvg").textContent = won(s.count ? Math.round(s.net / s.count) : 0);
+      const avg = won(s.count ? Math.round(s.net / s.count) : 0);
       const parts = Object.entries(s.by_method || {})
         .map(([k, v]) => `<span>${METHOD_KR[k] || k} <b>${won(v)}</b></span>`);
       if(s.points_used) parts.push(`<span>포인트 <b>-${won(s.points_used)}</b></span>`);
-      $("tsMethods").innerHTML = parts.join("");
-    } catch(e){ $("tsAmt").textContent = "—"; }
+      const html = parts.join("");
+      [["tsAmt","tsCnt","tsAvg","tsMethods"],
+       ["tsoAmt","tsoCnt","tsoAvg","tsoMethods"]].forEach(([a,c,g,m])=>{
+        put(a, won(s.net)); put(c, s.count); put(g, avg);
+        const el = document.getElementById(m); if(el) el.innerHTML = html;
+      });
+    } catch(e){ put("tsAmt","—"); put("tsoAmt","—"); }
   }
 
   // ── 결제 단말 화면 ──
@@ -1076,6 +1089,7 @@
 
   function showDone(res){
     $("payView").classList.add("hidden"); $("doneView").classList.remove("hidden");
+    loadTodaySales();        // 방금 결제분을 바로 반영
     // 결제가 끝나면 이 목록이 곧 '만들 것'이다 — 레시피를 여기 붙인다.
     // 주문 받는 중에 띄우면 손님 앞에서 흐름이 끊긴다.
     const rows = (res.items||[]).map((i, idx)=>{
