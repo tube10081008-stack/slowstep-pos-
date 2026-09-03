@@ -186,14 +186,17 @@
 
   /* 메뉴판에서 빼는 것들. **POS에서는 그대로 판다** — 여기서만 안 보인다.
      - 디저트: 매일 바뀌어서 붙박이 메뉴판에 올리면 틀린 정보가 된다.
-     - 킹 레온: 특정 손님을 위한 주문 상품이라 일반 메뉴로 노출하지 않는다.
-     이름은 띄어쓰기를 무시하고 맞춘다("킹레온"으로 적어도 걸린다). */
+     - 레온 · 킹: 특정 손님을 위한 주문 상품이라 일반 메뉴로 노출하지 않는다. */
   const HIDE_CATEGORIES = ["dessert"];
-  const HIDE_NAMES = ["킹 레온"];
+  // 이름에 이 낱말이 들어가면 메뉴판에서 뺀다. 정확한 이름 대신 낱말로 맞춘다 —
+  // "레온 킹"인지 "킹 레온"인지, 뒤에 무엇이 붙는지에 흔들리지 않게.
+  const HIDE_WORDS = ["레온", "킹"];
   const squash = (t) => (t || "").replace(/\s+/g, "");
-  const hidden = new Set(HIDE_NAMES.map(squash));
-  const showOnBoard = (m) =>
-    !HIDE_CATEGORIES.includes(m.category) && !hidden.has(squash(m.name));
+  const showOnBoard = (m) => {
+    if(HIDE_CATEGORIES.includes(m.category)) return false;
+    const n = squash(m.name);
+    return !HIDE_WORDS.some(w => n.includes(squash(w)));
+  };
 
   const FALLBACK = [
     ["아메리카노", 4000, "coffee", "hotice"], ["카페 라떼", 4500, "coffee", "hotice"],
