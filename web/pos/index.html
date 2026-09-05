@@ -188,11 +188,25 @@
   .pill.on { background:var(--brand); border-color:var(--brand); color:#fff; font-weight:600; }
 
   /* 세트 할인 · 분할 결제 — 직원이 눌러서 켜는 것들 */
-  .setbtn, .splitbtn { font-family:inherit; font-size:13px; font-weight:700; width:100%;
+  .splitbtn { font-family:inherit; font-size:13px; font-weight:700; width:100%;
     padding:10px 14px; border-radius:10px; border:1px dashed var(--line);
     background:var(--card2); color:var(--muted); cursor:pointer; }
-  .setbtn.on, .splitbtn.on { border-style:solid; border-color:var(--brand);
+  .splitbtn.on { border-style:solid; border-color:var(--brand);
     background:var(--brand-soft); color:var(--brand-dk); }
+  /* 세트 할인은 디저트 담을 때 모달에서 고른다. 여기선 상태만 보여주고,
+     눌러서 끌 수 있게만 해 둔다(예전의 큰 점선 버튼은 너무 투박했다). */
+  .setrow { display:flex; justify-content:space-between; align-items:baseline;
+    margin:8px 0 0; padding:8px 10px; border-radius:9px; cursor:pointer;
+    background:var(--card2); border:1px solid var(--line);
+    font-size:13px; font-weight:700; color:var(--muted); }
+  .setrow.on { background:var(--brand-soft); border-color:#dfe4ff; color:var(--brand-dk); }
+  .setrow b { font-variant-numeric:tabular-nums; }
+  .prepaid-tag { margin:0 0 12px; padding:10px 12px; border-radius:10px;
+    background:var(--brand-soft); border:1px solid #dfe4ff; color:var(--brand-dk);
+    font-size:14px; font-weight:800; text-align:center; }
+  .mi.prepaid .nm { font-size:17px; }
+  .lrow.cust { cursor:pointer; }
+  .lrow.cust:hover { background:var(--card2); }
   .split-row { margin-top:12px; }
   .split-sum { margin-top:8px; font-size:13px; font-weight:700;
     display:flex; gap:10px; flex-wrap:wrap; }
@@ -337,11 +351,8 @@
       <div class="card cart">
         <h3>주문 내역 <span class="clear" onclick="clearCart()">비우기</span></h3>
         <div id="cartList"><div class="empty">메뉴를 담아주세요</div></div>
-        <div id="discountRow" class="hidden" style="margin:8px 0 0;">
-          <button class="setbtn" id="setBtn" onclick="toggleSet()">세트 할인 적용</button>
-          <div class="total" style="margin:6px 0 0;">
-            <span class="muted" style="color:var(--gold)">세트 할인</span><b id="cartDiscount" style="color:var(--gold);font-size:15px;">-0원</b>
-          </div>
+        <div id="discountRow" class="hidden setrow" onclick="toggleSet()" title="눌러서 켜고 끄기">
+          <span id="setBtn">세트 할인</span><b id="cartDiscount">-0원</b>
         </div>
         <div class="total"><span class="muted">합계</span><b id="cartTotal">0원</b></div>
         <button class="pay" id="payBtn" disabled onclick="goPay()">결제하기</button>
@@ -360,6 +371,7 @@
   <div id="payView" class="hidden">
     <div class="card terminal">
       <div class="term-amt"><div class="lbl">결제 금액</div><div class="amt" id="termAmt">0원</div></div>
+      <div id="prepaidTag" class="hidden prepaid-tag"></div>
 
       <!-- 2-1. 고객번호 입력 (단말기 시뮬레이션) -->
       <div id="phoneStep">
@@ -499,6 +511,31 @@
     </div>
   </div>
 
+  <!-- 포인트 지급·회수 -->
+  <div class="modal-bg hidden" id="grantModal">
+    <div class="modal">
+      <div class="mtitle" id="grantWho">—</div>
+      <div class="opt-sec">
+        <div class="lbl">포인트</div>
+        <div class="opt-row">
+          <div class="opt" onclick="grantPreset(1000)">1,000</div>
+          <div class="opt" onclick="grantPreset(3000)">3,000</div>
+          <div class="opt" onclick="grantPreset(5000)">5,000</div>
+          <div class="opt" onclick="grantPreset(10000)">10,000</div>
+        </div>
+        <input id="grantAmt" inputmode="numeric" placeholder="직접 입력" style="margin-top:10px;" />
+      </div>
+      <p class="muted" style="margin:10px 0 0;font-size:12px;">
+        지급·회수 내역은 <b>포인트 원장에 남아</b> 손님 화면의 적립 내역에도 그대로 보입니다.</p>
+      <p class="ai-msg err" id="grantMsg" style="margin:6px 0 0;"></p>
+      <div class="row" style="margin-top:12px;">
+        <button class="ghost" onclick="closeGrant()">취소</button>
+        <button class="ghost" onclick="doGrant(-1)" style="color:var(--red);border-color:#fecaca;">회수</button>
+        <button class="confirm" onclick="doGrant(1)">지급</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 옵션 선택 모달 -->
   <div class="modal-bg hidden" id="optModal">
     <div class="modal">
@@ -513,6 +550,14 @@
       <div class="opt-sec hidden" id="optExtraSec">
         <div class="lbl">옵션 추가</div>
         <div class="opt-row" id="optExtraRow"></div>
+      </div>
+      <div class="opt-sec hidden" id="optSetSec">
+        <div class="lbl">세트 할인</div>
+        <div class="opt-row">
+          <div class="opt" id="optSet" onclick="toggleExtra('set')">
+            음료와 함께<small id="optSetAmt">-500원</small>
+          </div>
+        </div>
       </div>
       <div class="total" style="margin-top:18px;"><span class="muted">금액</span><b id="optPrice">0원</b></div>
       <div class="row" style="margin-top:6px;">
@@ -548,7 +593,7 @@
   const API_BASE = location.origin.includes(":5500") ? "http://localhost:8000" : location.origin;
   const $ = (id) => document.getElementById(id);
   const won = (n) => (n||0).toLocaleString("ko-KR") + "원";
-  const CAT_ORDER = [["all","전체"],["coffee","커피"],["coldbrew","콜드브루"],["ade","스무디·에이드"],["noncoffee","논커피"],["tea","티"],["dessert","디저트"]];
+  const CAT_ORDER = [["all","전체"],["coffee","커피"],["coldbrew","콜드브루"],["ade","스무디·에이드"],["noncoffee","논커피"],["tea","티"],["dessert","디저트"],["prepaid","선결제"]];
 
   let store=null, menu=[], cat="all", cart={}, member=null, method="CARD", earnRate=0.05;
   let justJoined=false;   // 방금 가입했는가 — 손님 화면 축하 문구용(1회성)
@@ -687,9 +732,35 @@
     return p.join(" · "); };
   const itemQty = (id)=> Object.values(cart).filter(c=>c.item.id===id).reduce((s,c)=>s+c.qty,0);
   const needsOptions = (m)=> m.temp_option==="hotice" || m.decaf_available
-    || m.oatmilk_available || m.shot_available || m.size_up_price > 0;
+    || m.oatmilk_available || m.shot_available || m.size_up_price > 0
+    // 디저트는 옵션이 없어도 세트 할인을 고를 수 있게 모달을 띄운다
+    || (m.category === "dessert" && setDiscount > 0);
+
+  /* 선결제(충전) — 낸 금액을 그대로 포인트로 넣는다.
+     메뉴가 아니라서 장바구니를 타지 않고 전용 흐름으로 간다. */
+  const PREPAID = [30000, 50000, 100000];
+  let prepaidAmount = 0;
+  function renderPrepaid(){
+    $("menu").innerHTML = PREPAID.map(a=>
+      `<div class="mi prepaid" onclick="startPrepaid(${a})">
+         <div class="nm">${won(a)} 충전</div>
+         <div class="pr">+${won(a)}P</div>
+         <div class="tags"><span class="tg ice">선결제</span></div>
+       </div>`).join("") +
+      `<p class="muted" style="grid-column:1/-1;margin:10px 2px 0;font-size:12px;">
+         낸 금액이 그대로 포인트로 들어갑니다. 충전에는 3% 적립이 붙지 않습니다
+         (충전 자체가 포인트를 주는 것이라 이중이 됩니다).</p>`;
+  }
+  function startPrepaid(amount){
+    if(Object.keys(cart).length){
+      toast("장바구니를 비운 뒤 충전해 주세요"); return;
+    }
+    prepaidAmount = amount;
+    goPay();                       // 회원 확인 화면으로 — 충전은 회원에게만
+  }
 
   function renderMenu(){
+    if(cat === "prepaid"){ renderPrepaid(); return; }
     const items = menu.filter(m => cat==="all" || m.category===cat);
     $("menu").innerHTML = items.map(m=>{
       const q = itemQty(m.id);
@@ -768,9 +839,15 @@
 
   // ── 옵션 모달 ──
   let optItem=null, optTemp="ice", optDecaf=false, optOat=false, optShot=false, optUp=false;
+  let optSet=false;   // 디저트 담을 때 고른 세트 할인
   function openOpt(m){
     optItem=m; optTemp = m.temp_option==="hotice"?"ice":(m.temp_option==="ice"?"ice":"");
     optDecaf=false; optOat=false; optShot=false; optUp=false;
+    // 세트 할인은 디저트를 담을 때 여기서 고른다(장바구니의 투박한 버튼 대신).
+    // 이미 켜져 있으면 켠 채로 보여준다 — 담을 때마다 꺼지면 헷갈린다.
+    optSet = (m.category === "dessert") ? setOn : false;
+    $("optSetSec").classList.toggle("hidden", m.category !== "dessert" || setDiscount <= 0);
+    $("optSet").classList.toggle("on", optSet);
     $("optTitle").innerHTML = m.name + `<small>기본 ${won(m.price)}</small>`;
     if(m.temp_option==="hotice"){ $("optTempSec").classList.remove("hidden"); setTempUI(); }
     else $("optTempSec").classList.add("hidden");
@@ -791,6 +868,7 @@
     if(k==="decaf"){ optDecaf=!optDecaf; $("optDecaf").classList.toggle("on",optDecaf); }
     else if(k==="oat"){ optOat=!optOat; $("optOat").classList.toggle("on",optOat); }
     else if(k==="shot"){ optShot=!optShot; $("optShot").classList.toggle("on",optShot); }
+    else if(k==="set"){ optSet=!optSet; $("optSet").classList.toggle("on",optSet); }
     else { optUp=!optUp; $("optUp").classList.toggle("on",optUp); }
     updateOptPrice();
   }
@@ -799,7 +877,12 @@
       + (optOat?optPrice:0) + (optShot?optPrice:0) + (optUp?optItem.size_up_price:0));
   }
   function closeOpt(){ $("optModal").classList.add("hidden"); }
-  function addFromOpt(){ addLine(optItem, optTemp, optDecaf, optOat, optShot, optUp); closeOpt(); }
+  function addFromOpt(){
+    addLine(optItem, optTemp, optDecaf, optOat, optShot, optUp);
+    if(optItem && optItem.category === "dessert") setOn = optSet;   // 모달에서 고른 대로
+    renderCart();
+    closeOpt();
+  }
 
   const sig = (id,t,d,o,sh,up)=> id+"|"+t+"|"+(d?1:0)+"|"+(o?1:0)+"|"+(sh?1:0)+"|"+(up?1:0);
   function addLine(m, temp, decaf, oat, shot, up){
@@ -866,11 +949,9 @@
     if(!pairs) setOn = false;              // 조건이 깨지면 자동 해제
     const disc = discountTotal();
     $("discountRow").classList.toggle("hidden", pairs<=0);
-    $("setBtn").classList.toggle("on", setOn);
-    $("setBtn").textContent = setOn
-      ? `세트 할인 적용됨 (${pairs}세트)`
-      : `세트 할인 적용 (${pairs}세트 · -${won(pairs*setDiscount)})`;
-    $("cartDiscount").textContent = "-" + won(disc);
+    $("discountRow").classList.toggle("on", setOn);
+    $("setBtn").textContent = setOn ? `세트 할인 ${pairs}세트` : "세트 할인 (안 함)";
+    $("cartDiscount").textContent = setOn ? "-" + won(disc) : "-";
     $("cartTotal").textContent = won(finalTotal());
     $("payBtn").disabled = entries.length===0;
     sendDisplay(entries.length ? cartSnapshot() : { type:"idle" });
@@ -957,16 +1038,22 @@
     : "pos-"+Date.now()+"-"+Math.random().toString(36).slice(2,10));
 
   function goPay(){
-    if(!Object.keys(cart).length) return;
+    // 충전은 장바구니를 타지 않으므로 빈 장바구니도 통과시킨다
+    if(!Object.keys(cart).length && prepaidAmount <= 0) return;
     orderId = newOrderId();
     member=null; phone=""; renderPhone();
-    $("termAmt").textContent = won(finalTotal());
-    sendDisplay({ type:"pay", total: finalTotal() });
+    const amt = prepaidAmount > 0 ? prepaidAmount : finalTotal();
+    $("termAmt").textContent = won(amt);
+    // 번호 입력 단계에서도 충전임을 알 수 있게 배지를 먼저 띄운다
+    $("prepaidTag").classList.toggle("hidden", prepaidAmount <= 0);
+    $("prepaidTag").textContent = prepaidAmount > 0 ? `선결제 충전 · ${won(prepaidAmount)}` : "";
+    sendDisplay({ type:"pay", total: amt });
     $("orderView").classList.add("hidden"); $("doneView").classList.add("hidden");
     $("payView").classList.remove("hidden");
     $("phoneStep").classList.remove("hidden"); $("confirmStep").classList.add("hidden");
   }
-  function backToOrder(){ $("payView").classList.add("hidden"); $("orderView").classList.remove("hidden");
+  function backToOrder(){ prepaidAmount = 0;
+    $("payView").classList.add("hidden"); $("orderView").classList.remove("hidden");
     sendDisplay(Object.keys(cart).length ? cartSnapshot() : { type:"idle" }); }
   function resetPhone(){ member=null; phone=""; renderPhone();
     $("phoneStep").classList.remove("hidden"); $("confirmStep").classList.add("hidden");
@@ -1013,6 +1100,16 @@
     $("usePoints").value="0";
     $("approvalNo").value="";
     if(splitOn) toggleSplit();          // 주문마다 분할은 꺼진 상태로 시작
+    // 충전은 포인트 사용·쿠폰·할인과 섞이지 않는다 — 관련 칸을 감춘다
+    const pre = prepaidAmount > 0;
+    $("prepaidTag").classList.toggle("hidden", !pre);
+    $("prepaidTag").textContent = pre ? `선결제 충전 · ${won(prepaidAmount)}` : "";
+    if(pre){
+      $("pointBox").classList.add("hidden");
+      $("discBox").classList.add("hidden");
+      $("couponBox") && $("couponBox").classList.add("hidden");
+      $("payNet").textContent = won(prepaidAmount);
+    }
     discPct = 0; renderDisc();
     loadCoupons();
     recalcPay();
@@ -1153,6 +1250,7 @@
   });
 
   async function approve(){
+    if(prepaidAmount > 0) return approvePrepaid();
     const use = member ? Math.max(0, parseInt($("usePoints").value||"0",10)) : 0;
     const items = Object.values(cart).map(c=>({ menu_item_id:c.item.id, quantity:c.qty,
       temperature:c.temp, decaf:c.decaf, oatmilk:c.oat, shot:c.shot, size_up:!!c.up }));
@@ -1168,6 +1266,23 @@
       lastOrder = res;
       if(res.idempotent_replay) toast("이미 처리된 주문입니다 — 기존 결제를 표시합니다");
       showDone(res);
+    } catch(e){ toast("❌ "+e.message); }
+    finally { $("approveBtn").disabled=false; $("approveBtn").textContent="결제 완료 확인"; }
+  }
+
+  /* 충전 승인 — 회원에게만 가능하고, 결제 화면의 포인트 사용·쿠폰은 쓰지 않는다. */
+  async function approvePrepaid(){
+    if(!member){ toast("충전은 회원에게만 가능합니다 — 번호를 확인해 주세요"); return; }
+    $("approveBtn").disabled=true; $("approveBtn").textContent="처리 중…";
+    try {
+      const res = await api("/api/v1/prepaid", { method:"POST", body: JSON.stringify({
+        member_id: member.id, amount: prepaidAmount, payment_method: method,
+        approval_no: ($("approvalNo").value||"").trim(),
+        toss_order_id: orderId || newOrderId(),
+      })});
+      toast(`${won(prepaidAmount)} 충전 완료 · ${res.member.name} ${(res.member.points).toLocaleString("ko-KR")}P`);
+      prepaidAmount = 0;
+      backToOrder(); setCat("all"); loadTodaySales();
     } catch(e){ toast("❌ "+e.message); }
     finally { $("approveBtn").disabled=false; $("approveBtn").textContent="결제 완료 확인"; }
   }
@@ -1517,12 +1632,42 @@
     try {
       const list = await api("/api/v1/members" + (q?("?q="+encodeURIComponent(q)):""));
       const rows = list.slice(0,30);
+      custCache = {};
+      rows.forEach(m => custCache[m.id] = m);
       $("custList").innerHTML = rows.length ? rows.map(m=>
-        `<div class="lrow"><div class="g">${m.name} <span class="badge b-${m.tier}">${m.tier_display||m.tier}</span>
+        `<div class="lrow cust" onclick="openGrant(${m.id})" title="눌러서 포인트 지급·회수">
+          <div class="g">${m.name} <span class="badge b-${m.tier}">${m.tier_display||m.tier}</span>
           <small>${m.phone} · 방문 ${m.visit_count}회 · 누적 ${won(m.total_spent)}</small></div>
           <div class="amt">${(m.points).toLocaleString("ko-KR")}P</div></div>`
       ).join("") : '<p class="muted">일치하는 고객이 없습니다.</p>';
     } catch(e){ $("custList").innerHTML='<p class="muted">'+e.message+'</p>'; }
+  }
+
+  /* 포인트 지급·회수 — 잔액만 만지지 않고 서버가 원장에 함께 남긴다.
+     (관리자에서 숫자를 직접 고치면 내역과 잔액이 갈라진다) */
+  let custCache = {}, grantId = null;
+  function openGrant(id){
+    const m = custCache[id];
+    if(!m) return;
+    grantId = id;
+    $("grantWho").innerHTML =
+      `${m.name} <small>${m.phone} · 현재 ${(m.points).toLocaleString("ko-KR")}P</small>`;
+    $("grantAmt").value = "";
+    $("grantMsg").textContent = "";
+    $("grantModal").classList.remove("hidden");
+  }
+  function closeGrant(){ $("grantModal").classList.add("hidden"); grantId = null; }
+  function grantPreset(v){ $("grantAmt").value = v; }
+  async function doGrant(sign){
+    const raw = parseInt(($("grantAmt").value||"0").replace(/\D/g,""), 10) || 0;
+    if(raw <= 0){ $("grantMsg").textContent = "포인트를 입력하세요."; return; }
+    const delta = sign * raw;
+    try {
+      const m = await api("/api/v1/points/grant", { method:"POST",
+        body: JSON.stringify({ member_id: grantId, delta }) });
+      toast(`${m.name} ${delta > 0 ? "+" : ""}${delta.toLocaleString("ko-KR")}P · 잔액 ${(m.points).toLocaleString("ko-KR")}P`);
+      closeGrant(); doSearchCust();
+    } catch(e){ $("grantMsg").textContent = e.message; }
   }
 
   function printLast(){

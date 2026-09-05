@@ -2946,3 +2946,161 @@ class MemberAdminSafetyTests(TestCase):
         from .admin import MemberAdmin
 
         self.assertIn("adjust_points", MemberAdmin(Member, site).actions)
+
+
+class ExportTests(TestCase):
+    """데이터 내보내기 — Neon이 사라져도 사본이 남아야 한다."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99)
+        self.menu = MenuItem.objects.create(store=self.store, name="아메리카노", price=5000)
+        self.m = Member.objects.create(
+            store=self.store, phone="01013131313", name="느긋한 수달", points=0
+        )
+        checkout(
+            member=self.m, gross_amount=0, points_to_use=0, payment_method="CARD",
+            items=[{"menu_item_id": self.menu.id, "quantity": 2}], toss_order_id="e1",
+        )
+        authenticate(self.client)
+
+    def test_all_kinds_download(self):
+        for kind in ("members", "transactions", "points", "coupons"):
+            res = self.client.get(f"/api/v1/export?kind={kind}")
+            self.assertEqual(res.status_code, 200, kind)
+            self.assertIn("text/csv", res["Content-Type"])
+            self.assertIn("attachment", res["Content-Disposition"])
+            body = res.content.decode("utf-8")
+            self.assertTrue(body.startswith("﻿"), f"{kind}: 엑셀용 BOM 없음")
+            self.assertGreaterEqual(len(body.splitlines()), 1)
+
+    def test_members_csv_has_the_data(self):
+        body = self.client.get("/api/v1/export?kind=members").content.decode("utf-8")
+        self.assertIn("느긋한 수달", body)
+        self.assertIn("01013131313", body)
+
+    def test_transactions_csv_has_items(self):
+        body = self.client.get("/api/v1/export?kind=transactions").content.decode("utf-8")
+        self.assertIn("아메리카노", body)
+        self.assertIn("10000", body)
+
+    def test_points_ledger_exported(self):
+        body = self.client.get("/api/v1/export?kind=points").content.decode("utf-8")
+        self.assertIn("적립", body)
+
+    def test_bad_kind_rejected(self):
+        self.assertEqual(self.client.get("/api/v1/export?kind=nope").status_code, 400)
+
+    def test_needs_staff_token(self):
+        self.assertEqual(
+            self.client_class().get("/api/v1/export?kind=members").status_code, 403
+        )
+
+
+class PointGrantTests(TestCase):
+    """수기 포인트 지급 — 잔액과 원장이 함께 움직여야 한다."""
+
+    def setUp(self):
+        self.store = make_store()
+        self.m = Member.objects.create(
+            store=self.store, phone="01014141414", name="느긋한 수달", points=0
+        )
+        authenticate(self.client)
+
+    def _grant(self, delta):
+        return self.client.post(
+            "/api/v1/points/grant",
+            data={"member_id": self.m.id, "delta": delta},
+            content_type="application/json",
+        )
+
+    def test_grant_writes_ledger(self):
+        from .integrity import check_point_ledger
+        from .models import PointEntry
+
+        res = self._grant(1000)
+        self.assertEqual(res.status_code, 200)
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.points, 1000)
+        e = PointEntry.objects.get(member=self.m)
+        self.assertEqual((e.delta, e.reason, e.balance_after), (1000, "adjust", 1000))
+        self.assertEqual(check_point_ledger()["bad"], 0)
+
+    def test_deduct_works(self):
+        self._grant(1000)
+        self._grant(-400)
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.points, 600)
+
+    def test_cannot_go_negative(self):
+        res = self._grant(-100)
+        self.assertEqual(res.status_code, 400)
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.points, 0)
+
+    def test_zero_rejected(self):
+        self.assertEqual(self._grant(0).status_code, 400)
+
+    def test_needs_staff_token(self):
+        anon = self.client_class()
+        res = anon.post("/api/v1/points/grant",
+                        data={"member_id": self.m.id, "delta": 1000},
+                        content_type="application/json")
+        self.assertEqual(res.status_code, 403)
+
+
+class PrepaidChargeTests(TestCase):
+    """선결제(충전) — 낸 만큼 포인트로, 3% 적립은 붙지 않는다."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99)
+        self.m = Member.objects.create(
+            store=self.store, phone="01015151515", name="느긋한 수달", points=0
+        )
+        authenticate(self.client)
+
+    def _charge(self, amount, **kw):
+        return self.client.post(
+            "/api/v1/prepaid",
+            data={"member_id": self.m.id, "amount": amount,
+                  "payment_method": "CARD", **kw},
+            content_type="application/json",
+        )
+
+    def test_charge_gives_exact_points(self):
+        res = self._charge(30000)
+        self.assertEqual(res.status_code, 201, res.content)
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.points, 30000)
+
+    def test_no_percent_accrual_on_top(self):
+        # 3만원 충전에 30,900P가 나가면 이중 지급이다.
+        self._charge(30000)
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.points, 30000)
+        t = Transaction.objects.get(member=self.m)
+        self.assertEqual(t.points_earned, 0)
+        self.assertEqual(t.net_amount, 30000)
+        self.assertEqual(t.status, Transaction.Status.PAID)
+
+    def test_counts_toward_tier(self):
+        # 실제로 낸 돈이므로 누적·등급에는 반영된다.
+        self._charge(100000)
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.total_spent, 100000)
+        self.assertEqual(self.m.visit_count, 1)
+        self.assertEqual(self.m.tier, Member.Tier.SILVER)
+
+    def test_ledger_stays_consistent(self):
+        from .integrity import run_all
+
+        self._charge(50000)
+        self.assertTrue(run_all()["ok"], run_all()["checks"])
+
+    def test_rejects_zero_and_guest(self):
+        self.assertEqual(self._charge(0).status_code, 400)
+        res = self.client.post(
+            "/api/v1/prepaid",
+            data={"amount": 30000, "payment_method": "CARD"},
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 400)

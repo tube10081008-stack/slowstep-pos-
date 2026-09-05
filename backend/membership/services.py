@@ -675,6 +675,69 @@ def apply_referral(member: Member, code: str) -> dict:
     }
 
 
+class PointGrantError(Exception):
+    """수기 포인트 지급/회수 실패."""
+
+
+@db_transaction.atomic
+def grant_points(member: Member, delta: int, note: str = "") -> Member:
+    """
+    수기 포인트 지급·회수. **잔액과 원장을 함께 옮긴다.**
+
+    잔액만 만지면 손님 화면의 '적립 내역'과 잔액이 서로 다른 말을 하게 된다
+    (정합성 점검기가 잡는 바로 그 어긋남). 지급 경로는 여기 하나로 모은다.
+    """
+    delta = int(delta or 0)
+    if delta == 0:
+        raise PointGrantError("0P는 지급할 수 없습니다.")
+    me = Member.objects.select_for_update().get(pk=member.pk)
+    if me.points + delta < 0:
+        raise PointGrantError(
+            f"보유 포인트({me.points:,}P)보다 많이 회수할 수 없습니다."
+        )
+    _record_point(me, None, delta, PointEntry.Reason.ADJUST)
+    me.save(update_fields=["points"])
+    return me
+
+
+@db_transaction.atomic
+def prepaid_charge(
+    member: Member, amount: int, payment_method: str, *,
+    approval_no: str = "", toss_order_id: str = "",
+) -> tuple[Transaction, Member]:
+    """
+    선결제(충전) — 낸 금액을 그대로 포인트로 넣어 준다.
+
+    **3% 적립은 붙이지 않는다.** 충전 자체가 포인트를 주는 행위라
+    여기에 적립까지 얹으면 이중이다(3만원 충전에 30,900P가 나간다).
+    매출은 정상적으로 잡히고, 손님이 그 포인트를 쓸 때 다시 깎이지 않는다.
+    """
+    amount = int(amount or 0)
+    if amount <= 0:
+        raise CheckoutError("선결제 금액은 0보다 커야 합니다.")
+    if member is None:
+        raise CheckoutError("선결제는 회원에게만 가능합니다.")
+    if payment_method not in dict(Transaction.Method.choices):
+        raise CheckoutError("결제수단이 올바르지 않습니다.")
+
+    me = Member.objects.select_for_update().get(pk=member.pk)
+    txn = Transaction.objects.create(
+        store=me.store, member=me,
+        gross_amount=amount, discount=0, points_used=0,
+        net_amount=amount, points_earned=0,      # 적립 없음 — 위 설명 참고
+        payment_method=payment_method,
+        approval_no=approval_no, toss_order_id=toss_order_id,
+        status=Transaction.Status.PAID, paid_at=timezone.now(),
+    )
+    _record_point(me, txn, amount, PointEntry.Reason.ADJUST)
+    # 누적 결제액·방문은 올린다 — 실제로 결제한 돈이고 등급 근거가 된다.
+    me.total_spent += amount
+    me.visit_count += 1
+    me.tier = me.compute_tier()
+    me.save(update_fields=["points", "total_spent", "visit_count", "tier"])
+    return txn, me
+
+
 @db_transaction.atomic
 def cancel_transaction(txn: Transaction) -> Transaction:
     """

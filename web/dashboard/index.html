@@ -355,6 +355,23 @@
         <div class="muted" style="margin-bottom:6px;">결과</div>
         <div class="preview-box" id="impSummary">파일을 선택하고 ① 검증하기를 눌러 주세요.</div>
         <div class="result" id="impDetail"></div>
+
+        <!-- 백업 — 관리형 DB의 백업을 믿되, 믿는 것과 사본을 갖는 것은 다르다 -->
+        <div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--line);">
+          <div style="font-weight:700;margin-bottom:6px;">데이터 내보내기 (백업)</div>
+          <p class="muted" style="margin:0 0 10px;line-height:1.6;">
+            엑셀에서 바로 열립니다. <b>DB에 문제가 생겨도 사본이 남습니다</b> —
+            특히 <b>포인트 원장</b>은 잔액의 진실 원천이라 이것만 있어도 복원할 수 있습니다.<br/>
+            한 달에 한 번쯤 내려받아 두시길 권합니다.
+          </p>
+          <div class="frow" style="flex-wrap:wrap;gap:8px;">
+            <button class="ghost sm" onclick="exportCsv('members')">회원</button>
+            <button class="ghost sm" onclick="exportCsv('transactions')">거래</button>
+            <button class="ghost sm" onclick="exportCsv('points')">포인트 원장</button>
+            <button class="ghost sm" onclick="exportCsv('coupons')">쿠폰</button>
+          </div>
+          <p class="muted" id="expMsg" style="margin:8px 0 0;"></p>
+        </div>
       </div>
     </div>
   </div>
@@ -547,6 +564,26 @@
   }
 
   // ── 고객 일괄 등록 (CSV 이관) ──
+  /* 내보내기 — 토큰이 헤더로 가야 해서 링크로는 못 받는다.
+     fetch 로 받아 blob 으로 저장한다. */
+  async function exportCsv(kind){
+    const label = { members:"회원", transactions:"거래", points:"포인트 원장", coupons:"쿠폰" }[kind] || kind;
+    $("expMsg").textContent = `${label} 내려받는 중…`;
+    try {
+      const r = await fetch(API_BASE + "/api/v1/export?kind=" + kind,
+                            { headers: StorePin.headers() });
+      if(!r.ok) throw new Error("오류 " + r.status);
+      const blob = await r.blob();
+      const today = new Date().toISOString().slice(0,10);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `슬로우스텝_${label}_${today}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=> URL.revokeObjectURL(a.href), 1000);
+      $("expMsg").textContent = `${label} 내려받기 완료`;
+    } catch(e){ $("expMsg").textContent = "실패: " + e.message; }
+  }
+
   function downloadTemplate(){
     // ﻿ BOM — 엑셀에서 한글이 깨지지 않게
     const csv = "﻿이름,연락처,포인트,누적결제액,방문횟수,스탬프,마케팅동의,가입일\n"

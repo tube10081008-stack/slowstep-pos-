@@ -38,6 +38,7 @@ from .auth import (
 )
 from .ai_order import OrderParseError, parse_order
 from .imports import CsvImportError, import_members_csv
+from .exports import EXPORTERS, export_csv
 from .integrity import run_all as integrity_run_all
 from .member_qr import QrUnavailable, member_url, qr_svg
 from .margins import margin_summary, menu_item_margins, to_supply
@@ -45,8 +46,11 @@ from .profile import build_member_dashboard, hall_of_fame
 from .services import (
     CheckoutError,
     CouponError,
+    PointGrantError,
     ReferralError,
     SpinError,
+    grant_points,
+    prepaid_charge,
     apply_referral,
     build_quote,
     cancel_transaction,
@@ -168,6 +172,92 @@ class IntegrityView(APIView):
         except (TypeError, ValueError):
             limit = 10
         return Response(integrity_run_all(limit=limit))
+
+
+class ExportView(APIView):
+    """
+    데이터 내보내기 🔒 — `?kind=members|transactions|points|coupons`.
+
+    관리형 DB의 백업을 믿되, **믿는 것과 사본을 갖는 것은 다르다.**
+    Neon에 문제가 생기면 이관 포인트도 매출도 복구할 방법이 없다.
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def get(self, request):
+        kind = (request.query_params.get("kind") or "members").strip()
+        if kind not in EXPORTERS:
+            return Response(
+                {"detail": f"kind 는 {', '.join(EXPORTERS)} 중 하나여야 합니다."},
+                status=400,
+            )
+        body, filename = export_csv(kind)
+        from django.http import HttpResponse
+        from urllib.parse import quote
+
+        res = HttpResponse(body, content_type="text/csv; charset=utf-8")
+        # 한글 파일명은 RFC 5987 로 — 그냥 넣으면 브라우저가 깨뜨린다
+        res["Content-Disposition"] = (
+            f"attachment; filename=export.csv; filename*=UTF-8''{quote(filename)}"
+        )
+        return res
+
+
+class PointGrantView(APIView):
+    """
+    수기 포인트 지급·회수 🔒 — `POST {"member_id": 1, "delta": 1000}`.
+
+    잔액만 만지지 않고 **원장에 함께 남긴다.** 지급 경로를 하나로 모아
+    두지 않으면 잔액과 내역이 갈라진다.
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def post(self, request):
+        member = _resolve_member(request.data.get("member_id"))
+        if member is None:
+            return Response({"detail": "회원을 선택해 주세요."}, status=400)
+        try:
+            delta = int(request.data.get("delta") or 0)
+        except (TypeError, ValueError):
+            return Response({"detail": "증감 포인트가 올바르지 않습니다."}, status=400)
+        try:
+            updated = grant_points(member, delta)
+        except PointGrantError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(MemberSerializer(updated).data)
+
+
+class PrepaidView(APIView):
+    """
+    선결제(충전) 🔒 — `POST {"member_id": 1, "amount": 30000, "payment_method": "CARD"}`.
+
+    낸 금액을 그대로 포인트로 넣는다. **3% 적립은 붙지 않는다** —
+    충전 자체가 포인트를 주는 행위라 여기에 적립까지 얹으면 이중이다.
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def post(self, request):
+        member = _resolve_member(request.data.get("member_id"))
+        try:
+            amount = int(request.data.get("amount") or 0)
+        except (TypeError, ValueError):
+            return Response({"detail": "금액이 올바르지 않습니다."}, status=400)
+        try:
+            txn, updated = prepaid_charge(
+                member, amount,
+                request.data.get("payment_method") or "CARD",
+                approval_no=(request.data.get("approval_no") or "").strip(),
+                toss_order_id=(request.data.get("toss_order_id") or "").strip(),
+            )
+        except CheckoutError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(
+            {"transaction": TransactionSerializer(txn).data,
+             "member": MemberSerializer(updated).data},
+            status=201,
+        )
 
 
 class PinLoginView(APIView):
