@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import IntegrityError, transaction as db_transaction
-from django.db.models import F
+from django.db.models import F, Sum
 from django.utils import timezone
 
 from .models import (
@@ -753,13 +753,24 @@ def cancel_transaction(txn: Transaction) -> Transaction:
     member = txn.member
     if member is not None:
         member = Member.objects.select_for_update().get(pk=member.pk)
-        # 순 포인트 변동 = 사용분 환급(+) − 적립분 회수(−)
-        delta = txn.points_used - txn.points_earned
+        # 선결제(충전)로 넣어 준 포인트. 이 거래에 묶인 adjust 원장이 곧 그것이다
+        # (수기 지급은 거래에 묶이지 않으므로 여기 잡히지 않는다).
+        # 이걸 빼먹으면 **돈은 환불했는데 포인트는 남는다** — 5만원 충전을
+        # 취소해도 5만P가 그대로 남아 있었다.
+        charged = PointEntry.objects.filter(
+            transaction=txn, reason=PointEntry.Reason.ADJUST
+        ).aggregate(s=Sum("delta"))["s"] or 0
+
+        # 순 포인트 변동 = 사용분 환급(+) − 적립분 회수(−) − 충전분 회수(−)
+        delta = txn.points_used - txn.points_earned - charged
         if delta != 0:
             _record_point(member, txn, delta, PointEntry.Reason.CANCEL)
         member.total_spent = max(0, member.total_spent - txn.net_amount)
         member.visit_count = max(0, member.visit_count - 1)
-        member.stamps = max(0, member.stamps - 1)
+        # 충전은 스탬프를 주지 않았으므로 뺏어서도 안 된다.
+        # (안 준 스탬프를 회수하면 손님이 손해를 본다)
+        if not charged:
+            member.stamps = max(0, member.stamps - 1)
         member.tier = member.compute_tier()
         member.save()
 

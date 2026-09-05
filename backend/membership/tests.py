@@ -3104,3 +3104,78 @@ class PrepaidChargeTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(res.status_code, 400)
+
+
+class PrepaidCancelTests(TestCase):
+    """선결제 취소 — 돈을 돌려주면 포인트도 함께 회수돼야 한다."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99)
+        self.menu = MenuItem.objects.create(store=self.store, name="아메리카노", price=5000)
+        self.m = Member.objects.create(
+            store=self.store, phone="01022222222", name="느긋한 수달",
+            points=0, stamps=3,
+        )
+
+    def test_cancel_takes_the_points_back(self):
+        from .services import prepaid_charge
+
+        txn, _ = prepaid_charge(self.m, 50000, "CARD", toss_order_id="pc1")
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.points, 50000)
+
+        cancel_transaction(txn)
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.points, 0, "환불했는데 포인트가 남아 있다")
+        self.assertEqual(self.m.total_spent, 0)
+        self.assertEqual(self.m.visit_count, 0)
+
+    def test_cancel_does_not_steal_a_stamp(self):
+        # 충전은 스탬프를 주지 않았으므로 취소가 뺏어서도 안 된다.
+        from .services import prepaid_charge
+
+        txn, _ = prepaid_charge(self.m, 30000, "CARD", toss_order_id="pc2")
+        cancel_transaction(txn)
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.stamps, 3)
+
+    def test_ledger_stays_consistent_after_cancel(self):
+        from .integrity import run_all
+        from .services import prepaid_charge
+
+        txn, _ = prepaid_charge(self.m, 50000, "CARD", toss_order_id="pc3")
+        cancel_transaction(txn)
+        r = run_all()
+        self.assertTrue(r["ok"], r["checks"])
+
+    def test_normal_sale_cancel_unchanged(self):
+        # 일반 결제 취소는 기존 그대로여야 한다(적립분 회수 + 스탬프 되돌림).
+        self.m.points = 0
+        self.m.save()
+        r = checkout(
+            member=self.m, gross_amount=0, points_to_use=0, payment_method="CARD",
+            items=[{"menu_item_id": self.menu.id, "quantity": 1}], toss_order_id="pc4",
+        )
+        self.m.refresh_from_db()
+        earned, stamps_after = self.m.points, self.m.stamps
+        self.assertGreater(earned, 0)
+
+        cancel_transaction(r.transaction)
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.points, 0)
+        self.assertEqual(self.m.stamps, stamps_after - 1)
+
+    def test_cancel_with_points_used_still_refunds(self):
+        from .services import prepaid_charge
+
+        prepaid_charge(self.m, 10000, "CARD", toss_order_id="pc5")
+        r = checkout(
+            member=self.m, gross_amount=0, points_to_use=3000, payment_method="CARD",
+            items=[{"menu_item_id": self.menu.id, "quantity": 1}], toss_order_id="pc6",
+        )
+        self.m.refresh_from_db()
+        before = self.m.points
+        cancel_transaction(r.transaction)
+        self.m.refresh_from_db()
+        # 사용한 3,000P 환급 − 이 거래로 적립된 분 회수
+        self.assertEqual(self.m.points, before + 3000 - r.transaction.points_earned)
