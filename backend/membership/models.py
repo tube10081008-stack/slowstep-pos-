@@ -267,6 +267,20 @@ class Transaction(models.Model):
         PAID = "paid", "결제완료"
         CANCELED = "canceled", "취소"
 
+    @property
+    def is_split(self) -> bool:
+        return bool(self.split_method) and self.split_amount > 0
+
+    def amounts_by_method(self) -> dict:
+        """{수단: 금액}. 분할이면 둘로 나뉜다. 정산과 화면이 같은 값을 쓴다."""
+        if not self.is_split:
+            return {self.payment_method: self.net_amount}
+        rest = self.net_amount - self.split_amount
+        out = {self.split_method: self.split_amount}
+        if rest:
+            out[self.payment_method] = out.get(self.payment_method, 0) + rest
+        return out
+
     store = models.ForeignKey(
         Store, on_delete=models.PROTECT, related_name="transactions"
     )
@@ -290,6 +304,15 @@ class Transaction(models.Model):
     payment_method = models.CharField(
         "결제수단", max_length=20, choices=Method.choices
     )
+    # ── 분할 결제 (현금 얼마 + 카드 나머지) ──────────────────────────
+    # 손님이 두 가지로 나눠 내는 경우. split_amount 는 **보조 수단이 받은 금액**,
+    # 나머지(net_amount − split_amount)를 payment_method 가 받는다.
+    # 결제수단을 표 하나로 늘리지 않고 두 칸으로 둔 이유: 카페에서 셋으로
+    # 쪼개는 일은 없고, 이 값을 읽는 곳이 정산의 수단별 집계 한 군데뿐이다.
+    split_method = models.CharField(
+        "분할 결제수단", max_length=20, choices=Method.choices, blank=True, default=""
+    )
+    split_amount = models.IntegerField("분할 금액", default=0)
     # 외부 단말 승인번호(정산 대사용, 선택 입력)
     approval_no = models.CharField(
         "단말 승인번호", max_length=50, blank=True, default=""

@@ -318,10 +318,14 @@ class SalesSummaryView(APIView):
             discount=Sum("discount"), net=Sum("net_amount"),
             points=Sum("points_earned"), points_used=Sum("points_used"),
         )
-        methods = {
-            row["payment_method"]: row["s"]
-            for row in today_qs.values("payment_method").annotate(s=Sum("net_amount"))
-        }
+        # 수단별 집계. **분할 결제는 둘로 쪼개 넣는다** — 한쪽에 몰아 잡으면
+        # 카드 단말기 합계와 안 맞고, 그게 정산이 틀어지는 첫 자리다.
+        methods: dict[str, int] = {}
+        for txn in today_qs.only(
+            "payment_method", "split_method", "split_amount", "net_amount"
+        ):
+            for m, amt in txn.amounts_by_method().items():
+                methods[m] = methods.get(m, 0) + amt
         # 오늘 기여이익(공급가 − 재료원가 − 적립비용). 자세한 기준은 margins.py.
         net_today = agg["net"] or 0
         material_cost = OrderItem.objects.filter(transaction__in=today_qs).aggregate(
@@ -554,7 +558,13 @@ class TransactionViewSet(viewsets.ModelViewSet):
         base = Transaction.objects.select_related("member").prefetch_related("items")
         if self.action != "list":
             return base.all()
-        qs = base.exclude(status=Transaction.Status.PENDING)
+        # **결제 시각 순으로 준다.** 기본 정렬은 생성 시각(-created_at)인데,
+        # 주문 내역 화면은 paid_at 으로 날짜를 묶는다. 둘이 어긋나면
+        # 날짜 머리가 중복되고 순서가 뒤섞인다(승인 전 상태로 있다가 나중에
+        # 확정된 건에서 실제로 갈린다).
+        qs = base.exclude(status=Transaction.Status.PENDING).order_by(
+            F("paid_at").desc(nulls_last=True), "-created_at"
+        )
         # ?date=YYYY-MM-DD 면 그날치만. 날짜를 안 주면 최근 100건(기존 동작).
         day = _query_date(self.request)
         if day:
@@ -616,6 +626,8 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 coupon_id=data.get("coupon_id"),
                 discount_pct=data.get("discount_pct") or 0,
                 set_discount=data.get("set_discount") or False,
+                split_method=data.get("split_method") or "",
+                split_amount=data.get("split_amount") or 0,
             )
         except (CheckoutError, CouponError) as exc:
             return Response({"detail": str(exc)}, status=400)

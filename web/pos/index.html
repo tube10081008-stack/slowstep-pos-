@@ -187,6 +187,17 @@
     border:1px solid var(--line); cursor:pointer; }
   .pill.on { background:var(--brand); border-color:var(--brand); color:#fff; font-weight:600; }
 
+  /* 세트 할인 · 분할 결제 — 직원이 눌러서 켜는 것들 */
+  .setbtn, .splitbtn { font-family:inherit; font-size:13px; font-weight:700; width:100%;
+    padding:10px 14px; border-radius:10px; border:1px dashed var(--line);
+    background:var(--card2); color:var(--muted); cursor:pointer; }
+  .setbtn.on, .splitbtn.on { border-style:solid; border-color:var(--brand);
+    background:var(--brand-soft); color:var(--brand-dk); }
+  .split-row { margin-top:12px; }
+  .split-sum { margin-top:8px; font-size:13px; font-weight:700;
+    display:flex; gap:10px; flex-wrap:wrap; }
+  .split-sum .bad { color:var(--red); }
+
   /* ── 완료 화면 ── */
   .done { max-width:440px; margin:0 auto; text-align:center; }
   .done .ok { width:64px; height:64px; margin:0 auto; border-radius:50%; background:#dcfce7; color:var(--green);
@@ -228,6 +239,11 @@
   .dot.ok { background:var(--green); } .dot.off { background:#cbd5e1; }
   .hist { border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:10px; }
   .hist.canceled { opacity:.55; }
+  .hist-day { display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+    margin:18px 0 8px; padding-bottom:6px; border-bottom:2px solid var(--txt);
+    font-size:14px; font-weight:800; letter-spacing:-.01em; }
+  .hist-day:first-child { margin-top:0; }
+  .hist-day .d-sum { font-size:12px; font-weight:700; color:var(--muted); }
   .hist { cursor:pointer; }
   .hist .ht { display:flex; justify-content:space-between; font-size:14px; font-weight:600; }
   /* 메뉴 줄은 '무엇을 팔았나'라서 이 카드에서 제일 중요한 정보다.
@@ -382,6 +398,23 @@
           <span class="pill" data-m="EASYPAY">간편결제</span>
           <span class="pill" data-m="CASH">현금</span>
         </div>
+        <!-- 분할 결제: 현금 얼마 + 나머지 카드 -->
+        <div class="split-row">
+          <button class="splitbtn" id="splitBtn" onclick="toggleSplit()">＋ 분할 결제</button>
+        </div>
+        <div id="splitBox" class="hidden">
+          <label>나눠 받을 수단 · 금액</label>
+          <div class="pill-row" id="splitMethods">
+            <span class="pill on" data-m="CASH">현금</span>
+            <span class="pill" data-m="CARD">카드</span>
+            <span class="pill" data-m="NAVERPAY">네이버페이</span>
+            <span class="pill" data-m="EASYPAY">간편결제</span>
+          </div>
+          <input id="splitAmt" inputmode="numeric" placeholder="예: 5000"
+                 oninput="recalcPay()" style="margin-top:8px;" />
+          <div class="split-sum" id="splitSum"></div>
+        </div>
+
         <label style="margin-top:12px;">단말 승인번호 <span class="muted" style="font-weight:400">· 선택(정산용)</span></label>
         <input id="approvalNo" inputmode="numeric" placeholder="카드 단말에 표시된 승인번호" />
         <div class="total"><span class="muted">실결제액</span><b id="payNet">0원</b></div>
@@ -979,6 +1012,7 @@
     }
     $("usePoints").value="0";
     $("approvalNo").value="";
+    if(splitOn) toggleSplit();          // 주문마다 분할은 꺼진 상태로 시작
     discPct = 0; renderDisc();
     loadCoupons();
     recalcPay();
@@ -1058,14 +1092,64 @@
   function useAll(){ if(member){ $("usePoints").value = Math.min(member.points, payable()); recalcPay(); } }
   // 쿠폰 할인까지 뺀 '포인트 쓰기 전 금액'
   const payable = () => Math.max(0, finalTotal() - couponDiscount() - manualDiscount());
-  function recalcPay(){
-    let use = member ? Math.max(0, Math.min(parseInt($("usePoints").value||"0",10), member.points, payable())) : 0;
-    $("payNet").textContent = won(payable() - use);
+  const netNow = () => {
+    const use = member ? Math.max(0, Math.min(parseInt($("usePoints").value||"0",10), member.points, payable())) : 0;
+    return payable() - use;
+  };
+
+  /* 분할 결제 — 보조 수단이 splitAmt 를 받고, 나머지를 주 결제수단이 받는다.
+     "현금 5,000 + 카드 나머지" 처럼 손님이 나눠 낼 때 쓴다. */
+  let splitOn = false, splitMethod = "CASH";
+  function toggleSplit(){
+    splitOn = !splitOn;
+    $("splitBtn").classList.toggle("on", splitOn);
+    $("splitBtn").textContent = splitOn ? "분할 결제 사용 중 · 끄기" : "＋ 분할 결제";
+    $("splitBox").classList.toggle("hidden", !splitOn);
+    if(!splitOn) $("splitAmt").value = "";
+    recalcPay();
   }
+  function splitInput(){
+    if(!splitOn) return 0;
+    return Math.max(0, parseInt(($("splitAmt").value||"0").replace(/\D/g,""), 10) || 0);
+  }
+  /* 서버에 보낼 값. 규칙을 서버(_valid_split)와 똑같이 둔다 —
+     화면에 보인 금액과 실제로 기록되는 금액이 다르면 정산에서 못 찾는다. */
+  function splitPayload(){
+    const net = netNow(), amt = splitInput();
+    if(!splitOn || amt <= 0 || amt >= net || splitMethod === method) return { m:"", a:0 };
+    return { m: splitMethod, a: amt };
+  }
+
+  function recalcPay(){
+    const net = netNow();
+    $("payNet").textContent = won(net);
+    if(!splitOn){ $("splitSum").innerHTML = ""; return; }
+    const amt = splitInput();
+    const rest = net - amt;
+    if(splitMethod === method){
+      $("splitSum").innerHTML = `<span class="bad">주 결제수단과 같습니다 — 다른 수단을 고르세요</span>`;
+    } else if(amt <= 0){
+      $("splitSum").innerHTML = `<span class="muted">나눠 받을 금액을 입력하세요</span>`;
+    } else if(amt >= net){
+      $("splitSum").innerHTML = `<span class="bad">실결제액(${won(net)})보다 작아야 합니다</span>`;
+    } else {
+      $("splitSum").innerHTML =
+        `<span>${METHOD_KR[splitMethod]||splitMethod} <b>${won(amt)}</b></span>` +
+        `<span>${METHOD_KR[method]||method} <b>${won(rest)}</b></span>`;
+    }
+  }
+
   $("methods").addEventListener("click", e=>{
     const p=e.target.closest(".pill"); if(!p) return;
     [...$("methods").children].forEach(x=>x.classList.remove("on"));
     p.classList.add("on"); method=p.dataset.m;
+    recalcPay();
+  });
+  $("splitMethods").addEventListener("click", e=>{
+    const p=e.target.closest(".pill"); if(!p) return;
+    [...$("splitMethods").children].forEach(x=>x.classList.remove("on"));
+    p.classList.add("on"); splitMethod=p.dataset.m;
+    recalcPay();
   });
 
   async function approve(){
@@ -1079,6 +1163,7 @@
         payment_method:method, approval_no:($("approvalNo").value||"").trim(),
         toss_order_id: orderId || newOrderId(), coupon_id: couponId,
         discount_pct: discPct, set_discount: setOn,
+        split_method: splitPayload().m, split_amount: splitPayload().a,
       })});
       lastOrder = res;
       if(res.idempotent_replay) toast("이미 처리된 주문입니다 — 기존 결제를 표시합니다");
@@ -1337,26 +1422,60 @@
   }
 
   const METHOD_KR = { CARD:"카드", NAVERPAY:"네이버페이", EASYPAY:"간편결제", CASH:"현금", TOSS_CARD:"카드", TOSS_EASY:"간편결제" };
+  const WD = ["일","월","화","수","목","금","토"];
+  const dayKey = (iso)=>{ if(!iso) return ""; const d=new Date(iso);
+    return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; };
+  function dayLabel(iso){
+    if(!iso) return "";
+    const d = new Date(iso), today = new Date();
+    const same = (a,b)=> a.toDateString() === b.toDateString();
+    const y = new Date(today); y.setDate(y.getDate()-1);
+    const head = `${d.getMonth()+1}월 ${d.getDate()}일 (${WD[d.getDay()]})`;
+    if(same(d, today)) return `오늘 · ${head}`;
+    if(same(d, y))     return `어제 · ${head}`;
+    return head;
+  }
+  // 날짜는 머리에 한 번만 뜨므로 줄에는 시각만 남긴다
+  const fmtClock = (iso)=>{ if(!iso) return ""; const d=new Date(iso);
+    return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
   const fmtTime = (iso)=>{ if(!iso) return ""; const d=new Date(iso);
     return `${d.getMonth()+1}.${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
 
   async function loadHistory(){
     try {
       const list = await api("/api/v1/transactions");
+      // 날짜로 묶으려면 날짜순이어야 한다. 서버도 결제 시각 순으로 주지만,
+      // 여기서 한 번 더 맞춘다 — 어긋나면 같은 날짜 머리가 여러 번 뜬다.
+      list.sort((a, b) => new Date(b.paid_at || 0) - new Date(a.paid_at || 0));
       histList = list;
       loadTodaySales();
       $("histCount").textContent = "· 최근 " + list.length + "건";
       if(!list.length){ $("histList").innerHTML='<p class="muted">주문 내역이 없습니다.</p>'; return; }
-      $("histList").innerHTML = list.map(t=>{
+      /* 날짜별로 묶어 머리를 단다. 최근 100건을 한 줄로 이어 붙이면
+         어제 것과 오늘 것이 섞여 보여, "이거 오늘 판 거 맞나"를 알 수 없다. */
+      let out = "", lastDay = "";
+      list.forEach(t=>{
+        const day = dayKey(t.paid_at);
+        if(day !== lastDay){
+          lastDay = day;
+          const sub = list.filter(x => dayKey(x.paid_at) === day && x.status !== "canceled");
+          const sum = sub.reduce((a,x)=> a + (x.net_amount||0), 0);
+          out += `<div class="hist-day"><span>${dayLabel(t.paid_at)}</span>` +
+                 `<span class="d-sum">${sub.length}건 · ${won(sum)}</span></div>`;
+        }
         const names = (t.items||[]).map(i=>`${i.name}${i.option_label?`(${i.option_label})`:""}×${i.quantity}`).join(", ");
         const canceled = t.status==="canceled";
-        return `<div class="hist ${canceled?"canceled":""}" onclick="zoomOrder(${t.id})">
+        const pay = t.split_amount > 0 && t.split_method
+          ? `${METHOD_KR[t.split_method]||t.split_method} ${won(t.split_amount)} + ${METHOD_KR[t.payment_method]||""} ${won(t.net_amount - t.split_amount)}`
+          : (t.method_display||METHOD_KR[t.payment_method]||"");
+        out += `<div class="hist ${canceled?"canceled":""}" onclick="zoomOrder(${t.id})">
           <div class="ht"><span>${t.member_name||"비회원"}${canceled?'<span class="tag-cancel">취소됨</span>':""}</span><span class="amt">${won(t.net_amount)}</span></div>
           <div class="hmenu">${names||"-"}</div>
-          <div class="hi">${fmtTime(t.paid_at)} · ${t.method_display||METHOD_KR[t.payment_method]||""}${t.discount>0?` · 할인 ${won(t.discount)}`:""}${t.points_earned>0?` · +${t.points_earned}P`:""}</div>
+          <div class="hi">${fmtClock(t.paid_at)} · ${pay}${t.discount>0?` · 할인 ${won(t.discount)}`:""}${t.points_earned>0?` · +${t.points_earned}P`:""}</div>
           ${canceled?"":`<button class="cancelbtn" onclick="event.stopPropagation();cancelOrder(${t.id})">결제 취소</button>`}
         </div>`;
-      }).join("");
+      });
+      $("histList").innerHTML = out;
     } catch(e){ $("histList").innerHTML = '<p class="muted">불러오기 실패: '+e.message+'</p>'; }
   }
 

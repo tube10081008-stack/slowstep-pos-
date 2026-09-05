@@ -305,6 +305,8 @@ def checkout(
     coupon_id=None,
     discount_pct: int = 0,
     set_discount: bool = False,
+    split_method: str = "",
+    split_amount: int = 0,
 ) -> CheckoutResult:
     """결제 확정(멱등 래퍼). 동일 order_id 중복 요청은 기존 거래를 반환한다.
 
@@ -324,6 +326,8 @@ def checkout(
             coupon_id=coupon_id,
             discount_pct=discount_pct,
             set_discount=set_discount,
+            split_method=split_method,
+            split_amount=split_amount,
         )
     except _DuplicateOrder as dup:
         existing = Transaction.objects.filter(
@@ -348,6 +352,8 @@ def _checkout_atomic(
     coupon_id=None,
     discount_pct: int = 0,
     set_discount: bool = False,
+    split_method: str = "",
+    split_amount: int = 0,
 ) -> CheckoutResult:
     """
     결제 확정 전체 플로우(원자적):
@@ -393,6 +399,9 @@ def _checkout_atomic(
 
     quote = build_quote(member, gross_amount, points_to_use, discount)
 
+    sp_method, sp_amount = _valid_split(
+        payment_method, split_method, split_amount, quote.net_amount
+    )
     txn = Transaction.objects.create(
         store=store,
         member=member,
@@ -403,6 +412,8 @@ def _checkout_atomic(
         points_earned=quote.points_earned,
         manual_discount_pct=manual_pct,
         payment_method=payment_method,
+        split_method=sp_method,
+        split_amount=sp_amount,
         approval_no=approval_no,
         toss_order_id=toss_order_id,
         status=Transaction.Status.PENDING,
@@ -489,6 +500,29 @@ def _checkout_atomic(
 
     member.save()
     return CheckoutResult(transaction=txn, rewards=rewards)
+
+
+def _valid_split(payment_method, split_method, split_amount, net_amount):
+    """
+    분할 결제 검증. 어긋나면 **거절이 아니라 분할 없음**으로 떨어뜨린다.
+
+    수기 할인과 같은 판단이다 — 계산대에서는 결제가 실패하는 것보다
+    "어? 분할이 안 걸렸네"를 직원이 바로 알아채는 쪽이 덜 위험하다.
+    다만 금액이 어긋난 채로 남으면 정산이 틀어지므로, 애매하면 버린다.
+    """
+    try:
+        split_amount = int(split_amount or 0)
+    except (TypeError, ValueError):
+        return "", 0
+    if not split_method or split_amount <= 0:
+        return "", 0
+    if split_method == payment_method:
+        return "", 0                       # 같은 수단으로 쪼갤 이유가 없다
+    if split_method not in dict(Transaction.Method.choices):
+        return "", 0
+    if split_amount >= net_amount:
+        return "", 0                       # 전액이면 그냥 그 수단으로 결제한 것
+    return split_method, split_amount
 
 
 def _valid_discount_pct(store: Store, pct) -> int:

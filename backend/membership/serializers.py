@@ -140,6 +140,9 @@ class TransactionSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     member_name = serializers.CharField(source="member.name", read_only=True, default=None)
     method_display = serializers.CharField(source="get_payment_method_display", read_only=True)
+    split_method_display = serializers.CharField(
+        source="get_split_method_display", read_only=True, default=""
+    )
 
     class Meta:
         model = Transaction
@@ -147,6 +150,7 @@ class TransactionSerializer(serializers.ModelSerializer):
             "id", "member_name", "gross_amount", "discount", "manual_discount_pct",
             "points_used", "net_amount",
             "points_earned", "payment_method", "method_display", "approval_no", "status",
+            "split_method", "split_method_display", "split_amount",
             "toss_order_id", "created_at", "paid_at", "items",
         ]
 
@@ -181,6 +185,11 @@ class CheckoutRequestSerializer(serializers.Serializer):
     discount_pct = serializers.IntegerField(required=False, min_value=0, max_value=100, default=0)
     # 세트 할인은 직원이 눌렀을 때만 붙는다(자동 적용 아님).
     set_discount = serializers.BooleanField(required=False, default=False)
+    # 분할 결제 — split_amount 를 보조 수단이 받고 나머지를 payment_method 가 받는다
+    split_method = serializers.ChoiceField(
+        choices=Transaction.Method.choices, required=False, allow_blank=True, default=""
+    )
+    split_amount = serializers.IntegerField(required=False, min_value=0, default=0)
 
     def validate(self, attrs):
         if not attrs.get("items") and not attrs.get("gross_amount"):

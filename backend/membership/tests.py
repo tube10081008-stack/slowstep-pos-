@@ -2716,3 +2716,134 @@ class SalesSummaryBreakdownTests(TestCase):
         self.assertEqual(d["by_method"], {"CARD": 5000, "CASH": 5000})
         # 카드 단말기에는 5,000원만 찍히지만 매출은 10,000원이다
         self.assertEqual(d["net"], 10000)
+
+
+class SplitPaymentTests(TestCase):
+    """분할 결제 — 금액 배분과 정산 집계."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99)
+        self.menu = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=10000
+        )
+        self.m = Member.objects.create(
+            store=self.store, phone="01033334444", name="느긋한 수달", points=0
+        )
+        authenticate(self.client)
+
+    def _pay(self, oid, **kw):
+        return checkout(
+            member=self.m, gross_amount=0, points_to_use=0, payment_method="CARD",
+            items=[{"menu_item_id": self.menu.id, "quantity": 1}],
+            toss_order_id=oid, **kw
+        )
+
+    def test_split_records_both_methods(self):
+        t = self._pay("sp1", split_method="CASH", split_amount=4000).transaction
+        self.assertEqual(t.net_amount, 10000)
+        self.assertEqual(t.split_method, "CASH")
+        self.assertEqual(t.split_amount, 4000)
+        self.assertTrue(t.is_split)
+        self.assertEqual(t.amounts_by_method(), {"CASH": 4000, "CARD": 6000})
+
+    def test_no_split_by_default(self):
+        t = self._pay("sp2").transaction
+        self.assertFalse(t.is_split)
+        self.assertEqual(t.amounts_by_method(), {"CARD": 10000})
+
+    def test_split_equal_to_total_is_dropped(self):
+        # 전액이면 그냥 그 수단으로 결제한 것 — 분할로 남기면 나머지가 0인
+        # 이상한 기록이 된다.
+        t = self._pay("sp3", split_method="CASH", split_amount=10000).transaction
+        self.assertFalse(t.is_split)
+        self.assertEqual(t.amounts_by_method(), {"CARD": 10000})
+
+    def test_same_method_is_dropped(self):
+        t = self._pay("sp4", split_method="CARD", split_amount=3000).transaction
+        self.assertFalse(t.is_split)
+
+    def test_bad_split_does_not_fail_the_sale(self):
+        # 계산대에서는 결제가 실패하는 것보다 분할이 안 걸리는 쪽이 덜 위험하다.
+        t = self._pay("sp5", split_method="NOPE", split_amount=3000).transaction
+        self.assertEqual(t.status, Transaction.Status.PAID)
+        self.assertFalse(t.is_split)
+
+    def test_sales_summary_splits_by_method(self):
+        # 한쪽에 몰아 잡으면 카드 단말기 합계와 안 맞는다.
+        self._pay("sp6", split_method="CASH", split_amount=4000)
+        d = self.client.get("/api/v1/sales/summary").json()
+        self.assertEqual(d["net"], 10000)
+        self.assertEqual(d["by_method"], {"CASH": 4000, "CARD": 6000})
+
+    def test_summary_mixes_split_and_plain(self):
+        self._pay("sp7", split_method="CASH", split_amount=4000)   # 현금4천+카드6천
+        self._pay("sp8")                                           # 카드 1만
+        d = self.client.get("/api/v1/sales/summary").json()
+        self.assertEqual(d["by_method"], {"CASH": 4000, "CARD": 16000})
+        self.assertEqual(sum(d["by_method"].values()), d["net"])
+
+    def test_api_forwards_split(self):
+        # 멱등 래퍼가 인자를 안 넘겨 조용히 무시된 적이 있다(coupon_id·set_discount).
+        res = self.client.post(
+            "/api/v1/transactions",
+            data={"member_id": self.m.id,
+                  "items": [{"menu_item_id": self.menu.id, "quantity": 1}],
+                  "points_to_use": 0, "payment_method": "CARD",
+                  "toss_order_id": "sp9",
+                  "split_method": "CASH", "split_amount": 4000},
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 201, res.content)
+        body = res.json()
+        self.assertEqual(body["split_method"], "CASH")
+        self.assertEqual(body["split_amount"], 4000)
+
+    def test_split_survives_cancel_reporting(self):
+        # 취소된 건은 수단별 집계에서 통째로 빠져야 한다.
+        r = self._pay("sp10", split_method="CASH", split_amount=4000)
+        cancel_transaction(r.transaction)
+        d = self.client.get("/api/v1/sales/summary").json()
+        self.assertEqual(d["by_method"], {})
+        self.assertEqual(d["net"], 0)
+
+
+class HistoryOrderingTests(TestCase):
+    """주문 내역은 결제 시각 순 — 날짜로 묶으려면 날짜순이어야 한다."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99)
+        self.menu = MenuItem.objects.create(store=self.store, name="아메리카노", price=5000)
+        self.m = Member.objects.create(
+            store=self.store, phone="01099998888", name="느긋한 수달"
+        )
+        authenticate(self.client)
+
+    def _pay(self, oid, days_ago=0):
+        r = checkout(
+            member=self.m, gross_amount=0, points_to_use=0, payment_method="CARD",
+            items=[{"menu_item_id": self.menu.id, "quantity": 1}], toss_order_id=oid,
+        )
+        if days_ago:
+            Transaction.objects.filter(pk=r.transaction.pk).update(
+                paid_at=timezone.now() - timedelta(days=days_ago)
+            )
+        return r
+
+    def test_sorted_by_paid_at_not_created_at(self):
+        # 나중에 만들었지만 결제 시각은 과거인 건이 섞여도 날짜순이어야 한다.
+        self._pay("o1")            # 오늘
+        self._pay("o2", 2)         # 그저께
+        self._pay("o3", 1)         # 어제
+        rows = self.client.get("/api/v1/transactions").json()
+        days = [r["paid_at"][:10] for r in rows]
+        self.assertEqual(days, sorted(days, reverse=True), f"날짜순이 아님: {days}")
+
+    def test_each_day_appears_once(self):
+        # 같은 날짜가 목록에서 흩어져 있으면 화면의 날짜 머리가 중복된다.
+        for i in range(2):
+            self._pay(f"a{i}")
+        for i in range(2):
+            self._pay(f"b{i}", 1)
+        days = [r["paid_at"][:10] for r in self.client.get("/api/v1/transactions").json()]
+        blocks = [d for i, d in enumerate(days) if i == 0 or days[i - 1] != d]
+        self.assertEqual(len(blocks), len(set(blocks)), f"날짜가 흩어져 있음: {days}")
