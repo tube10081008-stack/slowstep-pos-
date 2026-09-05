@@ -38,6 +38,7 @@ from .auth import (
 )
 from .ai_order import OrderParseError, parse_order
 from .imports import CsvImportError, import_members_csv
+from .integrity import run_all as integrity_run_all
 from .member_qr import QrUnavailable, member_url, qr_svg
 from .margins import margin_summary, menu_item_margins, to_supply
 from .profile import build_member_dashboard, hall_of_fame
@@ -149,6 +150,24 @@ class HealthView(APIView):
             # 기존 클라이언트가 읽는 단일 문자열도 유지한다(하나로 합쳐서).
             body["warning"] = " / ".join(warnings)
         return Response(body, status=200 if db_ok else 503)
+
+
+class IntegrityView(APIView):
+    """
+    데이터 정합성 점검 🔒 — 돈과 관련된 불변식이 깨졌는지 본다.
+
+    서버리스에는 셸이 없어 `manage.py check_integrity` 를 못 돌린다.
+    운영 DB를 확인할 유일한 통로라 API로 열어 둔다(점주 전용).
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def get(self, request):
+        try:
+            limit = min(50, max(1, int(request.query_params.get("limit", 10))))
+        except (TypeError, ValueError):
+            limit = 10
+        return Response(integrity_run_all(limit=limit))
 
 
 class PinLoginView(APIView):

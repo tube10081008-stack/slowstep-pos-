@@ -13,6 +13,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.db import IntegrityError, transaction as db_transaction
+from django.db.models import F
 from django.test import TestCase
 from django.utils import timezone
 
@@ -2847,3 +2848,101 @@ class HistoryOrderingTests(TestCase):
         days = [r["paid_at"][:10] for r in self.client.get("/api/v1/transactions").json()]
         blocks = [d for i, d in enumerate(days) if i == 0 or days[i - 1] != d]
         self.assertEqual(len(blocks), len(set(blocks)), f"날짜가 흩어져 있음: {days}")
+
+
+class IntegrityCheckTests(TestCase):
+    """정합성 점검기 — 정상은 통과, 깨진 건 반드시 잡아야 한다."""
+
+    def setUp(self):
+        self.store = make_store(stamp_goal=99)
+        self.menu = MenuItem.objects.create(store=self.store, name="아메리카노", price=5000)
+        self.m = Member.objects.create(
+            store=self.store, phone="01012120000", name="느긋한 수달"
+        )
+        authenticate(self.client)
+
+    def _pay(self, oid, **kw):
+        return checkout(
+            member=self.m, gross_amount=0, points_to_use=0, payment_method="CARD",
+            items=[{"menu_item_id": self.menu.id, "quantity": 1}],
+            toss_order_id=oid, **kw
+        )
+
+    def test_clean_data_passes(self):
+        from .integrity import run_all
+
+        self._pay("i1")
+        self._pay("i2", split_method="CASH", split_amount=1000)
+        r = run_all()
+        self.assertTrue(r["ok"], r["checks"])
+
+    def test_catches_ledger_mismatch(self):
+        from .integrity import check_point_ledger
+
+        self._pay("i3")
+        Member.objects.filter(pk=self.m.pk).update(points=F("points") + 5000)
+        r = check_point_ledger()
+        self.assertEqual(r["bad"], 1)
+        self.assertEqual(r["sample"][0]["diff"], 5000)
+
+    def test_catches_amount_mismatch(self):
+        from .integrity import check_transaction_amounts
+
+        t = self._pay("i4").transaction
+        Transaction.objects.filter(pk=t.pk).update(net_amount=F("net_amount") + 1)
+        self.assertEqual(check_transaction_amounts()["bad"], 1)
+
+    def test_catches_bad_split(self):
+        from .integrity import check_split_payments
+
+        t = self._pay("i5").transaction
+        Transaction.objects.filter(pk=t.pk).update(
+            split_method="CASH", split_amount=t.net_amount + 100
+        )
+        self.assertEqual(check_split_payments()["bad"], 1)
+
+    def test_catches_member_total_drift(self):
+        from .integrity import check_member_totals
+
+        self._pay("i6")
+        Member.objects.filter(pk=self.m.pk).update(total_spent=F("total_spent") + 7000)
+        self.assertEqual(check_member_totals()["bad"], 1)
+
+    def test_catches_half_used_coupon(self):
+        from .integrity import check_coupons
+        from .models import Coupon
+
+        c = Coupon.objects.create(member=self.m, kind=Coupon.Kind.BOGO)
+        Coupon.objects.filter(pk=c.pk).update(used_at=timezone.now())
+        self.assertEqual(check_coupons()["bad"], 1)
+
+    def test_catches_paid_without_time(self):
+        from .integrity import check_paid_without_time
+
+        t = self._pay("i7").transaction
+        Transaction.objects.filter(pk=t.pk).update(paid_at=None)
+        self.assertEqual(check_paid_without_time()["bad"], 1)
+
+    def test_endpoint_requires_staff_token(self):
+        self.assertEqual(self.client_class().get("/api/v1/integrity").status_code, 403)
+        self.assertEqual(self.client.get("/api/v1/integrity").status_code, 200)
+
+
+class MemberAdminSafetyTests(TestCase):
+    """관리자에서 손으로 고치면 원장과 갈라지는 값은 잠가 둔다."""
+
+    def test_ledger_derived_fields_are_readonly(self):
+        from django.contrib.admin.sites import site
+
+        from .admin import MemberAdmin
+
+        ro = set(MemberAdmin(Member, site).readonly_fields)
+        for f in ("points", "total_spent", "visit_count", "stamps", "tier"):
+            self.assertIn(f, ro, f"{f} 가 관리자에서 수정 가능하면 원장과 갈라진다")
+
+    def test_adjust_action_exists(self):
+        from django.contrib.admin.sites import site
+
+        from .admin import MemberAdmin
+
+        self.assertIn("adjust_points", MemberAdmin(Member, site).actions)
