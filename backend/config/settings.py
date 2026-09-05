@@ -81,6 +81,12 @@ WSGI_APPLICATION = "config.wsgi.application"
 # ── 데이터베이스 ────────────────────────────────────────────────
 # DATABASE_URL 주입 시 PostgreSQL, 아니면 SQLite.
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
+IS_SERVERLESS = bool(os.environ.get("VERCEL"))
+# 저장 영속성: 영구 DB(Postgres) 또는 로컬 디스크 SQLite면 True.
+# 서버리스 + 무DB(/tmp SQLite)면 False — 콜드스타트마다 초기화되고,
+# 동시 인스턴스마다 서로 다른 /tmp를 봐서 데이터가 갈라진다.
+# /api/v1/health 가 이 값을 노출하고, POS·대시보드가 경고 배너를 띄운다.
+STORAGE_PERSISTENT = bool(DATABASE_URL) or not IS_SERVERLESS
 if DATABASE_URL:
     try:
         import dj_database_url
@@ -93,20 +99,22 @@ if DATABASE_URL:
     # (conn_max_age>0) Postgres 연결 수가 금방 고갈된다. → 서버리스는 요청마다
     # 연결을 닫고(conn_max_age=0), Neon의 "pooled" 접속 문자열(호스트에 -pooler)을
     # 쓰는 것을 권장. 상시 서버(gunicorn)는 연결 재사용(600s)이 유리.
-    _serverless = bool(os.environ.get("VERCEL"))
     DATABASES = {
         "default": dj_database_url.parse(
             DATABASE_URL,
-            conn_max_age=0 if _serverless else 600,
-            conn_health_checks=not _serverless,
+            conn_max_age=0 if IS_SERVERLESS else 600,
+            conn_health_checks=not IS_SERVERLESS,
             ssl_require=True,  # Neon 등 관리형 Postgres는 SSL 필수
         )
     }
+    # Neon 콜드스타트 등에서 무한 대기하지 않도록 연결 타임아웃을 명시.
+    DATABASES["default"].setdefault("OPTIONS", {})
+    DATABASES["default"]["OPTIONS"].setdefault("connect_timeout", 10)
 else:
     # 서버리스(Vercel)는 앱 디렉터리가 읽기 전용 → 쓰기 가능한 /tmp 사용.
-    # 임시 저장소라 콜드스타트마다 초기화되며, 시작 시 데모 데이터를 자동 시드한다.
-    # 영구 보관이 필요하면 DATABASE_URL(Neon 등)을 주입하면 자동 승격된다.
-    if os.environ.get("VERCEL"):
+    # ⚠️ 임시 저장소: 콜드스타트마다 초기화 + 동시 인스턴스 간 데이터 불일치.
+    # 운영 데이터(주문·회원)를 지키려면 반드시 DATABASE_URL(Neon 등)을 주입할 것.
+    if IS_SERVERLESS:
         _sqlite_path = "/tmp/db.sqlite3"
     else:
         _sqlite_path = BASE_DIR / "db.sqlite3"
@@ -114,6 +122,16 @@ else:
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": _sqlite_path,
+            "OPTIONS": {
+                # 동시 요청이 잠금을 만나면 즉시 실패하지 않고 대기(초).
+                "timeout": 20,
+                # WAL: 읽기·쓰기 동시성 개선 → "database is locked" 감소.
+                "init_command": (
+                    "PRAGMA journal_mode=WAL;"
+                    "PRAGMA synchronous=NORMAL;"
+                    "PRAGMA busy_timeout=20000;"
+                ),
+            },
         }
     }
 
@@ -166,12 +184,32 @@ REST_FRAMEWORK = {
     ],
 }
 
+# ── 매장 PIN(점주·직원 화면 보호) ───────────────────────────────
+# POS·대시보드 API는 이 PIN으로 발급한 토큰이 있어야 접근 가능.
+# 고객 멤버십 조회는 공개 유지.
+#
+# **운영에는 코드 기본값을 두지 않는다.** 저장소가 공개라 기본 PIN이 적혀
+# 있으면 매출·고객 명단이 사실상 무방비다. 환경변수가 없으면 빈 값이 되고,
+# check_pin 이 빈 PIN을 절대 통과시키지 않으므로 조용히 열리는 일은 없다.
+# 환경변수가 없으면 운영에서는 빈 값 — 직원 로그인만 막히고(check_pin 이 빈
+# PIN을 통과시키지 않는다) 손님 멤버십 페이지는 계속 열려 있다. 여기서
+# 예외를 던져 앱을 죽이면 QR로 들어오는 손님 화면까지 함께 내려간다.
+# 설정이 빠진 건 /api/v1/health 의 config.store_pin 이 알려 준다.
+_DEV_PIN = "0000"   # 로컬 개발 전용(DEBUG=True). 배포에는 쓰이지 않는다.
+STORE_PIN = os.environ.get("STORE_PIN") or (_DEV_PIN if DEBUG else "")
+
 # ── CORS ────────────────────────────────────────────────────────
 _cors_origins = env_list("CORS_ALLOWED_ORIGINS")
 if _cors_origins:
     CORS_ALLOWED_ORIGINS = _cors_origins
 else:
     CORS_ALLOW_ALL_ORIGINS = True
+
+# 매장 PIN 토큰 헤더를 프리플라이트에서 허용(기본 목록엔 커스텀 헤더가 없음).
+# 웹(5500)과 API(8000)를 분리해 띄우는 로컬 개발에서 필요.
+from corsheaders.defaults import default_headers  # noqa: E402
+
+CORS_ALLOW_HEADERS = (*default_headers, "x-store-token")
 
 # ── Toss페이먼츠 ────────────────────────────────────────────────
 # 미주입 시 payments.py가 Mock 승인으로 폴백(스캐폴드/데모).

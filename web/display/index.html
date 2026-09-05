@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>슬로우스텝 · 고객 화면</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap');
+  :root {
+    --bg:#f4f6f9; --card:#fff; --card2:#f8fafc; --line:#e6e9ef; --txt:#161a25;
+    --muted:#6b7280; --brand:#3b5bff; --brand-dk:#2846e6; --brand-soft:#eef2ff;
+    --green:#16a34a; --gold:#f59e0b;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 10px 30px rgba(16,24,40,.07);
+    --sans:"Inter","Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; }
+  html, body { height:100%; }
+  body { background:var(--bg); color:var(--txt); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; overflow:hidden; }
+  .screen { height:100vh; display:flex; flex-direction:column; padding:3vh 3vw; }
+  .hidden { display:none !important; }
+
+  /* 상단 브랜드 */
+  body.idling .brand .logo, body.idling .brand .wm { visibility:hidden; }
+  .brand { display:flex; align-items:center; gap:14px; flex:0 0 auto; }
+  .logo { width:44px; height:auto; flex:0 0 auto; display:block; }
+  .wm { font-weight:800; font-size:22px; letter-spacing:-.02em; }
+  .wm small { display:block; font-size:12px; color:var(--muted); font-weight:500; margin-top:2px; }
+  .link { margin-left:auto; font-size:11px; font-weight:600; padding:5px 12px; border-radius:999px;
+    background:var(--card2); color:var(--muted); border:1px solid var(--line); letter-spacing:.01em; }
+  .link.on { display:none; }   /* 정상일 때는 손님에게 보일 이유가 없다 */
+  .link.off { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
+
+  /* ── 대기 화면 = 메뉴판 ── */
+  /* 손님이 화면 앞에 서 있는 시간의 대부분은 대기 상태다. 인사말만 띄우고
+     메뉴를 안 보여줄 이유가 없어, menu.html 을 그대로 채워 넣는다.
+     메뉴판이 자기 머리말·QR·안내를 이미 갖고 있으므로 바깥 껍데기(브랜드
+     헤더·바닥 워드마크·여백)는 대기 중에만 걷어낸다. */
+  #idle { flex:1; min-height:0; display:flex; }
+  #menuFrame { flex:1; width:100%; height:100%; border:0; display:block; }
+  body.idling .screen { padding:0; }
+  body.idling .brand, body.idling .foot { display:none; }
+
+  /* ── 주문 화면 ── */
+  #order { flex:1; display:flex; flex-direction:column; margin-top:2.4vh; min-height:0; }
+  .ttl { font-size:clamp(13px,1.3vw,16px); font-weight:600; color:var(--muted);
+    margin-bottom:12px; letter-spacing:.02em; }
+  .list { flex:1; overflow-y:auto; background:var(--card); border:1px solid var(--line);
+    border-radius:18px; padding:10px 22px; box-shadow:var(--shadow); }
+  .li { display:flex; align-items:center; gap:14px; padding:2.1vh 0; border-bottom:1px solid var(--line); }
+  .li:last-child { border-bottom:0; }
+  .li .nm { flex:1; font-size:clamp(17px,2vw,26px); font-weight:700; letter-spacing:-.01em; }
+  .li .nm em { font-style:normal; font-size:.62em; color:var(--muted); font-weight:600; margin-left:8px; }
+  .li .qt { font-size:clamp(16px,1.8vw,23px); font-weight:800; color:var(--brand);
+    min-width:2.6em; text-align:center; }
+  .li .amt { font-size:clamp(16px,1.8vw,23px); font-weight:700; min-width:5.2em; text-align:right; }
+  .empty { display:flex; height:100%; align-items:center; justify-content:center;
+    color:var(--muted); font-size:clamp(16px,1.8vw,22px); }
+
+  .sum { flex:0 0 auto; margin-top:2vh; background:var(--card); border:1px solid var(--line);
+    border-radius:18px; padding:2.2vh 22px; box-shadow:var(--shadow); }
+  .row { display:flex; justify-content:space-between; align-items:baseline; }
+  .row + .row { margin-top:9px; }
+  .row .k { font-size:clamp(14px,1.4vw,18px); color:var(--muted); font-weight:600; }
+  .row .v { font-size:clamp(15px,1.5vw,20px); font-weight:700; }
+  .row.total .k { font-size:clamp(17px,1.8vw,24px); color:var(--txt); font-weight:800; }
+  .row.total .v { font-size:clamp(30px,4.4vw,58px); font-weight:800; color:var(--brand); letter-spacing:-.03em; }
+  .disc .k, .disc .v { color:var(--gold); }
+
+  /* ── 결제: 손님 터치 입력 ── */
+  /* 가로 모니터를 세로 한 줄로 쓰면 키패드가 화면 밖으로 밀린다(1280×720에서 확인 버튼이
+     잘렸다). 왼쪽 안내 · 오른쪽 입력으로 나눠 어떤 해상도에서도 한 화면에 들어가게 한다. */
+  #pay { flex:1; display:flex; flex-direction:row; align-items:center;
+    justify-content:center; gap:4vw; min-height:0; }
+  .pay-l { display:flex; flex-direction:column; gap:1vh; align-items:flex-start;
+    max-width:36vw; flex:0 1 auto; }
+  .pay-r { display:flex; flex-direction:column; align-items:center; gap:1.1vh;
+    flex:0 1 auto; min-height:0; }
+  .pay-top { display:flex; flex-direction:column; }
+  .pay-top .lbl { font-size:clamp(13px,1.4vw,19px); color:var(--muted); font-weight:600; }
+  .pay-top .amt { font-size:clamp(30px,4.4vw,64px); font-weight:800; color:var(--brand);
+    letter-spacing:-.04em; line-height:1.05; }
+  .ask-sm { font-size:clamp(17px,2.1vw,30px); font-weight:700; margin-top:1.2vh;
+    letter-spacing:-.02em; line-height:1.35; }
+  .ask-sub { font-size:clamp(12px,1.3vw,17px); color:var(--muted); font-weight:500; }
+  .phone-disp { font-size:clamp(24px,3.2vw,44px); font-weight:800; letter-spacing:.06em;
+    background:var(--card); border:2px solid var(--line); border-radius:14px;
+    padding:1.2vh 2vw; width:100%; text-align:center; box-shadow:var(--shadow); }
+  .phone-disp .ph { color:#d4d9e3; }
+  .phone-disp .sep { color:#d4d9e3; margin:0 .1em; }
+  /* 터치 대상은 크게 — 손님이 서서 누른다 */
+  .pad { display:grid; grid-template-columns:repeat(3,1fr); gap:1vh .8vw;
+    width:min(42vw,460px); }
+  .pad button { font-family:inherit; font-size:clamp(22px,2.6vw,36px); font-weight:700;
+    padding:1.5vh 0; border-radius:14px; border:1px solid var(--line); background:var(--card);
+    color:var(--txt); cursor:pointer; box-shadow:0 1px 2px rgba(16,24,40,.05);
+    -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
+  .pad button:active { background:var(--brand-soft); border-color:var(--brand); transform:scale(.96); }
+  .pad button.sm { font-size:clamp(13px,1.3vw,17px); font-weight:600; color:var(--muted); }
+  .pad-act { display:flex; gap:.8vw; width:min(42vw,460px); }
+  .pad-act button { flex:1; font-family:inherit; font-size:clamp(15px,1.7vw,23px); font-weight:700;
+    padding:1.7vh 0; border-radius:14px; cursor:pointer; border:1px solid var(--line);
+    touch-action:manipulation; }
+  .pad-act .skip { background:var(--card); color:var(--muted); }
+  .pad-act .go { background:var(--brand); color:#fff; border-color:var(--brand); flex:1.7; }
+  .pad-act .go:disabled { opacity:.4; }
+  .pad-act button:active { transform:scale(.98); }
+  @media (max-aspect-ratio: 1/1) {      /* 세로로 세운 모니터 */
+    #pay { flex-direction:column; gap:2vh; }
+    .pay-l { align-items:center; text-align:center; max-width:none; }
+    .pad, .pad-act, .phone-disp { width:min(88vw,520px); }
+  }
+  .hint { font-size:clamp(11px,1.1vw,14px); color:var(--muted); margin-top:1.4vh;
+    font-weight:500; letter-spacing:.01em; }
+  .hint.err { color:#ef4444; font-weight:700; }
+
+  /* ── 회원 인사 ── */
+  #greet { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1vh; }
+  #greet h1 { font-size:clamp(30px,4.6vw,58px); font-weight:800; letter-spacing:-.03em; }
+  .g-badge { font-size:clamp(11px,1.2vw,14px); font-weight:700; padding:7px 18px; border-radius:999px;
+    background:var(--brand-soft); color:var(--brand-dk); border:1px solid #dfe4ff; letter-spacing:.04em; }
+  #pay .ask, #greet .ask { background:var(--brand-soft); border:1px solid #dfe4ff;
+    color:var(--brand-dk); border-radius:16px; padding:1.8vh 3vw; font-size:clamp(15px,1.8vw,24px);
+    font-weight:700; text-align:center; line-height:1.5; }
+
+  /* ── 스탬프 룰렛 ── */
+  #wheel { flex:1; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:1.4vh; }
+  .w-title { font-size:clamp(26px,3.8vw,46px); font-weight:800; letter-spacing:-.03em; }
+  .w-sub { font-size:clamp(14px,1.6vw,20px); color:var(--muted); font-weight:500; }
+  .w-ticket { display:flex; align-items:center; gap:2.2vw; margin-top:1.5vh;
+    background:#fff; border:2px dashed var(--brand); border-radius:20px;
+    padding:2.6vh 3.4vw; box-shadow:0 12px 40px rgba(16,24,40,.14); }
+  .w-ticket .t-ic { font-size:clamp(38px,5vw,66px); line-height:1; }
+  .w-ticket .t-tx b { display:block; font-size:clamp(22px,2.8vw,38px); font-weight:800;
+    letter-spacing:-.02em; }
+  .w-ticket .t-tx span { display:block; font-size:clamp(13px,1.5vw,19px); color:var(--muted);
+    margin-top:.5vh; font-weight:500; }
+  .w-result { min-height:8vh; font-size:clamp(16px,1.9vw,24px); font-weight:600;
+    color:var(--muted); opacity:0; transform:scale(.9); transition:all .4s ease;
+    display:flex; align-items:center; }
+  .w-result.on { opacity:1; transform:none; }
+
+  /* ── 완료 화면 ── */
+  /* 가로 모니터: 왼쪽 적립 결과 · 오른쪽 QR → QR을 크게 쓸 수 있다 */
+  #done { flex:1; display:flex; flex-direction:row; align-items:center;
+    justify-content:center; gap:4vw; }
+  .done-main { display:flex; flex-direction:column; align-items:center; gap:1.6vh; }
+  @media (max-width:900px){
+    #done { flex-direction:column; gap:2vh; }
+  }
+  #done .check { width:104px; height:104px; border-radius:50%; background:#dcfce7; color:var(--green);
+    display:flex; align-items:center; justify-content:center; font-size:56px; font-weight:800; }
+  #done h1 { font-size:clamp(28px,4vw,50px); font-weight:800; letter-spacing:-.03em; }
+  #done .who, #greet .who { font-size:clamp(15px,1.8vw,23px); color:var(--muted); font-weight:500; letter-spacing:-.01em; }
+  .stats { display:flex; gap:2vw; margin-top:1.6vh; flex-wrap:wrap; justify-content:center; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:18px;
+    padding:2.2vh 3vw; text-align:center; min-width:150px; box-shadow:var(--shadow); }
+  .stat .k { font-size:clamp(11px,1.15vw,14px); color:var(--muted); font-weight:500; letter-spacing:.01em; }
+  .stat .v { font-size:clamp(24px,3.2vw,42px); font-weight:800; margin-top:6px; letter-spacing:-.02em; }
+  .stat .v.p { color:var(--brand); }
+  .stat .v.g { color:var(--green); }
+  .rewards { display:flex; flex-direction:column; gap:9px; margin-top:1.4vh; align-items:center; }
+  .rw { background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:999px;
+    padding:10px 22px; font-size:clamp(13px,1.5vw,18px); font-weight:600; letter-spacing:-.01em; }
+  .stamp-row { display:flex; gap:7px; margin-top:1.2vh; flex-wrap:wrap; justify-content:center; }
+  /* 멤버십 QR — 손님이 자기 폰으로 스캔 */
+  .qr-box { display:flex; flex-direction:column; align-items:center; gap:1.2vh; margin-top:0;
+    background:var(--card); border:1px solid var(--line); border-radius:18px;
+    padding:1.6vh 2.4vw; box-shadow:var(--shadow); }
+  .qr { width:clamp(200px,34vh,360px); height:clamp(200px,34vh,360px); display:block; }
+  .qr svg { width:100%; height:100%; display:block; }
+  .qr svg path { fill:var(--txt); }
+  .qr-cap { font-size:clamp(14px,1.7vw,22px); font-weight:600; line-height:1.55; text-align:center; }
+  /* 대기 화면의 QR은 메뉴판(menu.html) 발치에 들어 있다 */
+  .qr-cap b { color:var(--brand); }
+  .sd { width:clamp(30px,3.2vw,42px); height:clamp(30px,3.2vw,42px); color:#cfd5e1; }
+  .sd svg { width:100%; height:100%; display:block; }
+  .sd .cup-fill { fill:transparent; }
+  .sd .steam { opacity:0; }
+  .sd.on { color:var(--brand); }
+  .sd.on .cup-fill { fill:var(--brand-soft); }
+  .sd.on .steam { opacity:.85; }
+
+    .foot { flex:0 0 auto; text-align:center; color:#b9bfcc; font-size:11px; margin-top:1.6vh;
+    letter-spacing:.34em; font-weight:600; }
+  @keyframes pop { from{ opacity:0; transform:scale(.96);} to{ opacity:1; transform:none;} }
+  .screen > div { animation:pop .28s ease both; }
+</style>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png" />
+<link rel="apple-touch-icon" href="../assets/favicon-180.png" />
+</head>
+<body>
+<div class="screen">
+  <div class="brand">
+    <img class="logo" src="../assets/logo-mark.png" alt="슬로우스텝" />
+    <div class="wm">Slowstep<small>슬로우스텝</small></div>
+    <span class="link" id="link"></span>
+  </div>
+
+  <!-- 대기 = 메뉴판 (menu.html 을 그대로 띄운다. 로고·QR·안내가 이미 들어 있다) -->
+  <div id="idle">
+    <iframe id="menuFrame" title="메뉴판" scrolling="no"></iframe>
+  </div>
+
+  <!-- 주문 중 -->
+  <div id="order" class="hidden">
+    <div class="ttl">주문하신 메뉴</div>
+    <div class="list" id="list"></div>
+    <div class="sum">
+      <div class="row disc hidden" id="discRow"><span class="k">세트 할인</span><span class="v" id="disc">-0원</span></div>
+      <div class="row total"><span class="k">합계</span><span class="v" id="total">0원</span></div>
+    </div>
+  </div>
+
+  <!-- 결제: 손님이 직접 연락처 입력 (터치) -->
+  <div id="pay" class="hidden">
+    <div class="pay-l">
+      <div class="pay-top">
+        <span class="lbl">결제 금액</span>
+        <span class="amt" id="payAmt">0원</span>
+      </div>
+      <div class="ask-sm">휴대폰 번호를<br/>입력해 주세요</div>
+      <div class="ask-sub">번호만 남기시면 포인트가 자동으로 쌓여요</div>
+      <div class="hint" id="payHint">적립 외의 용도로 사용하지 않습니다</div>
+    </div>
+    <div class="pay-r">
+      <div class="phone-disp" id="phoneDisp"><span class="ph">010-0000-0000</span></div>
+      <div class="pad" id="pad"></div>
+      <div class="pad-act">
+        <button class="skip" id="skipBtn">다음에 할게요</button>
+        <button class="go" id="okBtn" disabled>확인</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 회원 확인 (입력 후) -->
+  <div id="greet" class="hidden">
+    <div class="g-badge" id="gTier"></div>
+    <h1 id="gName"></h1>
+    <div class="who" id="gInfo"></div>
+    <div class="stats" id="gStats"></div>
+    <div class="ask" style="margin-top:1.6vh">이제 결제를 도와드릴게요</div>
+  </div>
+
+  <!-- 룰렛 기회 획득 안내 (룰렛 자체는 손님 폰에서 돌린다) -->
+  <div id="wheel" class="hidden">
+    <div class="w-title" id="wTitle">스탬프 완성!</div>
+    <div class="w-sub" id="wSub">룰렛 기회를 받으셨어요</div>
+    <div class="w-ticket">
+      <div class="t-ic">🎡</div>
+      <div class="t-tx">
+        <b>룰렛 1회</b>
+        <span>휴대폰 멤버십에서 직접 돌려보세요</span>
+      </div>
+    </div>
+    <div class="w-result on">5% · 10% 할인 · 1+1 · 무료 음료</div>
+  </div>
+
+  <!-- 완료 -->
+  <div id="done" class="hidden">
+    <div class="done-main">
+      <div class="check">✓</div>
+      <h1>감사합니다</h1>
+      <div class="who" id="doneWho"></div>
+      <div class="stats" id="doneStats"></div>
+      <div class="rewards" id="doneRw"></div>
+      <div class="stamp-row" id="doneStamps"></div>
+    </div>
+    <div class="qr-box hidden" id="qrBox">
+      <div class="qr" id="qr"></div>
+      <div class="qr-cap">휴대폰으로 찍으면<br/><b>내 적립 내역</b>을 볼 수 있어요</div>
+    </div>
+  </div>
+
+  <div class="foot" id="foot">SLOW&nbsp;&nbsp;STEP</div>
+</div>
+
+<script>
+  /**
+   * 고객 표시 화면.
+   *
+   * POS(직원 화면)와 **BroadcastChannel** 로만 통신한다 — 서버 API를 전혀 호출하지
+   * 않으므로 PIN도 필요 없고, 이 페이지만으로는 어떤 고객 정보도 조회할 수 없다.
+   * 같은 PC·같은 브라우저의 다른 창에서만 신호가 오므로 외부 노출 위험이 없다.
+   */
+  const $ = (id) => document.getElementById(id);
+  const CUP = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="cup-fill" d="M4.5 7.5h11v5.5a5.5 5.5 0 0 1-11 0V7.5Z"/><path d="M15.5 9h1.3a2.6 2.6 0 0 1 0 5.2h-1.3"/><path d="M3.5 19.5h13"/><path class="steam" d="M8.5 4.6c.5-.7.2-1.3 0-1.8M12 4.6c.5-.7.2-1.3 0-1.8"/></svg>`;
+  const won = (n) => (n||0).toLocaleString("ko-KR") + "원";
+  const VIEWS = ["idle","order","pay","greet","wheel","done"];
+
+  // 멤버십 QR(모든 손님 공통·고정) — 한 번 받아 대기·완료 화면 양쪽에 쓴다
+  let qrSvg = "";
+  function setQr(svg){ if(svg){ qrSvg = svg; paintQr(); } }
+  function paintQr(){
+    const has = !!qrSvg;
+    if(has) $("qr").innerHTML = qrSvg;   // 대기 화면 QR은 메뉴판이 직접 그린다
+    $("qrBox").classList.toggle("hidden", !has);
+  }
+
+  function show(view){
+    VIEWS.forEach(v => $(v).classList.toggle("hidden", v !== view));
+    $("foot").classList.toggle("hidden", view === "done");
+    // 대기 중에는 메뉴판이 화면 전체를 쓴다(바깥 헤더·바닥을 감춘다)
+    document.body.classList.toggle("idling", view === "idle");
+    if(view === "idle") mountMenu();
+  }
+
+  /* 메뉴판은 처음 대기로 들어갈 때 한 번만 붙인다.
+     볼 때마다 다시 넣으면 손님이 넘겨 보던 장이 1장으로 되돌아간다. */
+  function mountMenu(){
+    const f = $("menuFrame");
+    if(f && !f.src) f.src = "menu.html";
+  }
+
+  function tempLabel(t){ return t==="hot" ? "HOT" : (t==="ice" ? "ICE" : ""); }
+
+  function renderOrder(d){
+    const items = d.items || [];
+    if(!items.length){ show("idle"); return; }
+    $("list").innerHTML = items.map(i=>{
+      const opts = [tempLabel(i.temp), i.decaf?"디카페인":"", i.oat?"오트밀크":"", i.shot?"샷추가":""]
+        .filter(Boolean).join(" · ");
+      return `<div class="li">
+        <span class="nm">${i.name}${opts?`<em>${opts}</em>`:""}</span>
+        <span class="qt">${i.qty}</span>
+        <span class="amt">${won(i.total)}</span>
+      </div>`;
+    }).join("");
+    $("discRow").classList.toggle("hidden", !(d.discount > 0));
+    $("disc").textContent = "-" + won(d.discount);
+    $("total").textContent = won(d.total);
+    show("order");
+  }
+
+  // ── 스탬프 완성 룰렛 ──
+  // 당첨은 서버가 정한다. 화면은 그 칸으로 돌아가는 연출만 담당한다.
+  const W_COLORS = ["#3b5bff","#8b5cf6","#0ea5e9","#f59e0b","#16a34a","#ec4899"];
+  function runSpinAward(reward, after){
+    $("wTitle").textContent = reward.title || "스탬프 완성!";
+    $("wSub").textContent = reward.description || "룰렛 기회를 받으셨어요";
+    show("wheel");
+    setTimeout(after, 4200);   // 잠깐 보여준 뒤 완료 화면으로
+  }
+
+  function renderDone(d){
+    const m = d.member;
+    if(m){
+      $("doneWho").textContent = `${m.name} 님, 또 뵙겠습니다`;
+      $("doneStats").innerHTML = `
+        <div class="stat"><div class="k">이번 적립</div><div class="v p">+${(d.earned||0).toLocaleString("ko-KR")}P</div></div>
+        <div class="stat"><div class="k">모은 포인트</div><div class="v">${(m.points||0).toLocaleString("ko-KR")}P</div></div>
+        <div class="stat"><div class="k">등급</div><div class="v g">${m.tier_display||m.tier||""}</div></div>`;
+      $("doneRw").innerHTML = (d.rewards||[]).map(r=>`<div class="rw">${r.title} ${
+        r.points ? "+" + r.points.toLocaleString("ko-KR") + "P" : (r.description||"")
+      }</div>`).join("");
+      const goal = m.stamp_goal || 10, on = m.stamps || 0;
+      $("doneStamps").innerHTML = Array.from({length:goal},(_,i)=>
+        `<span class="sd ${i<on?"on":""}">${CUP}</span>`).join("");
+    } else {
+      $("doneWho").textContent = "안녕히 가세요";
+      $("doneStats").innerHTML = `<div class="stat"><div class="k">결제 금액</div><div class="v">${won(d.net)}</div></div>`;
+      $("doneRw").innerHTML = ""; $("doneStamps").innerHTML = "";
+    }
+    show("done");
+    paintQr();          // 고정 QR이라 결제 때마다 다시 받을 필요가 없다
+  }
+
+  const ch = new BroadcastChannel("slowstep-pos");
+
+  // ── 직원 화면(POS)과의 연결 감시 ──
+  // 연결이 끊긴 채 손님이 '확인'을 눌러도 아무 반응이 없으면 안 되므로,
+  // 상태를 표시하고 응답이 없으면 즉시 알린다.
+  let paired = false, lastSeen = 0, ackTimer = null;
+  function setLink(){
+    const el = $("link");
+    el.textContent = paired ? "" : "직원 화면 연결 안 됨";
+    el.className = "link " + (paired ? "on" : "off");
+  }
+  function markSeen(){ paired = true; lastSeen = Date.now(); setLink(); }
+  setInterval(()=>{
+    ch.postMessage({ type:"hello" });                 // 살아있는지 물어봄
+    if(paired && Date.now() - lastSeen > 12000) paired = false;
+    setLink();
+  }, 4000);
+  // 첫 응답을 잠깐 기다린 뒤 상태를 확정한다(계속 '확인 중'에 머무르지 않도록)
+  setTimeout(()=>{ if(!paired) setLink(); }, 1800);
+
+  // ── 손님이 직접 누르는 연락처 입력 ──
+  const PREFIX = "010";   // 손님이 뒷자리만 누르면 되도록 미리 채워둔다
+  const LEN = 11;
+  let buf = PREFIX;
+  // broadcast=false 면 화면만 다시 그리고 POS에는 알리지 않는다.
+  // 손님이 실제로 누른 것만 직원 화면에 비춰야 한다 — 그렇지 않으면
+  // 4초마다 오는 연결 확인 응답이 직원이 POS에서 친 번호를 덮어쓴다.
+  function paintPhone(broadcast = true){
+    // 남은 자리를 회색 자리표시로 보여줘 몇 자리 더 눌러야 하는지 알 수 있게
+    let html = "";
+    for(let i=0;i<LEN;i++){
+      if(i===3 || i===7) html += '<span class="sep">-</span>';
+      html += i < buf.length ? buf[i] : '<span class="ph">·</span>';
+    }
+    $("phoneDisp").innerHTML = html;
+    $("okBtn").disabled = buf.length < 10;
+    // 직원 화면에도 입력 상황을 그대로 비춰준다(손님이 헤매면 도와줄 수 있게)
+    if(broadcast) ch.postMessage({ type:"phone_input", phone: buf });
+  }
+  function hint(msg, isErr){
+    const h = $("payHint");
+    h.textContent = msg || "적립 외의 용도로 사용하지 않습니다";
+    h.className = "hint" + (isErr ? " err" : "");
+  }
+  // 입력값은 손님이 누른 것 — 외부(POS) 신호로는 지우지 않는다.
+  // force=true 는 '결제 화면에 새로 진입' 또는 직원이 '다시 입력'을 누른 경우뿐.
+  function resetPad(force){
+    if(!force && buf.length > PREFIX.length) return;   // 입력 중이면 유지
+    buf = PREFIX; paintPhone(false); hint("");
+  }
+
+  (function buildPad(){
+    const pad = $("pad");
+    const mk = (label, fn, cls) => {
+      const b = document.createElement("button");
+      b.textContent = label; if(cls) b.className = cls;
+      b.onclick = fn; pad.appendChild(b);
+    };
+    for(let i=1;i<=9;i++) mk(String(i), ()=>{ if(buf.length<11){ buf+=String(i); paintPhone(); } });
+    mk("←", ()=>{ buf = buf.slice(0,-1); paintPhone(); });
+    mk("0", ()=>{ if(buf.length<11){ buf+="0"; paintPhone(); } });
+    mk("전체 지움", ()=>{ buf=PREFIX; paintPhone(); }, "sm");
+  })();
+
+  $("okBtn").onclick = ()=>{
+    if(buf.length < 10) return;
+    if(!paired){ hint("직원 화면과 연결되어 있지 않아요. 직원을 불러주세요.", true); return; }
+    hint("확인 중이에요…");
+    ch.postMessage({ type:"phone_submit", phone: buf });
+    clearTimeout(ackTimer);
+    ackTimer = setTimeout(()=> hint("응답이 없어요. 직원을 불러주세요.", true), 2500);
+  };
+  $("skipBtn").onclick = ()=>{
+    if(!paired){ hint("직원 화면과 연결되어 있지 않아요. 직원을 불러주세요.", true); return; }
+    ch.postMessage({ type:"guest" });
+  };
+
+  function renderGreet(m, fresh){
+    $("gTier").textContent = m.tier_display || m.tier || "회원";
+    $("gName").textContent = fresh
+      ? `${m.name} 님, 환영합니다`
+      : `${m.name} 님, 반갑습니다`;
+    $("gInfo").textContent = fresh
+      ? "가입이 완료되었어요"
+      : (m.visit_count > 0
+          ? `${m.visit_count}번 찾아주셨어요 · 스탬프 ${m.stamps}/${m.stamp_goal}`
+          : "첫 방문을 환영합니다");
+    // 방금 가입한 손님에게는 '왜 이 포인트가 생겼는지'를 같이 보여준다.
+    // 숫자만 뜨면 원래 있던 포인트인지 방금 받은 것인지 알 수 없다.
+    const label = fresh ? "가입 축하 포인트" : "지금 쓸 수 있는 포인트";
+    $("gStats").innerHTML = `
+      <div class="stat"><div class="k">${label}</div><div class="v p">${(m.points||0).toLocaleString("ko-KR")}P</div></div>`;
+    show("greet");
+  }
+
+  ch.onmessage = (e) => {
+    const d = e.data || {};
+    if(d.type === "hello") return;      // 다른 고객 화면의 문의는 무시
+    markSeen();
+    if(["greet","guest_ok","lookup_fail"].includes(d.type)) clearTimeout(ackTimer);
+    if(d.type === "cart")      renderOrder(d);
+    else if(d.type === "pay"){
+      $("payAmt").textContent = won(d.total);
+      // 입력 중에는 절대 지우지 않는다. 결제 화면에 새로 들어올 때나
+      // POS가 '다시 입력'을 눌렀을 때(reset)만 초기화한다.
+      // (4초마다 오는 연결 확인 응답에 초기화되면 손님이 누르던 번호가 사라진다)
+      // 결제 화면에 처음 들어올 때만 초기화. 이미 떠 있으면(=입력 중) 손대지 않는다.
+      resetPad($("pay").classList.contains("hidden"));
+      show("pay");
+    }
+    else if(d.type === "greet")   renderGreet(d.member, d.fresh);
+    else if(d.type === "reset_input"){ resetPad(true); show("pay"); }
+    else if(d.type === "guest_ok"){ show("greet"); $("gTier").textContent="적립 없이 결제";
+      $("gName").textContent="결제를 도와드릴게요"; $("gInfo").textContent="다음에 번호를 남겨주시면 적립해 드릴게요";
+      $("gStats").innerHTML=""; }
+    else if(d.type === "lookup_fail"){ hint(d.message || "처음 오셨군요. 직원이 도와드릴게요.", true); }
+    else if(d.type === "done"){
+      const spin = (d.rewards || []).find(r => r.type === "spin");
+      if(spin) runSpinAward(spin, () => renderDone(d));   // 기회 안내 → 완료
+      else renderDone(d);
+    }
+    else if(d.type === "done_qr" || d.type === "member_qr") setQr(d.svg);
+    else if(d.type === "idle") show("idle");
+  };
+  // POS가 이미 켜져 있으면 현재 상태를 다시 보내달라고 요청
+  ch.postMessage({ type: "hello" });
+  show("idle");
+</script>
+</body>
+</html>

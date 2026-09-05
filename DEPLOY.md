@@ -25,21 +25,20 @@
 
 ### 2. 프로젝트 가져오기
 1. 대시보드 → **Add New… → Project**.
-2. 저장소 목록에서 **`tube10081008-stack/Urge-surfing`** → **Import**.
+2. 저장소 목록에서 **`tube10081008-stack/slowstep-pos-`** → **Import**.
    (안 보이면 **Adjust GitHub App Permissions** 로 이 저장소 접근 허용)
 
 ### 3. 설정 (중요)
 
 | 항목 | 값 |
 | --- | --- |
-| **Root Directory** | **`slowstep-pos`** ← *반드시 변경* (Edit 눌러 선택) |
+| **Root Directory** | **`./`** (저장소 루트 그대로 — *변경 불필요*) |
 | Framework Preset | `Other` (자동) |
 | Build/Output | 비워둠 (vercel.json이 처리) |
 
-> **Production Branch**: 이 프로젝트는 `claude/new-project-setup-hz2qo8` 브랜치에 있다.
-> Vercel은 보통 저장소 기본 브랜치를 배포하므로, 가져온 뒤
-> **Settings → Git → Production Branch** 를 `claude/new-project-setup-hz2qo8` 로 바꾸고
-> 한 번 더 배포(Deployments → Redeploy)한다.
+> **Production Branch**: 이 저장소는 독립 저장소이고 기본 브랜치가 **`main`** 이다.
+> Vercel이 기본 브랜치(`main`)를 그대로 배포하므로 **브랜치 변경이 필요 없다.**
+> (구 모노레포 시절의 `slowstep-pos` 루트·`claude/...` 브랜치 설정은 더 이상 쓰지 않는다.)
 
 ### 4. 배포
 - **Deploy** 클릭 → 1~2분 뒤 완료. 나온 주소 클릭.
@@ -72,31 +71,50 @@ Vercel 프로젝트 → **Settings → Environment Variables** 에서 추가:
 | `DJANGO_SECRET_KEY` | 아무 긴 무작위 문자열 (예: `slowstep-1q2w3e4r5t6y7u8i-secret`) |
 | `DJANGO_SECURE_SSL_REDIRECT` | `False` |
 | `DJANGO_ALLOWED_HOSTS` | `.vercel.app` |
+| `STORE_PIN` | 매장 PIN (예: `0812`) — POS·대시보드 잠금 |
+| `GEMINI_API_KEY` | (선택) 자연어 주문 인식 정확도 향상. 없으면 규칙 기반으로 동작 |
 
-> 관리자(/admin) 로그인까지 쓰려면 `DJANGO_CSRF_TRUSTED_ORIGINS` 에
-> `https://<프로젝트>.vercel.app` 도 추가한다.
+> **관리자(/admin) 로그인을 쓰려면** `CSRF_TRUSTED_ORIGINS` 에
+> `https://<프로젝트>.vercel.app` 를 추가한다. (변수명에 `DJANGO_` 접두어가 **없다** —
+> settings.py가 `CSRF_TRUSTED_ORIGINS` 로 읽는다.)
+> 빠뜨리면 로그인 시 `CSRF verification failed` 로 막힌다.
+
+> **매장 PIN**: POS·대시보드는 첫 진입에 PIN을 묻고, 통과하면 그 기기는 30일간
+> 기억한다(고객 멤버십 페이지는 공개 유지). `STORE_PIN`을 설정하지 않으면
+> 코드 기본값이 쓰이므로 **배포 시 반드시 환경변수로 지정**할 것.
+> PIN을 바꾸려면 이 값만 수정 후 재배포하면 되고, 모든 기기를 즉시 로그아웃시키려면
+> `DJANGO_SECRET_KEY`를 새 값으로 교체한다.
 
 ### 3. 재배포
 - **Deployments → 최신 항목 ⋯ → Redeploy**.
 - 첫 접속 시 자동으로 테이블 생성(migrate) + 데모 데이터 시드가 1회 실행된다.
 - 이후부터 입력한 데이터가 **영구 보존**된다.
 
-### 4. (선택) 관리자 계정
-서버리스라 셸이 없으므로, 로컬에서 같은 `DATABASE_URL` 로 한 번만 만든다.
-(파이썬 가능 PC에서) `slowstep-pos/backend` 에서:
-```bash
-set DATABASE_URL=postgresql://...   # Windows
-python manage.py createsuperuser
-```
+### 4. 관리자 계정 (메뉴·원가 관리에 필요)
+
+환경변수만 넣으면 **다음 배포 때 자동 생성**된다(셸 불필요).
+
+| Key | Value |
+| --- | --- |
+| `DJANGO_SUPERUSER_USERNAME` | 예: `owner` |
+| `DJANGO_SUPERUSER_PASSWORD` | 길고 추측 어려운 비밀번호 |
+| `DJANGO_SUPERUSER_EMAIL` | (선택) |
+
+- 이미 같은 아이디가 있으면 **건너뛴다** — 관리자에서 비밀번호를 바꿔도
+  재배포 때 되돌아가지 않는다.
+- 계정 생성 후에는 환경변수의 비밀번호를 지워도 로그인에 문제 없다.
+
+> 파이썬이 있는 PC라면 기존 방식도 그대로 쓸 수 있다:
+> `set DATABASE_URL=postgresql://...` 후 `python manage.py createsuperuser`
 
 ---
 
 ## 동작 원리 (참고)
 
-- `slowstep-pos/vercel.json` — 모든 요청을 Python 함수 `api/index.py` 로 라우팅.
-- `slowstep-pos/api/index.py` — Django(WSGI)를 적재하고, DB가 비어 있으면
+- `vercel.json` — 모든 요청을 Python 함수 `api/index.py` 로 라우팅.
+- `api/index.py` — Django(WSGI)를 적재하고, DB가 비어 있으면
   자동으로 migrate + 데모 시드.
-- `slowstep-pos/requirements.txt` — Vercel이 설치하는 의존성(Django·DRF·
+- `requirements.txt` — Vercel이 설치하는 의존성(Django·DRF·
   psycopg·whitenoise 등).
 - 정적/웹페이지는 WhiteNoise가 `web/` 폴더를 사이트 루트로 서빙.
 
@@ -104,7 +122,12 @@ python manage.py createsuperuser
 
 | 증상 | 확인 |
 | --- | --- |
-| 404 / 빈 화면 | **Root Directory가 `slowstep-pos`** 인지, Production Branch가 맞는지 |
+| **`/api/v1/health` 가 `sqlite`·`persistent:false`** | `DATABASE_URL` 미반영. 환경변수 저장 후 **Redeploy** 했는지(환경변수는 재배포해야 적용), 값에 `-pooler` 와 `?sslmode=require` 가 있는지 |
+| **admin 로그인 시 CSRF 오류** | `CSRF_TRUSTED_ORIGINS`(접두어 `DJANGO_` 없음)에 `https://<프로젝트>.vercel.app` 추가 |
+| 404 / 빈 화면 | **Root Directory가 저장소 루트(`./`)** 인지, 배포 브랜치가 `main` 인지 |
+| 빌드가 파이썬 버전으로 실패 | Django 5는 Python 3.10+ 필요. Vercel **Settings → General → Python Version** 을 3.12로 지정 |
 | 500 에러 | Vercel **Deployments → Functions 로그** 확인. `DATABASE_URL` 형식·`sslmode=require` 여부 |
+| **일부 API만 500 (새 기능 쪽)** | 스키마가 코드보다 뒤처진 경우. `/api/v1/health` 의 `pending_migrations` 가 0인지 확인 — 0이 아니면 재배포(콜드스타트에 자동 적용된다) |
+| **모든 API가 500** | 새 패키지를 `backend/requirements.txt`에만 넣지 않았는지 확인. Vercel은 **저장소 루트의 `requirements.txt`** 를 설치하므로 여기에도 추가해야 한다(누락 시 ImportError로 앱 전체가 죽는다). `python manage.py test membership.tests.DeploymentDepsTests` 로 검사 가능 |
 | 데이터가 사라짐 | 아직 Neon 미연결(임시 저장). 2단계 진행 |
 | admin 로그인 실패 | `DJANGO_CSRF_TRUSTED_ORIGINS` 에 `https://<프로젝트>.vercel.app` 추가 |

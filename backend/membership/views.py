@@ -1,7 +1,12 @@
 """
 API 뷰. API 계약(docs/API-CONTRACT.md, Base: /api/v1)에 맞춰 구현.
 """
-from django.db.models import Count, Q, Sum
+import os
+from datetime import datetime
+
+from django.conf import settings
+from django.db import connection
+from django.db.models import Count, F, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -9,7 +14,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Member, MenuItem, Mission, Store, Transaction
+from .models import Member, MenuItem, Mission, OrderItem, PointEntry, Store, Transaction
 from .payments import TossError
 from .serializers import (
     CheckoutRequestSerializer,
@@ -17,20 +22,269 @@ from .serializers import (
     MemberMissionSerializer,
     MemberSerializer,
     MenuItemSerializer,
+    MenuItemWriteSerializer,
     MissionSerializer,
     PointEntrySerializer,
     QuoteRequestSerializer,
     StoreSerializer,
     TransactionSerializer,
 )
-from .profile import build_member_dashboard
-from .services import CheckoutError, build_quote, cancel_transaction, checkout
+from .auth import (
+    PinRateLimited,
+    StorePinPermission,
+    check_pin,
+    issue_token,
+    request_authorized,
+)
+from .ai_order import OrderParseError, parse_order
+from .imports import CsvImportError, import_members_csv
+from .exports import EXPORTERS, export_csv
+from .integrity import run_all as integrity_run_all
+from .member_qr import QrUnavailable, member_url, qr_svg
+from .margins import margin_summary, menu_item_margins, to_supply
+from .profile import build_member_dashboard, hall_of_fame
+from .services import (
+    CheckoutError,
+    CouponError,
+    PointGrantError,
+    ReferralError,
+    SpinError,
+    grant_points,
+    prepaid_charge,
+    apply_referral,
+    build_quote,
+    cancel_transaction,
+    checkout,
+)
+from .services import spin as spin_service
+
+
+def _query_date(request):
+    """?date=YYYY-MM-DD → date. 없거나 형식이 틀리면 None(호출부가 오늘로 처리)."""
+    raw = (request.query_params.get("date") or "").strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def _resolve_member(member_id):
     if member_id is None:
         return None
     return get_object_or_404(Member, pk=member_id)
+
+
+class HealthView(APIView):
+    """
+    서비스 상태 점검: DB 연결 + 저장 영속성 보고.
+
+    POS·대시보드가 부팅 시 호출해 임시 저장소 모드(서버리스 + 무DB)면
+    경고 배너를 띄운다. 모니터링/헬스체크 경로로도 사용.
+    """
+
+    def get(self, request):
+        db_ok = True
+        db_error = ""
+        try:
+            with connection.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        except Exception as exc:  # 연결 실패도 200으로 보고(상태가 본문)
+            db_ok = False
+            db_error = str(exc)[:200]
+        engine = connection.settings_dict.get("ENGINE", "").rsplit(".", 1)[-1]
+        persistent = getattr(settings, "STORAGE_PERSISTENT", True)
+
+        # 미적용 마이그레이션 — 스키마가 코드보다 뒤처지면 새 컬럼 조회가 500이 된다.
+        # (배포에서 실제로 겪은 문제라 눈에 보이게 노출한다)
+        pending = None
+        if db_ok:
+            try:
+                from django.db import connections
+                from django.db.migrations.executor import MigrationExecutor
+
+                executor = MigrationExecutor(connections["default"])
+                pending = len(
+                    executor.migration_plan(executor.loader.graph.leaf_nodes())
+                )
+            except Exception:
+                pending = None
+
+        body = {
+            "status": "ok" if db_ok else "degraded",
+            "db": {"ok": db_ok, "engine": engine, "persistent": persistent},
+        }
+        # 경고는 **모아서** 싣는다. 한 칸에 덮어쓰면 마지막 것만 남아,
+        # 실제로 500을 냈던 '미적용 마이그레이션' 경고가 조용히 사라진다.
+        warnings: list[str] = []
+
+        if pending is not None:
+            body["db"]["pending_migrations"] = pending
+            if pending:
+                warnings.append(
+                    f"적용되지 않은 마이그레이션이 {pending}건 있습니다. "
+                    "스키마가 코드보다 뒤처져 일부 API가 실패할 수 있습니다."
+                )
+        # 매장 PIN 설정 출처. **값은 절대 싣지 않는다** — 출처만 본다.
+        # 운영에는 코드 기본값이 없으므로, 환경변수가 없으면 직원 로그인이
+        # 아예 막힌다(손님 화면은 계속 열려 있다). 그 상태를 눈에 보이게 한다.
+        pin_from_env = bool(os.environ.get("STORE_PIN"))
+        body["config"] = {
+            "store_pin": "env" if pin_from_env else ("dev" if settings.DEBUG else "unset")
+        }
+        if not pin_from_env and not settings.DEBUG:
+            warnings.append(
+                "매장 PIN이 설정되지 않아 POS·대시보드에 로그인할 수 없습니다. "
+                "배포 환경변수 STORE_PIN을 설정하고 재배포하세요."
+            )
+        if db_error:
+            body["db"]["error"] = db_error
+        if not persistent:
+            warnings.append(
+                "임시 저장소 모드: 주문·회원 데이터가 콜드스타트 시 초기화되고 "
+                "동시 접속 간 불일치할 수 있습니다. DATABASE_URL(Neon 등)을 "
+                "설정해 영구 저장으로 전환하세요."
+            )
+
+        if warnings:
+            body["status"] = "degraded"
+            body["warnings"] = warnings
+            # 기존 클라이언트가 읽는 단일 문자열도 유지한다(하나로 합쳐서).
+            body["warning"] = " / ".join(warnings)
+        return Response(body, status=200 if db_ok else 503)
+
+
+class IntegrityView(APIView):
+    """
+    데이터 정합성 점검 🔒 — 돈과 관련된 불변식이 깨졌는지 본다.
+
+    서버리스에는 셸이 없어 `manage.py check_integrity` 를 못 돌린다.
+    운영 DB를 확인할 유일한 통로라 API로 열어 둔다(점주 전용).
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def get(self, request):
+        try:
+            limit = min(50, max(1, int(request.query_params.get("limit", 10))))
+        except (TypeError, ValueError):
+            limit = 10
+        return Response(integrity_run_all(limit=limit))
+
+
+class ExportView(APIView):
+    """
+    데이터 내보내기 🔒 — `?kind=members|transactions|points|coupons`.
+
+    관리형 DB의 백업을 믿되, **믿는 것과 사본을 갖는 것은 다르다.**
+    Neon에 문제가 생기면 이관 포인트도 매출도 복구할 방법이 없다.
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def get(self, request):
+        kind = (request.query_params.get("kind") or "members").strip()
+        if kind not in EXPORTERS:
+            return Response(
+                {"detail": f"kind 는 {', '.join(EXPORTERS)} 중 하나여야 합니다."},
+                status=400,
+            )
+        body, filename = export_csv(kind)
+        from django.http import HttpResponse
+        from urllib.parse import quote
+
+        res = HttpResponse(body, content_type="text/csv; charset=utf-8")
+        # 한글 파일명은 RFC 5987 로 — 그냥 넣으면 브라우저가 깨뜨린다
+        res["Content-Disposition"] = (
+            f"attachment; filename=export.csv; filename*=UTF-8''{quote(filename)}"
+        )
+        return res
+
+
+class PointGrantView(APIView):
+    """
+    수기 포인트 지급·회수 🔒 — `POST {"member_id": 1, "delta": 1000}`.
+
+    잔액만 만지지 않고 **원장에 함께 남긴다.** 지급 경로를 하나로 모아
+    두지 않으면 잔액과 내역이 갈라진다.
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def post(self, request):
+        member = _resolve_member(request.data.get("member_id"))
+        if member is None:
+            return Response({"detail": "회원을 선택해 주세요."}, status=400)
+        try:
+            delta = int(request.data.get("delta") or 0)
+        except (TypeError, ValueError):
+            return Response({"detail": "증감 포인트가 올바르지 않습니다."}, status=400)
+        try:
+            updated = grant_points(member, delta)
+        except PointGrantError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(MemberSerializer(updated).data)
+
+
+class PrepaidView(APIView):
+    """
+    선결제(충전) 🔒 — `POST {"member_id": 1, "amount": 30000, "payment_method": "CARD"}`.
+
+    낸 금액을 그대로 포인트로 넣는다. **3% 적립은 붙지 않는다** —
+    충전 자체가 포인트를 주는 행위라 여기에 적립까지 얹으면 이중이다.
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def post(self, request):
+        member = _resolve_member(request.data.get("member_id"))
+        try:
+            amount = int(request.data.get("amount") or 0)
+        except (TypeError, ValueError):
+            return Response({"detail": "금액이 올바르지 않습니다."}, status=400)
+        try:
+            txn, updated = prepaid_charge(
+                member, amount,
+                request.data.get("payment_method") or "CARD",
+                approval_no=(request.data.get("approval_no") or "").strip(),
+                toss_order_id=(request.data.get("toss_order_id") or "").strip(),
+            )
+        except CheckoutError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(
+            {"transaction": TransactionSerializer(txn).data,
+             "member": MemberSerializer(updated).data},
+            status=201,
+        )
+
+
+class PinLoginView(APIView):
+    """
+    매장 PIN 로그인 → 토큰 발급.
+
+    POST {"pin": "0000"} → {"token": "..."} · 실패 401 · 시도 초과 429.
+    GET → 현재 토큰이 유효한지 확인({"authorized": bool}).
+    """
+
+    def get(self, request):
+        return Response({"authorized": request_authorized(request)})
+
+    def post(self, request):
+        pin = str(request.data.get("pin", "")).strip()
+        if not pin:
+            return Response({"detail": "PIN을 입력하세요."}, status=400)
+        try:
+            ok = check_pin(request, pin)
+        except PinRateLimited:
+            return Response(
+                {"detail": "시도 횟수를 초과했습니다. 잠시 후 다시 시도하세요."},
+                status=429,
+            )
+        if not ok:
+            return Response({"detail": "PIN이 올바르지 않습니다."}, status=401)
+        return Response({"token": issue_token()})
 
 
 class StoreView(APIView):
@@ -44,15 +298,103 @@ class StoreView(APIView):
 
 
 class MenuView(APIView):
-    """판매 중인 메뉴 목록(POS 주문 화면용)."""
+    """
+    메뉴 목록(공개) + 등록(직원).
+
+    GET  판매 중인 메뉴. `?all=1` 이면 판매중지분까지(직원 전용 — 관리 화면용).
+    POST 새 메뉴 등록 🔒 — 디저트가 매일 바뀌므로 POS에서 바로 추가한다.
+    """
 
     def get(self, request):
-        qs = MenuItem.objects.filter(is_available=True)
+        qs = MenuItem.objects.all()
+        if request.query_params.get("all") in ("1", "true", "yes"):
+            if not request_authorized(request):
+                return Response({"detail": "권한이 없습니다."}, status=403)
+        else:
+            qs = qs.filter(is_available=True)
         return Response(MenuItemSerializer(qs, many=True).data)
+
+    def post(self, request):
+        if not request_authorized(request):
+            return Response({"detail": "권한이 없습니다."}, status=403)
+        store = Store.objects.first()
+        if store is None:
+            return Response({"detail": "매장 설정이 없습니다."}, status=404)
+        ser = MenuItemWriteSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        item = ser.save(store=store)
+        return Response(MenuItemSerializer(item).data, status=201)
+
+
+class MenuReorderView(APIView):
+    """
+    메뉴 순서 저장 🔒 — `{"ids": [3, 1, 7, ...]}` 순서대로 sort_order 를 매긴다.
+
+    한 건씩 PATCH 하면 드래그 한 번에 여러 요청이 나가고, 중간에 하나만
+    실패하면 순서가 어긋난 채로 남는다. 한 번에 받아 통째로 저장한다.
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def post(self, request):
+        ids = request.data.get("ids")
+        if not isinstance(ids, list) or not ids:
+            return Response({"detail": "ids 목록이 필요합니다."}, status=400)
+        try:
+            ids = [int(i) for i in ids]
+        except (TypeError, ValueError):
+            return Response({"detail": "ids 는 숫자 목록이어야 합니다."}, status=400)
+
+        found = {m.id: m for m in MenuItem.objects.filter(id__in=ids)}
+        missing = [i for i in ids if i not in found]
+        if missing:
+            return Response({"detail": f"없는 메뉴가 포함됐습니다: {missing}"}, status=400)
+
+        for order, mid in enumerate(ids, start=1):
+            item = found[mid]
+            if item.sort_order != order:
+                item.sort_order = order
+                item.save(update_fields=["sort_order"])
+        return Response({"updated": len(ids)})
+
+
+class MenuDetailView(APIView):
+    """메뉴 수정·삭제 🔒."""
+
+    permission_classes = [StorePinPermission]
+
+    def patch(self, request, pk):
+        item = get_object_or_404(MenuItem, pk=pk)
+        ser = MenuItemWriteSerializer(item, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        return Response(MenuItemSerializer(ser.save()).data)
+
+    def delete(self, request, pk):
+        """
+        메뉴 삭제. 지난 주문 기록은 남는다 — OrderItem 이 이름·단가를
+        스냅샷으로 갖고 있고 메뉴 참조는 SET_NULL 이라 매출이 사라지지 않는다.
+        그래도 오늘 판 메뉴라면 지우는 대신 '판매중지'를 권한다.
+        """
+        item = get_object_or_404(MenuItem, pk=pk)
+        today = timezone.localdate()
+        sold_today = OrderItem.objects.filter(
+            menu_item=item, transaction__paid_at__date=today
+        ).exists()
+        if sold_today and request.query_params.get("force") not in ("1", "true", "yes"):
+            return Response(
+                {"detail": "오늘 판매된 메뉴입니다. 판매중지로 내리거나 force=1 로 삭제하세요.",
+                 "sold_today": True},
+                status=409,
+            )
+        name = item.name
+        item.delete()
+        return Response({"deleted": name})
 
 
 class StoreSessionView(APIView):
     """영업 시작/마감 토글."""
+
+    permission_classes = [StorePinPermission]
 
     def post(self, request):
         store = Store.objects.first()
@@ -71,22 +413,40 @@ class StoreSessionView(APIView):
 
 
 class SalesSummaryView(APIView):
-    """오늘 정산 요약 + 최근 결제."""
+    """오늘 정산 요약 + 최근 결제. (매출·마진 → 점주 전용)"""
+
+    permission_classes = [StorePinPermission]
 
     def get(self, request):
         store = Store.objects.first()
-        today = timezone.localdate()
+        today = _query_date(request) or timezone.localdate()
         paid = Transaction.objects.filter(status=Transaction.Status.PAID)
         today_qs = paid.filter(paid_at__date=today)
         agg = today_qs.aggregate(
             n=Count("id"), gross=Sum("gross_amount"),
             discount=Sum("discount"), net=Sum("net_amount"),
-            points=Sum("points_earned"),
+            points=Sum("points_earned"), points_used=Sum("points_used"),
         )
-        methods = {
-            row["payment_method"]: row["s"]
-            for row in today_qs.values("payment_method").annotate(s=Sum("net_amount"))
-        }
+        # 수단별 집계. **분할 결제는 둘로 쪼개 넣는다** — 한쪽에 몰아 잡으면
+        # 카드 단말기 합계와 안 맞고, 그게 정산이 틀어지는 첫 자리다.
+        methods: dict[str, int] = {}
+        for txn in today_qs.only(
+            "payment_method", "split_method", "split_amount", "net_amount"
+        ):
+            for m, amt in txn.amounts_by_method().items():
+                methods[m] = methods.get(m, 0) + amt
+        # 오늘 기여이익(공급가 − 재료원가 − 적립비용). 자세한 기준은 margins.py.
+        net_today = agg["net"] or 0
+        material_cost = OrderItem.objects.filter(transaction__in=today_qs).aggregate(
+            s=Sum(F("unit_cost") * F("quantity"))
+        )["s"] or 0
+        reward_cost = PointEntry.objects.filter(
+            transaction__in=today_qs,
+            reason__in=(PointEntry.Reason.EARN, PointEntry.Reason.STAMP, PointEntry.Reason.MISSION),
+            delta__gt=0,
+        ).aggregate(s=Sum("delta"))["s"] or 0
+        supply = to_supply(net_today)
+        contribution = supply - material_cost - reward_cost
         return Response({
             "date": today.isoformat(),
             "is_open": store.is_open if store else False,
@@ -94,15 +454,94 @@ class SalesSummaryView(APIView):
             "count": agg["n"] or 0,
             "gross": agg["gross"] or 0,
             "discount": agg["discount"] or 0,
-            "net": agg["net"] or 0,
+            "net": net_today,
             "points": agg["points"] or 0,
+            # 포인트로 받은 금액. net 에는 이미 빠져 있지만, 단말기 합계와
+            # 대조할 때 "어디로 샜지"를 설명해 주는 값이라 따로 싣는다.
+            "points_used": agg["points_used"] or 0,
             "by_method": methods,
+            "margin": {
+                "supply_revenue": supply,
+                "material_cost": material_cost,
+                "reward_cost": reward_cost,
+                "contribution": contribution,
+                "margin_rate": round(contribution / supply * 100, 1) if supply else 0.0,
+            },
         })
+
+
+class OrderParseView(APIView):
+    """
+    자연어 주문 → 장바구니 항목. POS 상단 입력창이 호출.
+
+    POST {"text": "아아 두 잔이랑 라떼 하나 따뜻하게"}
+    → {"items": [...], "source": "gemini"|"rule"}
+    키(GEMINI_API_KEY) 미설정 시 규칙 기반으로 자동 폴백.
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def post(self, request):
+        try:
+            return Response(parse_order(request.data.get("text", "")))
+        except OrderParseError as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+
+class MemberQrView(APIView):
+    """
+    멤버십 페이지로 가는 QR(공개). 모든 손님에게 동일한 고정 주소만 담는다 —
+    개인정보도 토큰도 들어가지 않으므로 인쇄해 붙여도 된다.
+    """
+
+    def get(self, request):
+        url = member_url(request.build_absolute_uri("/"))
+        try:
+            svg = qr_svg(url)
+        except QrUnavailable as exc:
+            # QR만 못 그릴 뿐, 주소는 알려준다(직접 입력·인쇄로 대체 가능).
+            return Response({"url": url, "detail": str(exc)}, status=503)
+        return Response({"url": url, "svg": svg})
+
+
+class HallOfFameView(APIView):
+    """이달의 단골(공개) — 닉네임으로 표시하므로 매장 화면에 띄워도 된다."""
+
+    def get(self, request):
+        return Response(hall_of_fame())
+
+
+class MarginView(APIView):
+    """
+    원가·마진 분석: 기간 기여이익 + 메뉴별 마진 순위.
+
+    ?days=N (기본 30). 기준: 공급가 매출 − 재료원가 − 적립비용(적립 시점 인식).
+    원가가 드러나므로 매장 PIN 필수.
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def get(self, request):
+        try:
+            days = max(1, min(365, int(request.query_params.get("days", 30))))
+        except (TypeError, ValueError):
+            days = 30
+        summary = margin_summary(days)
+        summary["menu"] = menu_item_margins(days)
+        return Response(summary)
 
 
 class MemberViewSet(viewsets.ModelViewSet):
     queryset = Member.objects.select_related("store").all()
     http_method_names = ["get", "post"]
+
+    # 고객이 본인 멤버십을 보는 경로만 공개. 명단 검색·가입·일괄등록은 매장 전용.
+    PUBLIC_ACTIONS = {"lookup", "dashboard", "missions", "points", "referral", "spin"}
+
+    def get_permissions(self):
+        if self.action in self.PUBLIC_ACTIONS:
+            return []
+        return [StorePinPermission()]
 
     def get_queryset(self):
         qs = Member.objects.select_related("store").all()
@@ -133,6 +572,31 @@ class MemberViewSet(viewsets.ModelViewSet):
             return Response({"detail": "회원을 찾을 수 없습니다."}, status=404)
         return Response(MemberSerializer(member).data)
 
+    @action(detail=False, methods=["post"], url_path="import")
+    def import_csv(self, request):
+        """
+        기존 고객 CSV 일괄 등록(payhere 등 이관).
+
+        multipart `file`(엑셀 CP949·UTF-8 자동 판별) 또는 JSON `csv`(텍스트).
+        `dry_run=true` 면 검증·집계만 하고 저장하지 않는다(미리보기).
+        """
+        upload = request.FILES.get("file")
+        csv_text = (request.data.get("csv") or "").strip()
+        dry_run = str(request.data.get("dry_run", "")).lower() in ("1", "true", "yes", "y")
+        if upload is None and not csv_text:
+            return Response(
+                {"detail": "file(업로드) 또는 csv(텍스트)가 필요합니다."}, status=400
+            )
+        try:
+            summary = import_members_csv(
+                file_bytes=upload.read() if upload else None,
+                csv_text=csv_text or None,
+                dry_run=dry_run,
+            )
+        except CsvImportError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(summary)
+
     @action(detail=True, methods=["get"])
     def missions(self, request, pk=None):
         member = self.get_object()
@@ -146,6 +610,36 @@ class MemberViewSet(viewsets.ModelViewSet):
         data = {"member": MemberSerializer(member).data}
         data.update(build_member_dashboard(member))
         return Response(data)
+
+    @action(detail=True, methods=["post"], url_path="referral")
+    def referral(self, request, pk=None):
+        """친구 초대 코드 적용(손님 폰에서 호출). 둘 다 포인트를 받는다."""
+        member = self.get_object()
+        try:
+            result = apply_referral(member, request.data.get("code", ""))
+        except ReferralError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(result)
+
+    @action(detail=True, methods=["get"], url_path="coupons")
+    def coupons(self, request, pk=None):
+        """이 회원이 지금 쓸 수 있는 쿠폰(직원용). 결제 화면에서 붙여 쓴다."""
+        from .profile import coupon_list
+
+        return Response(coupon_list(self.get_object()))
+
+    @action(detail=True, methods=["post"], url_path="spin")
+    def spin(self, request, pk=None):
+        """
+        룰렛 1회(손님 폰에서 호출). 기회를 1 차감하고 쿠폰을 발행한다.
+
+        **당첨 칸은 서버가 정해 내려준다** — 화면은 그 칸으로 멈추는 연출만 한다.
+        """
+        member = self.get_object()
+        try:
+            return Response(spin_service(member))
+        except SpinError as exc:
+            return Response({"detail": str(exc)}, status=400)
 
     @action(detail=True, methods=["get"])
     def points(self, request, pk=None):
@@ -166,13 +660,25 @@ class TransactionViewSet(viewsets.ModelViewSet):
     queryset = Transaction.objects.select_related("member").all()
     serializer_class = TransactionSerializer
     http_method_names = ["get", "post"]
+    permission_classes = [StorePinPermission]
 
     def get_queryset(self):
         # 목록은 최근 결제/취소 100건(대기 제외), 그 외 액션은 전체 대상.
         base = Transaction.objects.select_related("member").prefetch_related("items")
-        if self.action == "list":
-            return base.exclude(status=Transaction.Status.PENDING)[:100]
-        return base.all()
+        if self.action != "list":
+            return base.all()
+        # **결제 시각 순으로 준다.** 기본 정렬은 생성 시각(-created_at)인데,
+        # 주문 내역 화면은 paid_at 으로 날짜를 묶는다. 둘이 어긋나면
+        # 날짜 머리가 중복되고 순서가 뒤섞인다(승인 전 상태로 있다가 나중에
+        # 확정된 건에서 실제로 갈린다).
+        qs = base.exclude(status=Transaction.Status.PENDING).order_by(
+            F("paid_at").desc(nulls_last=True), "-created_at"
+        )
+        # ?date=YYYY-MM-DD 면 그날치만. 날짜를 안 주면 최근 100건(기존 동작).
+        day = _query_date(self.request)
+        if day:
+            return qs.filter(paid_at__date=day)
+        return qs[:100]
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
@@ -226,8 +732,13 @@ class TransactionViewSet(viewsets.ModelViewSet):
                 approval_no=data.get("approval_no", ""),
                 toss_payment_key=data.get("toss_payment_key", ""),
                 toss_order_id=data.get("toss_order_id", ""),
+                coupon_id=data.get("coupon_id"),
+                discount_pct=data.get("discount_pct") or 0,
+                set_discount=data.get("set_discount") or False,
+                split_method=data.get("split_method") or "",
+                split_amount=data.get("split_amount") or 0,
             )
-        except CheckoutError as exc:
+        except (CheckoutError, CouponError) as exc:
             return Response({"detail": str(exc)}, status=400)
         except TossError as exc:
             return Response({"detail": str(exc)}, status=502)
@@ -238,4 +749,8 @@ class TransactionViewSet(viewsets.ModelViewSet):
             txn.member.refresh_from_db()
             body["member"] = MemberSerializer(txn.member).data
         body["rewards"] = result.rewards
+        if result.idempotent_replay:
+            # 재전송된 요청 — 새로 결제된 게 아니라 기존 거래를 돌려줌.
+            body["idempotent_replay"] = True
+            return Response(body, status=status.HTTP_200_OK)
         return Response(body, status=status.HTTP_201_CREATED)

@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>슬로우스텝 메뉴판</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+  /* 슬로우스텝 메뉴판 — 1920×1080 고객 화면.
+     POS·멤버십·대시보드와 같은 흰 디자인 시스템을 쓴다.
+     크기는 vh/vw 로 잡아 해상도가 달라져도 비율이 유지된다. */
+  :root {
+    --bg:#f4f6f9; --card:#ffffff; --card2:#f8fafc; --line:#e6e9ef; --txt:#161a25;
+    --muted:#6b7280; --brand:#3b5bff; --brand-dk:#2846e6; --brand-soft:#eef2ff;
+    --red:#ef4444;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 6px 20px rgba(16,24,40,.06);
+    --sans:"Inter","Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--txt); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; overflow:hidden; user-select:none; }
+
+  .board { height:100vh; display:grid; grid-template-rows:auto 1fr auto;
+    padding:3.2vh 2.6vw; gap:2.2vh; }
+
+  /* ── 머리말 ── */
+  .top { display:flex; align-items:center; gap:1.4vw;
+    padding-bottom:2.2vh; border-bottom:2px solid var(--txt); }
+  .top .logo { height:7.4vh; width:auto; display:block; }
+  .top .who { flex:1; min-width:0; }
+  .top .who b { display:block; font-size:2.6vh; font-weight:800; letter-spacing:-.02em; line-height:1.2; }
+  .top .who span { display:block; font-size:1.5vh; color:var(--muted); font-weight:500; margin-top:.4vh;
+    letter-spacing:.02em; }
+  .tabs { display:flex; gap:.6vw; align-items:center; }
+  .tabs button { font-family:inherit; padding:1.1vh 1.2vw; border-radius:999px;
+    border:1px solid var(--line); background:var(--card); font-size:1.8vh; font-weight:700;
+    letter-spacing:.02em; color:var(--muted); cursor:pointer;
+    transition:background .18s, color .18s, border-color .18s; }
+  .tabs button.on { background:var(--brand); border-color:var(--brand); color:#fff; }
+
+  /* ── 넘기는 영역 ── */
+  .stage { position:relative; overflow:hidden; min-height:0; touch-action:pan-y; }
+  /* 트랙 폭은 무대와 같게 둔다. 300%로 주면 페이지의 flex-basis:100% 가
+     트랙 기준으로 잡혀 한 장이 3배로 늘어나 오른쪽이 잘린다.
+     페이지들이 트랙을 넘치는 건 정상 — 무대가 잘라 준다. */
+  .track { display:flex; height:100%; width:100%; will-change:transform;
+    transition:transform 380ms cubic-bezier(.22,.61,.36,1); }
+  /* 좌우 여백은 넘김 버튼 자리를 비켜야 한다 — 버튼이 메뉴 글자를 물면
+     둘 다 읽기 어려워진다. */
+  .page { flex:0 0 100%; height:100%; min-width:0; padding:0 6.4vw;
+    display:flex; flex-direction:column; gap:2vh; overflow:hidden; }
+
+  .page h2 { margin:0; display:flex; align-items:baseline; gap:.8vw; }
+  .page h2 .ko { font-size:2.9vh; font-weight:800; letter-spacing:-.02em; }
+  .page h2 .en { font-size:1.6vh; font-weight:700; letter-spacing:.24em; color:var(--brand);
+    text-transform:uppercase; }
+  .page h2 .rule { flex:1; height:1px; background:var(--line); }
+
+  /* 메뉴판은 카드에 담지 않는다 — 상자 테두리가 줄마다 반복되면 시선이
+     끊겨 오히려 안 읽힌다. 이름 · 리더선 · 가격으로 흐르게 두고
+     글자를 키우는 편이 멀리서 훨씬 잘 보인다(시안과 같은 구성). */
+  .items { display:grid; grid-template-columns:repeat(2, minmax(0,1fr));
+    gap:0 6vw; align-content:space-evenly; flex:1; min-height:0; }
+  /* 한 장에 10개를 넘는 날은 3열로 — 잘리는 것보다 작게라도 다 보이는 게 낫다 */
+  .items.dense { grid-template-columns:repeat(3, minmax(0,1fr)); gap:0 3.6vw; }
+  /* 그래도 넘치면 단계적으로 줄인다. 디저트가 매일 바뀌어 개수를 미리
+     알 수 없으므로, 임계값 하나로 맞추는 대신 그린 뒤에 재서 조인다. */
+  .items.t1 .it { padding:1vh 0; }
+  .items.t1 .it .nm { font-size:3vh; }  .items.t1 .it .pr { font-size:2.9vh; }
+  .items.t1.dense .it .nm { font-size:2.5vh; }  .items.t1.dense .it .pr { font-size:2.4vh; }
+  .items.t2 .it { padding:.6vh 0; }
+  .items.t2 .it .nm { font-size:2.5vh; }  .items.t2 .it .pr { font-size:2.4vh; }
+  .items.t2.dense .it .nm { font-size:2.1vh; }  .items.t2.dense .it .pr { font-size:2vh; }
+  .items.t2 .tag { font-size:1.25vh; }
+
+  .it { min-width:0; padding:1.5vh 0; }
+  .it .nm { font-size:3.6vh; font-weight:700; letter-spacing:-.02em; line-height:1.2;
+    word-break:keep-all; }
+  .items.dense .it .nm { font-size:2.9vh; }
+  .it .ln { display:flex; align-items:baseline; gap:.7vw; margin-top:.7vh; }
+  .it .sub { display:flex; gap:.3vw; align-items:center; flex:0 0 auto; }
+  .it .lead { flex:1 1 1vw; min-width:1vw; height:1px; background:var(--line);
+    transform:translateY(-.35vh); }
+  .it .pr { font-size:3.4vh; font-weight:800; color:var(--brand); white-space:nowrap;
+    font-variant-numeric:tabular-nums; }
+  .items.dense .it .pr { font-size:2.8vh; }
+  .tag { font-size:1.5vh; font-weight:700; padding:.35vh .6vw; border-radius:6px;
+    letter-spacing:.02em; }
+  .tag.hot { background:#fff1ec; color:#c2410c; }
+  .tag.ice { background:var(--brand-soft); color:var(--brand-dk); }
+  .tag.out { background:#fee2e2; color:var(--red); }
+  .it.out .nm, .it.out .pr { color:var(--muted); text-decoration:line-through; }
+
+  /* ── 좌우 넘김 버튼: 화면 양옆, 크게 ── */
+  .arrow { position:absolute; top:50%; transform:translateY(-50%);
+    width:5.6vw; height:5.6vw; max-width:104px; max-height:104px;
+    border-radius:50%; border:1px solid var(--line); background:var(--card);
+    box-shadow:0 4px 18px rgba(16,24,40,.12);
+    color:var(--txt); font-size:4vh; font-weight:700; line-height:1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    z-index:5; transition:background .18s, color .18s, transform .18s, box-shadow .18s;
+    padding:0 0 .5vh; font-family:var(--sans); }
+  .arrow:hover { background:var(--brand); color:#fff; border-color:var(--brand);
+    box-shadow:0 6px 22px rgba(59,91,255,.30); }
+  .arrow:active { transform:translateY(-50%) scale(.94); }
+  .arrow.l { left:0; }
+  .arrow.r { right:0; }
+  .arrow[disabled] { opacity:.3; cursor:default; box-shadow:none; }
+
+  /* ── 발 ── */
+  .foot { display:flex; align-items:center; justify-content:space-between; gap:2vw;
+    padding-top:2vh; border-top:1px solid var(--line); }
+  .note { display:flex; flex-direction:column; gap:.7vh; min-width:0; }
+  .note .n { font-size:1.72vh; color:var(--muted); font-weight:500; white-space:nowrap; }
+  .note .n b { color:var(--txt); font-weight:700; }
+  .note .n.hi { color:var(--brand-dk); }
+  .fr { display:flex; align-items:center; gap:1.4vw; }
+  .dots-nav { display:flex; gap:.5vw; align-items:center; }
+  .dots-nav i { width:1.1vh; height:1.1vh; border-radius:50%; background:#cdd3de;
+    cursor:pointer; transition:.22s; }
+  .dots-nav i.on { background:var(--brand); transform:scale(1.3); }
+  .qr-slot { display:flex; align-items:center; gap:.8vw; }
+  .qr-slot.off { display:none; }
+  .qr-slot .qr { width:8vh; height:8vh; background:#fff; border:1px solid var(--line);
+    border-radius:10px; padding:.5vh; display:flex; }
+  .qr-slot .qr svg { width:100%; height:100%; display:block; }
+  .qr-slot .tx { white-space:nowrap; }
+  .qr-slot .tx b { display:block; font-size:1.8vh; font-weight:700; }
+  .qr-slot .tx span { display:block; font-size:1.4vh; color:var(--muted); font-weight:500; margin-top:.4vh; }
+</style>
+</head>
+<body>
+<div class="board">
+
+  <div class="top">
+    <img class="logo" src="../assets/logo-lockup.png" alt="SLOW STEP · Roasting &amp; Baking" />
+    <div class="who">
+      <b>슬로우스텝</b>
+      <span>ROASTING &amp; BAKING</span>
+    </div>
+    <div class="tabs" id="tabs"></div>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="track" id="track"></div>
+    <button class="arrow l" id="prev" aria-label="이전 메뉴">‹</button>
+    <button class="arrow r" id="next" aria-label="다음 메뉴">›</button>
+  </div>
+
+  <div class="foot">
+    <div class="note">
+      <div class="n">모든 음료 <b>디카페인 · 오트밀크 · 샷 추가</b> 가능 <b>+500원</b></div>
+      <div class="n"><b>오늘의 디저트</b>는 매일 바뀝니다 — 직원에게 물어봐 주세요</div>
+      <div class="n">음료와 디저트를 함께 주문하시면 <b>500원 할인</b></div>
+      <div class="n hi">결제하실 때 <b>휴대폰 번호</b>만 남기시면 <b>3% 적립</b></div>
+    </div>
+    <div class="fr">
+      <div class="dots-nav" id="dots"></div>
+      <div class="qr-slot off" id="qrSlot">
+        <div class="qr" id="qr"></div>
+        <div class="tx">
+          <b>내 적립 내역</b>
+          <span>휴대폰으로 찍어보세요</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  /* 메뉴는 서버(관리자 화면)의 것을 그대로 쓴다. 가격을 바꾸면 이 화면도 바로 따라온다.
+     서버에 닿지 못하면(시안 미리보기·네트워크 끊김) 아래 내장 목록으로 그린다. */
+  const API_BASE = location.origin.includes(":5500") ? "http://localhost:8000" : location.origin;
+  const $ = (id) => document.getElementById(id);
+  const won = (n) => (n || 0).toLocaleString("ko-KR") + "원";
+
+  /* 페이지 구성 — [한글 제목, 영문 제목, 담을 카테고리들].
+     비어 있는 페이지는 만들지 않는다(그 갈래가 다 품절인 날 빈 장이 뜨면 안 된다). */
+  const PAGES = [
+    ["커피 · 콜드브루", "Coffee",     ["coffee", "coldbrew"]],
+    ["논커피 · 티",     "Non-Coffee", ["noncoffee", "tea"]],
+    ["스무디 · 에이드", "Ade",        ["ade"]],
+  ];
+
+  /* 메뉴판에서 빼는 것들. **POS에서는 그대로 판다** — 여기서만 안 보인다.
+     - 디저트: 매일 바뀌어서 붙박이 메뉴판에 올리면 틀린 정보가 된다.
+     - 레온 · 킹: 특정 손님을 위한 주문 상품이라 일반 메뉴로 노출하지 않는다. */
+  const HIDE_CATEGORIES = ["dessert"];
+  // 이름에 이 낱말이 들어가면 메뉴판에서 뺀다. 정확한 이름 대신 낱말로 맞춘다 —
+  // "레온 킹"인지 "킹 레온"인지, 뒤에 무엇이 붙는지에 흔들리지 않게.
+  const HIDE_WORDS = ["레온", "킹"];
+  const squash = (t) => (t || "").replace(/\s+/g, "");
+  const showOnBoard = (m) => {
+    if(HIDE_CATEGORIES.includes(m.category)) return false;
+    const n = squash(m.name);
+    return !HIDE_WORDS.some(w => n.includes(squash(w)));
+  };
+
+  const FALLBACK = [
+    ["아메리카노", 4000, "coffee", "hotice"], ["카페 라떼", 4500, "coffee", "hotice"],
+    ["바닐라 라떼", 5000, "coffee", "hotice"], ["카페 모카", 5300, "coffee", "hotice"],
+    ["콜드브루", 4500, "coldbrew", "ice"], ["콜드브루 라떼", 5000, "coldbrew", "ice"],
+    ["콜드브루 슈페너", 5500, "coldbrew", "ice"],
+    ["자몽 에이드", 5500, "ade", "ice"], ["레몬 에이드", 5500, "ade", "ice"],
+    ["플레인 요거트 스무디", 5000, "ade", "ice"],
+    ["초코 라떼", 5000, "noncoffee", "hotice"], ["말차 라떼", 5300, "noncoffee", "hotice"],
+    ["얼그레이", 4500, "tea", "hotice"], ["캐모마일", 4500, "tea", "hotice"],
+  ].map(([name, price, category, temp_option]) =>
+    ({ name, price, category, temp_option, sold_out:false }));
+
+  /* 온도 표시는 '고를 수 있을 때'만 의미가 있다.
+     아이스 전용은 ICE 하나, 핫·아이스 둘 다 되면 둘 다, 디저트는 표시 없음. */
+  function tags(m){
+    if(m.sold_out) return '<span class="tag out">품절</span>';
+    if(m.temp_option === "hotice") return '<span class="tag hot">HOT</span><span class="tag ice">ICE</span>';
+    if(m.temp_option === "ice")    return '<span class="tag ice">ICE</span>';
+    return "";
+  }
+
+  let pages = [];
+  let page = 0;
+
+  function render(items){
+    const byCat = {};
+    items.filter(showOnBoard).forEach(m => (byCat[m.category] = byCat[m.category] || []).push(m));
+
+    pages = PAGES.map(([ko, en, keys]) => ({
+      ko, en, items: keys.flatMap(k => byCat[k] || []),
+    })).filter(p => p.items.length);
+    if(!pages.length) return;
+    page = Math.min(page, pages.length - 1);
+
+    $("track").innerHTML = pages.map(p => `
+      <div class="page">
+        <h2><span class="ko">${p.ko}</span><span class="en">${p.en}</span><span class="rule"></span></h2>
+        <div class="items${p.items.length > 10 ? " dense" : ""}">
+          ${p.items.map(m => `
+            <div class="it${m.sold_out ? " out" : ""}">
+              <div class="nm">${m.name}</div>
+              <div class="ln">
+                <span class="sub">${tags(m)}</span>
+                <span class="lead"></span>
+                <span class="pr">${won(m.price)}</span>
+              </div>
+            </div>`).join("")}
+        </div>
+      </div>`).join("");
+
+    $("tabs").innerHTML = pages.map((p, i) => `<button data-i="${i}">${p.ko}</button>`).join("");
+    $("dots").innerHTML = pages.map((_, i) => `<i data-i="${i}"></i>`).join("");
+    paint();
+    fit();
+  }
+
+  /* 그려 놓고 실제로 넘치는 장만 한 단계씩 조인다.
+     메뉴 개수·이름 길이가 매일 달라서 CSS 임계값만으로는 못 맞춘다. */
+  function fit(){
+    const h = $("stage").clientHeight;
+    if(!h) return;
+    document.querySelectorAll(".page").forEach(pg => {
+      const box = pg.querySelector(".items");
+      if(!box) return;
+      box.classList.remove("t1", "t2");
+      if(pg.scrollHeight > h) box.classList.add("t1");
+      if(pg.scrollHeight > h) { box.classList.remove("t1"); box.classList.add("t2"); }
+    });
+  }
+  addEventListener("resize", fit);
+
+  function paint(){
+    // 트랙 폭 = 무대 폭이므로 100%가 정확히 한 장이다
+    $("track").style.transform = `translateX(${-page * 100}%)`;
+    [...$("tabs").children].forEach((b, i) => b.classList.toggle("on", i === page));
+    [...$("dots").children].forEach((d, i) => d.classList.toggle("on", i === page));
+    $("prev").disabled = page === 0;
+    $("next").disabled = page === pages.length - 1;
+  }
+
+  function go(n){
+    if(!pages.length) return;
+    page = Math.max(0, Math.min(pages.length - 1, n));
+    paint();
+    hold();                      // 손님이 넘겼으면 자동 넘김을 잠시 멈춘다
+  }
+
+  $("tabs").onclick = (e) => { const b = e.target.closest("button"); if(b) go(+b.dataset.i); };
+  $("dots").onclick = (e) => { const d = e.target.closest("i"); if(d) go(+d.dataset.i); };
+  $("prev").onclick = () => go(page - 1);
+  $("next").onclick = () => go(page + 1);
+  document.addEventListener("keydown", (e) => {
+    if(e.key === "ArrowLeft")  go(page - 1);
+    if(e.key === "ArrowRight") go(page + 1);
+  });
+
+  /* 좌우로 밀어 넘기기 — 터치와 마우스 드래그 둘 다 받는다.
+     60px 미만은 '누른 것'으로 보고 무시한다(스치기만 해도 넘어가면 답답하다). */
+  let startX = null;
+  const stage = $("stage");
+  const down = (e) => { startX = (e.touches ? e.touches[0] : e).clientX; };
+  const up = (e) => {
+    if(startX === null) return;
+    const dx = (e.changedTouches ? e.changedTouches[0] : e).clientX - startX;
+    startX = null;
+    if(Math.abs(dx) < 60) return;
+    go(page + (dx < 0 ? 1 : -1));
+  };
+  stage.addEventListener("touchstart", down, { passive:true });
+  stage.addEventListener("touchend", up, { passive:true });
+  stage.addEventListener("mousedown", down);
+  stage.addEventListener("mouseup", up);
+
+  /* 자동 넘김 — 메뉴판은 아무도 안 만져도 전체를 보여줘야 한다.
+     손님이 직접 넘긴 뒤에는 30초간 멈춘다(읽는 중에 넘어가면 성가시다). */
+  const AUTO_MS = 14000, HOLD_MS = 30000;
+  let holdUntil = 0;
+  function hold(){ holdUntil = Date.now() + HOLD_MS; }
+  setInterval(() => {
+    if(!pages.length || Date.now() < holdUntil) return;
+    page = (page + 1) % pages.length;
+    paint();
+  }, AUTO_MS);
+
+  async function load(){
+    render(FALLBACK);                      // 먼저 그려 둔다 — 서버가 느려도 빈 화면을 보이지 않는다
+    try {
+      const res = await fetch(API_BASE + "/api/v1/menu");
+      if(res.ok){
+        const items = await res.json();
+        if(Array.isArray(items) && items.length) render(items);
+      }
+    } catch(e){ /* 서버에 못 닿아도 내장 목록으로 계속 보여준다 */ }
+
+    try {
+      const res = await fetch(API_BASE + "/api/v1/member-qr");
+      if(res.ok){
+        const { svg } = await res.json();
+        if(svg){ $("qr").innerHTML = svg; $("qrSlot").classList.remove("off"); }
+      }
+    } catch(e){ /* QR은 없어도 메뉴판은 제 역할을 한다 */ }
+  }
+
+  load();
+  // 가격·품절이 바뀔 수 있으므로 5분마다 조용히 갱신한다
+  setInterval(load, 5 * 60 * 1000);
+</script>
+</body>
+</html>

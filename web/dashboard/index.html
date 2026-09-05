@@ -30,6 +30,78 @@
   .cols { grid-template-columns:1.4fr 1fr; align-items:start; }
   @media (max-width:820px){ .cols{ grid-template-columns:1fr; } }
   h3 { font-size:15px; margin:0 0 16px; color:var(--txt); }
+
+  /* ── 오늘 요약 ── */
+  .today { background:linear-gradient(135deg,#4b6bff 0%,#6a4cff 100%); border:0; color:#fff; }
+  .today .t-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .today .t-lb { font-size:12px; color:rgba(255,255,255,.75); font-weight:500; }
+  .today .t-val { font-size:34px; font-weight:800; letter-spacing:-.03em; margin-top:4px;
+    line-height:1.1; font-variant-numeric:tabular-nums; }
+  .today .t-biz { font-size:11px; font-weight:700; padding:5px 11px; border-radius:999px;
+    background:rgba(255,255,255,.22); white-space:nowrap; }
+  .today .t-sub { font-size:12.5px; color:rgba(255,255,255,.78); margin-top:8px; }
+  .today .t-nav { display:flex; align-items:center; gap:6px; margin-top:14px; }
+  .today .t-nav button { background:rgba(255,255,255,.18); color:#fff; border:0;
+    border-radius:8px; padding:7px 11px; font-size:14px; font-weight:700; line-height:1;
+    cursor:pointer; }
+  .today .t-nav button:disabled { opacity:.35; cursor:default; }
+  .today .t-nav button.t-today { font-size:12px; padding:8px 12px; }
+  .today .t-nav input { flex:1; min-width:0; background:rgba(255,255,255,.18); border:0;
+    color:#fff; border-radius:8px; padding:7px 10px; font-size:13px; font-family:inherit;
+    color-scheme:dark; }
+  .today .t-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
+    margin-top:18px; padding-top:16px; border-top:1px solid rgba(255,255,255,.22); }
+  .today .t-grid div { font-size:11px; color:rgba(255,255,255,.72); }
+  .today .t-grid b { display:block; font-size:17px; font-weight:700; color:#fff; margin-top:4px;
+    font-variant-numeric:tabular-nums; }
+  /* 결제수단 — 카드 단말기 합계와 눈으로 맞춰보는 자리 */
+  .today .t-methods:not(:empty) { margin-top:16px; padding-top:14px;
+    border-top:1px solid rgba(255,255,255,.22); }
+  .today .t-mh { font-size:11px; color:rgba(255,255,255,.72); margin-bottom:8px; }
+  .today .t-methods > div { display:flex; justify-content:space-between; align-items:baseline;
+    gap:10px; font-size:13px; color:#fff; padding:3px 0; }
+  .today .t-methods > div.muted { color:rgba(255,255,255,.66); }
+  .today .t-methods b { font-weight:700; font-variant-numeric:tabular-nums; }
+
+  /* ── 주문 내역 (표 대신 줄 — 폰에서 표는 가로로 밀린다) ── */
+  .ohead { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; }
+  button.sm { padding:7px 12px; font-size:12px; }
+  .o { border-bottom:1px solid var(--line); padding:12px 0; cursor:pointer; }
+  .o:last-child { border-bottom:0; }
+  .o-top { display:flex; align-items:baseline; gap:8px; }
+  .o-t { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; flex:0 0 auto; }
+  .o-w { flex:1; font-size:14px; font-weight:600; min-width:0; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; }
+  .o-a { font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .o-sub { font-size:12px; color:var(--muted); margin-top:4px; display:flex;
+    flex-wrap:wrap; gap:4px 10px; }
+  .o-sub .hl { color:var(--green); font-weight:600; }
+  .o-sub .cx { color:var(--red); font-weight:700; }
+  .o-items { margin-top:9px; padding:10px 12px; background:var(--card2);
+    border:1px solid var(--line); border-radius:10px; font-size:13px; line-height:1.7; }
+  .o-items .row2 { display:flex; justify-content:space-between; gap:10px; }
+
+  /* ── 폰 ── */
+  @media (max-width:600px){
+    .wrap { padding:16px 14px 56px; }
+    header { gap:10px; margin-bottom:16px; }
+    header nav { margin-left:0 !important; width:100%; }
+    header .sub { display:none; }          /* 폰에서는 설명문보다 숫자가 먼저다 */
+    .kpis { grid-template-columns:repeat(2,1fr); }
+    .card { padding:15px; border-radius:14px; }
+    .kpi .val { font-size:21px; }
+    .today .t-val { font-size:30px; }
+    /* 표는 가로 스크롤 상자 안에서만 밀리게 한다 — 페이지 전체가 밀리면 안 된다.
+       카드 안쪽 어디에 있든 잡아야 한다(마진 표는 한 겹 더 들어가 있다).
+       display:block 만 주면 열 너비가 무너지므로 min-width 로 폭을 확보한다. */
+    /* 그리드 칸은 기본이 min-width:auto 라 내용이 넓으면 칸째로 늘어난다.
+       0으로 눌러야 표만 스크롤되고 페이지는 안 밀린다. */
+    .grid > .card, .card { min-width:0; }
+    .card table { display:block; max-width:100%; overflow-x:auto; white-space:nowrap; }
+    .card table thead, .card table tbody { display:table; width:100%; min-width:520px; }
+    .card table tr { display:table-row; }
+    .card table th, .card table td { display:table-cell; }
+  }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th, td { text-align:left; padding:10px 6px; border-bottom:1px solid var(--line); }
   th { color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
@@ -41,6 +113,13 @@
     border-radius:5px 5px 0 0; min-height:3px; position:relative; }
   .bars .b span { position:absolute; bottom:-18px; left:50%; transform:translateX(-50%);
     font-size:9px; color:var(--muted); white-space:nowrap; }
+  /* 막대 위 금액(만원). 값이 없는 날은 표시하지 않는다 — 0이 줄줄이 뜨면 지저분하다 */
+  .bars .b em { position:absolute; top:-16px; left:50%; transform:translateX(-50%);
+    font-size:9.5px; font-weight:700; color:var(--txt); font-style:normal;
+    white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .bars .b.today { background:linear-gradient(180deg,#ffb703,#f59e0b); }
+  .bars .b.today em { color:#b45309; }
+  .bars { padding-top:18px; }
   .tier-bar { display:flex; height:12px; border-radius:6px; overflow:hidden; margin:10px 0; background:var(--card2); }
   .tier-bar i { display:block; height:100%; }
   .legend { display:flex; gap:14px; font-size:12px; color:var(--muted); flex-wrap:wrap; }
@@ -74,9 +153,7 @@
 
   /* ── 로고 · 인터랙션 ── */
   .brand { display:flex; align-items:center; gap:11px; }
-  .logo { width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#5b76ff,var(--brand));
-    color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:18px;
-    flex:0 0 auto; box-shadow:0 4px 12px rgba(59,91,255,.3); }
+  .logo { width:38px; height:auto; flex:0 0 auto; display:block; }
   .wm { font-weight:800; font-size:18px; letter-spacing:-.01em; color:var(--txt); }
   .wm-sub { font-size:11px; letter-spacing:.01em; color:var(--muted); display:block; margin-top:1px; font-weight:500; }
   @keyframes rise { from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none;} }
@@ -88,27 +165,63 @@
   .chip:hover { background:#e2e8ff; }
   tbody tr:hover { background:var(--card2); }
 </style>
+<script src="../pin.js"></script>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png" />
+<link rel="apple-touch-icon" href="../assets/favicon-180.png" />
 </head>
 <body>
 <div class="wrap">
   <header>
     <div class="brand">
-      <span class="logo">S</span>
+      <img class="logo" src="../assets/logo-mark.png" alt="슬로우스텝" />
       <div><span class="wm">Slowstep</span><span class="wm-sub">점주 대시보드</span></div>
     </div>
     <span class="sub" id="sub">고객 데이터는 우리 것 — payhere 동의 없이 직접 마케팅</span>
     <nav style="margin-left:auto">
       <a href="../pos/">POS ↗</a><a href="../member/">멤버십 ↗</a>
+      <a href="#" onclick="StorePin.lock();return false" title="이 기기의 PIN 인증 해제">🔒 잠금</a>
     </nav>
   </header>
+  <!-- 저장소 상태 경고 (임시 저장 모드/DB 오류 시 /api/v1/health 결과로 표시) -->
+  <div id="storageBanner" style="display:none;margin:8px 0;padding:10px 14px;border-radius:10px;
+       background:#fff3cd;color:#7a5b00;border:1px solid #ffe08a;font-size:13px;line-height:1.5"></div>
+
+  <!-- 오늘 (점주가 폰으로 가장 자주 보는 화면 — 맨 위에 둔다) -->
+  <div class="card today" id="todayCard">
+    <div class="t-head">
+      <div>
+        <div class="t-lb" id="tLb">오늘 매출</div>
+        <div class="t-val" id="tRevenue">—</div>
+      </div>
+      <span class="t-biz" id="tBiz">—</span>
+    </div>
+    <div class="t-nav">
+      <button onclick="shiftDay(-1)" aria-label="이전 날">‹</button>
+      <input type="date" id="tDate" onchange="pickDay(this.value)" />
+      <button onclick="shiftDay(1)" id="tNext" aria-label="다음 날">›</button>
+      <button class="t-today" onclick="pickDay('')">오늘</button>
+    </div>
+    <div class="t-sub" id="tSub">불러오는 중…</div>
+    <div class="t-grid" id="tGrid"></div>
+    <div class="t-methods" id="tMethods"></div>
+  </div>
+
+  <!-- 오늘 주문 내역 -->
+  <div class="card" style="margin-top:14px">
+    <div class="ohead">
+      <h3 style="margin:0">주문 내역 <span class="muted" style="font-weight:400" id="oDate"></span></h3>
+      <button class="ghost sm" onclick="loadDay()">새로고침</button>
+    </div>
+    <div id="orders" class="muted">불러오는 중…</div>
+  </div>
 
   <!-- KPI -->
-  <div class="grid kpis" id="kpis"></div>
+  <div class="grid kpis" id="kpis" style="margin-top:14px"></div>
 
   <div class="grid cols" style="margin-top:14px;">
     <!-- 매출 추세 -->
     <div class="card">
-      <h3>최근 14일 매출</h3>
+      <h3>최근 14일 매출 <span class="muted" style="font-weight:400">· 만원</span></h3>
       <div class="bars" id="trend"></div>
       <div style="height:22px"></div>
     </div>
@@ -133,6 +246,33 @@
       <table><thead><tr><th>고객</th><th>결제</th><th>적립</th><th>수단</th></tr></thead>
       <tbody id="recentTx"></tbody></table>
     </div>
+  </div>
+
+  <!-- 원가·마진 분석 -->
+  <div class="card" style="margin-top:14px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <h3 style="margin:0;">원가·마진 분석 <span class="muted" style="font-weight:500">— 공급가(부가세 제외) 기준 기여이익</span></h3>
+      <select id="marginDays" onchange="loadMargins()" style="width:auto;padding:7px 10px;">
+        <option value="7">최근 7일</option>
+        <option value="30" selected>최근 30일</option>
+        <option value="90">최근 90일</option>
+      </select>
+    </div>
+    <div class="grid kpis" id="marginKpis" style="margin-top:14px;"></div>
+    <div style="margin-top:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h3 style="margin:0;font-size:14px;">메뉴별 마진</h3>
+        <span class="muted" id="marginNote"></span>
+      </div>
+      <table style="margin-top:10px;"><thead><tr>
+        <th>메뉴</th><th>판매</th><th>공급가 매출</th><th>재료원가</th><th>원가율</th><th>마진</th><th>마진율</th>
+      </tr></thead><tbody id="marginRows"></tbody></table>
+    </div>
+    <p class="muted" style="margin-top:12px;line-height:1.6">
+      매출은 <b>공급가(÷1.1)</b> 기준, 포인트·스탬프·미션 적립은 <b>적립 시점</b>에 비용으로 반영합니다.
+      인건비·임대료 등 고정비는 이번 분석 범위 밖(재료비 기준 기여이익)입니다.
+      원가는 <b>관리자 → 메뉴</b>에서 항목별로 입력하세요.
+    </p>
   </div>
 
   <!-- 마케팅 발송 -->
@@ -192,6 +332,50 @@
     </div>
   </div>
 
+  <!-- 고객 일괄 등록 (payhere 이관) -->
+  <div class="card" style="margin-top:14px;">
+    <h3>고객 일괄 등록 <span class="muted" style="font-weight:500">— payhere 등 기존 고객 CSV 이관</span></h3>
+    <div class="grid cols">
+      <div>
+        <p class="muted" style="margin:0 0 10px;line-height:1.6">
+          기존 결제사에서 내려받은 고객 명단을 CSV로 올리면 한 번에 등록됩니다.<br/>
+          필수 열: <b>이름, 연락처</b> · 선택 열: 포인트, 누적결제액, 방문횟수, 스탬프, 마케팅동의, 가입일<br/>
+          엑셀에서 "CSV로 저장"한 파일 그대로 올려도 됩니다(한글 인코딩 자동 인식).
+          이미 등록된 연락처는 건너뛰어 기존 데이터를 덮어쓰지 않아요.
+        </p>
+        <button class="ghost" onclick="downloadTemplate()">📄 템플릿 CSV 내려받기</button>
+        <label>CSV 파일 선택</label>
+        <input id="impFile" type="file" accept=".csv,text/csv" onchange="resetImport()" />
+        <div class="frow" style="margin-top:12px;">
+          <button class="ghost" id="impCheckBtn" onclick="runImport(true)">① 검증하기 (저장 안 함)</button>
+          <button id="impRunBtn" onclick="runImport(false)" disabled>② 등록 실행</button>
+        </div>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">결과</div>
+        <div class="preview-box" id="impSummary">파일을 선택하고 ① 검증하기를 눌러 주세요.</div>
+        <div class="result" id="impDetail"></div>
+
+        <!-- 백업 — 관리형 DB의 백업을 믿되, 믿는 것과 사본을 갖는 것은 다르다 -->
+        <div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--line);">
+          <div style="font-weight:700;margin-bottom:6px;">데이터 내보내기 (백업)</div>
+          <p class="muted" style="margin:0 0 10px;line-height:1.6;">
+            엑셀에서 바로 열립니다. <b>DB에 문제가 생겨도 사본이 남습니다</b> —
+            특히 <b>포인트 원장</b>은 잔액의 진실 원천이라 이것만 있어도 복원할 수 있습니다.<br/>
+            한 달에 한 번쯤 내려받아 두시길 권합니다.
+          </p>
+          <div class="frow" style="flex-wrap:wrap;gap:8px;">
+            <button class="ghost sm" onclick="exportCsv('members')">회원</button>
+            <button class="ghost sm" onclick="exportCsv('transactions')">거래</button>
+            <button class="ghost sm" onclick="exportCsv('points')">포인트 원장</button>
+            <button class="ghost sm" onclick="exportCsv('coupons')">쿠폰</button>
+          </div>
+          <p class="muted" id="expMsg" style="margin:8px 0 0;"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <p class="muted" style="text-align:center;margin-top:18px;">
     알림톡 키 미설정 시 Mock 발송 — 세그먼트·치환·수신거부 로직 전체 검증 가능</p>
 </div>
@@ -211,9 +395,13 @@
     clearTimeout(t._t); t._t=setTimeout(()=>t.style.display="none",2600); }
 
   async function api(path, opts){
-    const r = await fetch(API_BASE+path, { headers:{"Content-Type":"application/json"}, ...opts });
+    opts = opts || {};
+    const r = await fetch(API_BASE+path, { ...opts,
+      headers:{"Content-Type":"application/json", ...StorePin.headers(), ...(opts.headers||{})} });
     const b = await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(b.detail || ("오류 "+r.status));
+    if(!r.ok){
+      const e = new Error(b.detail || ("오류 "+r.status)); e.status = r.status; throw e;
+    }
     return b;
   }
 
@@ -232,9 +420,13 @@
 
     // 매출 추세
     const max = Math.max(1, ...d.trend_14d.map(t=>t.revenue));
-    $("trend").innerHTML = d.trend_14d.map(t=>
-      `<div class="b" style="height:${Math.round(t.revenue/max*100)}%" title="${t.date} ${won(t.revenue)}"><span>${t.date}</span></div>`
-    ).join("");
+    const today = localDate();
+    $("trend").innerHTML = d.trend_14d.map(t=>{
+      const isToday = t.date === today || t.date.endsWith(today.slice(5));
+      return `<div class="b${isToday?" today":""}" style="height:${Math.round(t.revenue/max*100)}%"
+        title="${t.date} ${won(t.revenue)}">
+        ${t.revenue ? `<em>${manwon(t.revenue)}</em>` : ""}<span>${t.date}</span></div>`;
+    }).join("");
 
     // 등급 분포
     const tb = d.members.tier_breakdown, tot = d.members.total || 1;
@@ -252,7 +444,6 @@
     ).join("");
 
     // 최근 결제
-    const METHOD = {CARD:"카드",NAVERPAY:"네이버페이",EASYPAY:"간편결제",CASH:"현금",TOSS_CARD:"카드",TOSS_EASY:"간편결제"};
     $("recentTx").innerHTML = d.recent_transactions.map(t=>
       `<tr><td>${t.member__name||"비회원"}</td><td>${won(t.net_amount)}</td>
        <td>+${t.points_earned}P</td><td>${METHOD[t.payment_method]||t.payment_method}</td></tr>`
@@ -341,8 +532,278 @@
     finally { $("sendBtn").disabled=false; $("sendBtn").textContent="발송하기"; }
   }
 
+  // ── 원가·마진 분석 ──
+  const pct = (n) => (n==null?"—":n+"%");
+  function marginClass(rate){ return rate>=60?"ok":(rate>=35?"":"fail"); }
+
+  async function loadMargins(){
+    const days = $("marginDays").value;
+    let d;
+    try { d = await api("/api/v1/margins/summary?days="+days); }
+    catch(e){ $("marginKpis").innerHTML = `<div class="muted">마진 불러오기 실패: ${e.message}</div>`; return; }
+
+    $("marginKpis").innerHTML = [
+      ["공급가 매출", won(d.supply_revenue), `부가세 ${Math.round(d.vat_rate*100)}% 제외 · ${num(d.tx_count)}건`],
+      ["재료원가", won(d.material_cost), `원가율 ${pct(d.cost_rate)}`],
+      ["적립 비용", won(d.reward_cost), "포인트·스탬프·미션(적립 시점)"],
+      ["기여이익", won(d.contribution), `마진율 ${pct(d.margin_rate)}`],
+    ].map(([l,v,f],i)=>`<div class="card kpi"><div class="label">${l}</div>
+      <div class="val" ${i===3?`style="color:${d.margin_rate>=0?'var(--green)':'var(--red)'}"`:""}>${v}</div>
+      <div class="foot">${f}</div></div>`).join("");
+
+    const noCost = d.menu.filter(m=>!m.has_cost).length;
+    $("marginNote").textContent = noCost ? `⚠️ ${noCost}개 메뉴 원가 미입력` : "판매량 순";
+    $("marginRows").innerHTML = d.menu.length ? d.menu.map(m=>{
+      const cls = m.has_cost ? marginClass(m.margin_rate) : "";
+      return `<tr><td>${m.name}${m.has_cost?"":' <span class="muted">(원가 미입력)</span>'}</td>
+        <td>${num(m.qty)}</td><td>${won(m.supply_revenue)}</td>
+        <td>${won(m.material_cost)}</td><td>${m.has_cost?pct(m.cost_rate):"—"}</td>
+        <td>${won(m.margin)}</td>
+        <td class="${cls}"><b>${m.has_cost?pct(m.margin_rate):"—"}</b></td></tr>`;
+    }).join("") : `<tr><td colspan="7" class="muted">기간 내 판매 내역이 없습니다.</td></tr>`;
+  }
+
+  // ── 고객 일괄 등록 (CSV 이관) ──
+  /* 내보내기 — 토큰이 헤더로 가야 해서 링크로는 못 받는다.
+     fetch 로 받아 blob 으로 저장한다. */
+  async function exportCsv(kind){
+    const label = { members:"회원", transactions:"거래", points:"포인트 원장", coupons:"쿠폰" }[kind] || kind;
+    $("expMsg").textContent = `${label} 내려받는 중…`;
+    try {
+      const r = await fetch(API_BASE + "/api/v1/export?kind=" + kind,
+                            { headers: StorePin.headers() });
+      if(!r.ok) throw new Error("오류 " + r.status);
+      const blob = await r.blob();
+      const today = new Date().toISOString().slice(0,10);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `슬로우스텝_${label}_${today}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=> URL.revokeObjectURL(a.href), 1000);
+      $("expMsg").textContent = `${label} 내려받기 완료`;
+    } catch(e){ $("expMsg").textContent = "실패: " + e.message; }
+  }
+
+  function downloadTemplate(){
+    // ﻿ BOM — 엑셀에서 한글이 깨지지 않게
+    const csv = "﻿이름,연락처,포인트,누적결제액,방문횟수,스탬프,마케팅동의,가입일\n"
+      + "김슬로우,010-1234-5678,3200,84000,12,4,Y,2024-03-15\n"
+      + "이커피,01098765432,0,0,0,0,N,\n";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv;charset=utf-8"}));
+    a.download = "slowstep-고객이관-템플릿.csv";
+    a.click(); URL.revokeObjectURL(a.href);
+  }
+
+  function resetImport(){
+    // 파일이 바뀌면 검증부터 다시 — 검증 안 된 파일은 실행 금지
+    $("impRunBtn").disabled = true;
+    $("impSummary").textContent = "파일을 검증해 주세요.";
+    $("impDetail").innerHTML = "";
+  }
+
+  async function runImport(dryRun){
+    const file = $("impFile").files[0];
+    if(!file) return toast("CSV 파일을 먼저 선택하세요");
+    const btn = dryRun ? $("impCheckBtn") : $("impRunBtn");
+    btn.disabled = true;
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("dry_run", dryRun ? "true" : "false");
+      const r = await fetch(API_BASE+"/api/v1/members/import", { method:"POST", body: fd });
+      const b = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(b.detail || ("오류 "+r.status));
+
+      $("impSummary").innerHTML =
+        (dryRun ? "🔍 <b>검증 결과</b> (아직 저장 안 됨)" : "✅ <b>등록 완료</b>") +
+        `<div style="margin-top:8px">` +
+        `<span class="pill">전체 ${b.total}</span>` +
+        `<span class="pill ok">등록${dryRun?" 예정":""} ${b.created}</span>` +
+        `<span class="pill skip">건너뜀 ${b.skipped}</span>` +
+        `<span class="pill fail">오류 ${b.errors}</span></div>`;
+
+      const issues = b.results.filter(x=>x.status!=="created").slice(0,10);
+      $("impDetail").innerHTML = issues.length
+        ? `<table><thead><tr><th>행</th><th>이름</th><th>연락처</th><th>사유</th></tr></thead><tbody>` +
+          issues.map(x=>`<tr><td>${x.row}</td><td>${x.name||"—"}</td><td>${x.phone||"—"}</td>
+            <td class="${x.status==="error"?"fail":"skip"}">${x.reason}</td></tr>`).join("") +
+          `</tbody></table>` +
+          (b.results.length - b.created > 10 ? `<div class="muted" style="margin-top:6px">외 ${b.results.length-b.created-10}건</div>` : "")
+        : "";
+
+      if(dryRun){
+        $("impRunBtn").disabled = b.created === 0;
+        if(b.created > 0) toast(`검증 완료 — ${b.created}명 등록 가능`);
+      } else {
+        $("impRunBtn").disabled = true;
+        toast(`${b.created}명 등록 완료`);
+        loadDashboard();
+      }
+    } catch(e){
+      $("impSummary").textContent = "❌ "+e.message;
+    } finally {
+      $("impCheckBtn").disabled = false;
+      if(dryRun===false) $("impRunBtn").disabled = true;
+    }
+  }
+
+  async function checkStorage(){
+    // 저장소 상태 점검 — 임시 저장 모드(서버리스+무DB)면 점주에게 경고.
+    try {
+      const h = await api("/api/v1/health");
+      if(h.db && h.db.persistent === false){
+        const b = $("storageBanner");
+        b.innerHTML = "⚠️ <b>임시 저장 모드</b> — 주문·회원 데이터가 서버 재시작 시 초기화될 수 있어요. "
+          + "영구 저장하려면 Vercel에 <b>DATABASE_URL</b>(Neon 무료 DB)을 설정하세요. (DEPLOY.md 2단계)";
+        b.style.display = "block";
+      }
+    } catch(e){
+      const b = $("storageBanner");
+      b.innerHTML = "❌ <b>데이터베이스 연결 이상</b> — 지표가 실제와 다를 수 있습니다. 잠시 후 새로고침 해주세요.";
+      b.style.background = "#fdecea"; b.style.color = "#8a1f11"; b.style.borderColor = "#f5c6cb";
+      b.style.display = "block";
+    }
+  }
+
+  /* 만원 단위로 줄여 쓴다 — 14개 막대에 ₩54,150 을 다 적으면 겹친다.
+     10만원 미만은 소수 한 자리(5.4), 그 이상은 정수(32). */
+  const manwon = (v) => {
+    const m = (v || 0) / 10000;
+    return m < 10 ? (Math.round(m * 10) / 10).toString() : Math.round(m).toString();
+  };
+  const localDate = (d) => {
+    d = d || new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  };
+
+  /* ── 날짜 선택 ───────────────────────────────────────
+     빈 문자열이면 '오늘'. 서버에 date 를 안 보내면 서버가 오늘로 처리하므로
+     시계가 어긋나도 매장 기준 날짜가 맞는다. */
+  let viewDate = "";
+
+  function pickDay(v){
+    const today = localDate();
+    viewDate = (!v || v === today) ? "" : v;
+    loadDay();
+  }
+  function shiftDay(delta){
+    const base = new Date((viewDate || localDate()) + "T00:00:00");
+    base.setDate(base.getDate() + delta);
+    if(localDate(base) > localDate()) return;      // 미래는 볼 게 없다
+    pickDay(localDate(base));
+  }
+  async function loadDay(){
+    const today = localDate();
+    const shown = viewDate || today;
+    $("tDate").value = shown;
+    $("tDate").max = today;
+    $("tNext").disabled = shown >= today;
+    $("tLb").textContent = viewDate ? "그날 매출" : "오늘 매출";
+    $("oDate").textContent = viewDate ? `· ${viewDate}` : "· 오늘";
+    await Promise.all([loadToday(), loadOrders()]);
+  }
+
+  // 결제수단 표기 — 오늘 카드와 최근 결제 표가 함께 쓰므로 공용 스코프에 둔다.
+  // (한쪽 함수 안에 두면 다른 쪽에서 ReferenceError가 나고, Promise.all 안에서는
+  //  그 예외가 조용히 삼켜져 화면만 비어 보인다.)
+  const METHOD = {CARD:"카드",NAVERPAY:"네이버페이",EASYPAY:"간편결제",CASH:"현금",TOSS_CARD:"카드",TOSS_EASY:"간편결제"};
+
+  /* ── 오늘 요약 ─────────────────────────────────────── */
+  async function loadToday(){
+    let d;
+    const q = viewDate ? "?date=" + viewDate : "";
+    try { d = await api("/api/v1/sales/summary" + q); }
+    catch(e){ $("tSub").textContent = "매출을 불러오지 못했습니다."; return; }
+    $("tRevenue").textContent = won(d.net);
+    // 영업 상태는 '지금' 값이라 지난 날짜에는 의미가 없다
+    $("tBiz").style.display = viewDate ? "none" : "";
+    $("tBiz").textContent = d.is_open ? "영업 중" : "영업 종료";
+    const m = d.margin || {};
+    $("tSub").textContent = d.count
+      ? `${d.date} · ${num(d.count)}건`
+      : `${d.date} · 결제 내역이 없습니다`;
+    const avg = d.count ? Math.round(d.net / d.count) : 0;
+    $("tGrid").innerHTML = [
+      ["건수", num(d.count) + "건"],
+      ["객단가", won(avg)],
+      // 기여이익 = 공급가 − 재료원가 − 적립비용 (margins.py 기준)
+      ["기여이익", m.contribution != null ? won(m.contribution) : "—"],
+    ].map(([l, v]) => `<div>${l}<b>${v}</b></div>`).join("");
+
+    // 결제수단별 내역 — 카드 단말기 합계와 대조하는 용도다.
+    // 매출(net)에는 현금·포인트 결제가 함께 들어 있어서, 수단을 안 쪼개면
+    // "단말기는 18만인데 여긴 19만"이 왜 생기는지 알 방법이 없다.
+    const by = d.by_method || {};
+    const rows = Object.entries(by)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `<div><span>${METHOD[k] || k}</span><b>${won(v)}</b></div>`);
+    if(d.discount) rows.push(`<div class="muted"><span>할인</span><b>-${won(d.discount)}</b></div>`);
+    if(d.points_used) rows.push(`<div class="muted"><span>포인트 사용</span><b>-${won(d.points_used)}</b></div>`);
+    $("tMethods").innerHTML = rows.length
+      ? `<div class="t-mh">결제수단</div>` + rows.join("")
+      : "";
+  }
+
+  /* ── 주문 내역 ─────────────────────────────────────
+     폰에서 표는 가로로 밀려 읽기 어렵다. 한 줄에 시간·손님·금액을 담고
+     누르면 그 주문에 뭐가 들어 있었는지 펼친다. */
+  let orders = [], openOrder = null;
+
+  async function loadOrders(){
+    const q = viewDate ? "?date=" + viewDate : "";
+    try { orders = await api("/api/v1/transactions" + q); }
+    catch(e){ $("orders").innerHTML = `<p class="muted">주문 내역을 불러오지 못했습니다.</p>`; return; }
+    renderOrders();
+  }
+
+  function renderOrders(){
+    // 날짜를 지정하면 서버가 그날치만 준다. 지정 안 하면 최근 100건이라
+    // 오늘만 남기는 건 여기서 한 번 더 거른다.
+    const today = localDate();
+    const list = viewDate ? orders
+      : orders.filter(t => (t.paid_at || t.created_at || "").slice(0, 10) === today);
+    const box = $("orders");
+    if(!list.length){
+      box.className = "muted";
+      box.innerHTML = `<p class="muted">${viewDate ? "그날" : "오늘"} 주문이 없습니다.</p>`;
+      return;
+    }
+    box.className = "";
+    box.innerHTML = list.map(t=>{
+      const hhmm = (t.paid_at || t.created_at || "").slice(11, 16);
+      const who = t.member_name || "비회원";
+      const canceled = t.status === "canceled";
+      const sub = [];
+      if(t.discount > 0) sub.push(`할인 −${won(t.discount)}`
+        + (t.manual_discount_pct ? ` (${t.manual_discount_pct}%)` : ""));
+      if(t.points_used > 0) sub.push(`포인트 −${won(t.points_used)}`);
+      if(t.points_earned > 0) sub.push(`<span class="hl">+${num(t.points_earned)}P</span>`);
+      sub.push(t.method_display || t.payment_method);
+      if(canceled) sub.unshift(`<span class="cx">취소됨</span>`);
+      const items = (t.items || []).map(i =>
+        `<div class="row2"><span>${i.name}${i.option_label ? ` <span class="muted">${i.option_label}</span>` : ""} × ${i.quantity}</span><span>${won(i.line_total)}</span></div>`
+      ).join("");
+      return `<div class="o" onclick="toggleOrder(${t.id})">
+        <div class="o-top">
+          <span class="o-t">${hhmm}</span>
+          <span class="o-w">${who}</span>
+          <span class="o-a"${canceled ? ' style="text-decoration:line-through;color:var(--muted)"' : ""}>${won(t.net_amount)}</span>
+        </div>
+        <div class="o-sub">${sub.join("")}</div>
+        ${openOrder === t.id && items ? `<div class="o-items">${items}</div>` : ""}
+      </div>`;
+    }).join("");
+  }
+
+  function toggleOrder(id){ openOrder = (openOrder === id) ? null : id; renderOrders(); }
+
   (async ()=>{
-    try { await loadDashboard(); await loadSegments(); doPreview(); }
+    await StorePin.require("점주 대시보드");   // 원가·고객정보 노출 → PIN 필수
+    checkStorage();
+    // 오늘 요약·주문 내역을 먼저 그린다 — 폰으로 여는 대부분의 이유가 이 둘이다
+    try { await loadDay(); } catch(e){}
+    try { await loadDashboard(); await loadMargins(); await loadSegments(); doPreview(); }
     catch(e){ $("sub").textContent = "백엔드 연결 안됨: "+e.message; }
   })();
 </script>
