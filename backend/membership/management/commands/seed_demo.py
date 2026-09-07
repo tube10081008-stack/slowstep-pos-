@@ -92,10 +92,10 @@ class Command(BaseCommand):
         missions = [
             {
                 "title": "이번 시즌 5회 방문",
-                "description": "5번 방문하고 1,000P 받기",
+                "description": "5번 방문하고 500P 받기",
                 "condition_type": Mission.Condition.VISIT_COUNT,
                 "target_value": 5,
-                "reward_points": 1000,
+                "reward_points": 500,
             },
             {
                 "title": "단골 인증 10회 방문",

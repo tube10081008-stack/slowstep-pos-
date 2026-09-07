@@ -237,28 +237,32 @@ POST → 200 { "index": 0, "spins_left": 1,
 활성 챕터가 없으면 `null`.
 ```json
 "quests": {
-  "key": "taste", "title": "취향 탐험대",
-  "description": "아직 안 드셔본 갈래를 하나씩",
-  "bonus": 1000, "bonus_earned": false, "done": 1, "total": 3,
+  "key": "collection", "title": "도장깨기",
+  "description": "거의 다 모으셨어요. 마무리만 남았습니다",
+  "bonus": 0, "bonus_spins": 1, "bonus_earned": false, "done": 1, "total": 2,
   "items": [
-    { "key": "taste:dessert", "kind": "taste", "group": "taste",
-      "title": "디저트 처음 만나기", "description": "플레인 휘낭시에 어떠세요?",
-      "progress": 1, "target": 1, "reward": 500, "is_completed": true }
+    { "key": "collection:coffee", "kind": "collection", "group": "collection",
+      "title": "커피 정복까지 1종", "description": "다음 도전: 카페 모카",
+      "progress": 2, "target": 3, "reward": 1000, "is_completed": false }
   ]
 }
 ```
-- 그룹 우선순위 — `comeback`(평소 주기의 1.5배 넘게 안 오심) → `collection`(1~2종
-  남은 카테고리) → `taste`(미경험 갈래) → `rhythm`(이번 주 + 월간 도전) →
-  `option`(오트·디카페인·샷) → `timeslot`(오전·저녁). 그룹당 최대 3개.
+- 그룹 우선순위 — `comeback`(두 달 넘게 안 오심) → `collection`(1~2종 남은
+  카테고리) → `rhythm`(이번 주 + 월간 도전). 그룹당 최대 3개.
+- 폐지된 그룹 — `taste`('처음 만나기'), `option`(오트·디카페인·샷),
+  `timeslot`(오전·저녁). 이미 지급된 `MemberQuest` 기록과 포인트는 그대로 둔다
+  (회수하지 않는다). 응답에는 더 이상 나오지 않는다.
 - **이미 깬 퀘스트도 `items`에 남는다.** 빠지면 `done/total`이 말이 안 되고,
   묶은 이유(완주감)가 사라진다. 클라이언트는 `is_completed`로 체크 표시만 한다.
 - `rhythm` 그룹의 월간 도전(`kind: "stretch"`) 목표는 **최근 3개월 개인 평균
   ×1.2**로 잡는다 — 주 3회 오는 손님과 월 1회 오는 손님에게 같은 숫자를
-  들이밀지 않는다.
+  들이밀지 않는다. 보상은 `300 × 목표`이되 **1,000P에서 끊는다**(`STRETCH_MAX`).
 - 보상은 퀘스트당 **2,000P 상한**, 결제 1건당 **총 3,000P 상한**. 상한에 걸린
   보상은 기록하지 않으므로 **다음 방문에 지급**된다(적립비용이 마진에서
   차감되므로 한 번에 몰리면 곤란하다).
-- `taste`('처음 만나기')는 **200P**, 챕터 완주 보너스는 **500P**.
+- 남은 퀘스트 금액 — `comeback` **1,000P**, `collection` **1,000P**,
+  `rhythm`(이번 주) **300P**, `stretch`(월간 도전) **최대 1,000P**.
+  챕터 완주 보너스는 `rhythm`만 **500P**.
 - **`collection`(도장깨기) 완주만 포인트가 아니라 룰렛 기회 1번**이다.
   그룹 응답의 `bonus`는 0이고 `bonus_spins`가 1 — 클라이언트는 이 둘을
   구분해 문구를 바꿔야 한다. 룰렛 기회는 결제 1건 보상 예산(3,000P)에

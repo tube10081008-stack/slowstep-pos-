@@ -1086,18 +1086,24 @@ class QuestTests(TestCase):
             store=self.store, name="카페 라떼", price=4500,
             category=MenuItem.Category.COFFEE, oatmilk_available=True,
         )
+        self.mocha = MenuItem.objects.create(
+            store=self.store, name="카페 모카", price=5000,
+            category=MenuItem.Category.COFFEE,
+        )
         self.cake = MenuItem.objects.create(
             store=self.store, name="치즈케이크", price=6000,
             category=MenuItem.Category.DESSERT, temp_option=MenuItem.Temp.NONE,
         )
 
     def _buy(self, menu, oid, **opts):
-        return checkout(
+        r = checkout(
             member=self.m, gross_amount=0, points_to_use=0,
             payment_method=Transaction.Method.CARD,
             items=[{"menu_item_id": menu.id, "quantity": 1, **opts}],
             toss_order_id=oid,
         )
+        self.m.refresh_from_db()    # 퀘스트 후보는 회원 상태를 보고 뽑힌다
+        return r
 
     def _active_keys(self):
         from .quests import active_group
@@ -1105,51 +1111,40 @@ class QuestTests(TestCase):
         g = active_group(self.m)
         return {q["key"] for q in (g or {}).get("items", [])}
 
-    def test_taste_quest_offered_for_untried_category(self):
-        from .quests import build_candidates
+    def test_retired_quests_are_gone(self):
+        """처음 만나기·한 끗 다르게·시간대 전환은 폐지됐다."""
+        from .quests import GROUP_ORDER, build_candidates
 
-        # 도장깨기는 3종 이상인 갈래만 센다(1~2종짜리는 '정복'이 아니다).
-        mocha = MenuItem.objects.create(
-            store=self.store, name="카페 모카", price=5000,
-            category=MenuItem.Category.COFFEE,
-        )
-        self._buy(self.amer, "q1")
-        # 디저트 미경험 → 후보에 오른다
-        self.assertIn("taste:dessert", {q.key for q in build_candidates(self.m)})
-        # 다만 지금 열린 챕터는 우선순위가 높은 '도장깨기'다
-        self.assertEqual(self._active_keys(), {"collection:coffee"})
-        # 그 챕터를 깨면 '취향 탐험대'가 열린다
-        self._buy(self.latte, "q2")
-        self._buy(mocha, "q3")
-        self.assertIn("taste:dessert", self._active_keys())
+        self._buy(self.amer, "r1")
+        self._buy(self.cake, "r2")
+        self._buy(self.latte, "r3", oatmilk=True, shot=True)
+        kinds = {q.kind for q in build_candidates(self.m)}
+        self.assertFalse(kinds & {"taste", "option", "timeslot"})
+        self.assertEqual(GROUP_ORDER, ["comeback", "collection", "rhythm"])
 
     def test_quest_completed_awards_points_once(self):
         from .models import MemberQuest
 
         self._buy(self.amer, "q1")
+        self._buy(self.latte, "q2")
         before = self.m.points
-        # 디저트를 사면 taste:dessert 달성
-        r = self._buy(self.cake, "q2")
+        # 커피 3종을 다 마시면 collection:coffee 달성
+        r = self._buy(self.mocha, "q3")
         quest_rewards = [x for x in r.rewards if x["type"] == "quest"]
         self.assertTrue(quest_rewards)
-        self.m.refresh_from_db()
         self.assertGreater(self.m.points, before)
-        self.assertTrue(MemberQuest.objects.filter(member=self.m, key="taste:dessert").exists())
+        self.assertTrue(
+            MemberQuest.objects.filter(member=self.m, key="collection:coffee").exists()
+        )
 
         # 다시 사도 중복 지급되지 않는다
-        pts = self.m.points
-        r2 = self._buy(self.cake, "q3")
-        self.assertFalse([x for x in r2.rewards if x.get("title", "").startswith("디저트 처음")])
+        r2 = self._buy(self.mocha, "q4")
+        self.assertFalse([x for x in r2.rewards if x["type"] == "quest"])
         self.assertEqual(
-            MemberQuest.objects.filter(member=self.m, key="taste:dessert").count(), 1
+            MemberQuest.objects.filter(member=self.m, key="collection:coffee").count(), 1
         )
         # 챕터를 다 깼으니 다음 챕터가 열린다
-        self.assertNotIn("taste:dessert", self._active_keys())
-
-    def test_option_quest(self):
-        self._buy(self.amer, "o1")
-        r = self._buy(self.latte, "o2", oatmilk=True)
-        self.assertTrue([x for x in r.rewards if "오트밀크" in x["title"]])
+        self.assertNotIn("collection:coffee", self._active_keys())
 
     def test_only_one_group_is_active(self):
         """서로 다른 성격의 목표를 한꺼번에 던지지 않는다 — 한 챕터씩."""
@@ -1164,18 +1159,23 @@ class QuestTests(TestCase):
     def test_group_clear_awards_bonus_once(self):
         """챕터를 완주하면 보너스가 한 번 붙는다."""
         from .models import MemberQuest
-        from .quests import GROUP_META, group_key
+        from .quests import GROUP_META, Quest, group_key
 
-        self._buy(self.amer, "g1")                      # taste 챕터 = 디저트 하나
-        r = self._buy(self.cake, "g2")                  # 완주
-        bonus = [x for x in r.rewards if x["type"] == "quest_group"]
-        self.assertTrue(bonus)
-        self.assertEqual(bonus[0]["points"], GROUP_META["taste"][2])
-        self.assertTrue(
-            MemberQuest.objects.filter(member=self.m, key=group_key("taste")).exists()
-        )
-        r2 = self._buy(self.cake, "g3")                 # 두 번은 없다
-        self.assertFalse([x for x in r2.rewards if x["type"] == "quest_group"])
+        # 리듬 챕터는 날짜(평균 간격·이번 달 방문 수)에 얽혀 있어 픽스처로
+        # 완주 상태를 만들기 어렵다. 여기서 보려는 건 '완주 보너스가 한 번만
+        # 나간다'는 규칙이므로 후보만 고정하고 나머지는 실제 경로로 태운다.
+        done = [Quest(key="rhythm:fixed", kind="rhythm", title="이번 주도 만나요",
+                      description="", progress=1, target=1, reward=300)]
+        with patch("membership.quests.build_candidates", return_value=done):
+            r = self._buy(self.amer, "g1")
+            bonus = [x for x in r.rewards if x["type"] == "quest_group"]
+            self.assertTrue(bonus)
+            self.assertEqual(bonus[0]["points"], GROUP_META["rhythm"][2])
+            self.assertTrue(
+                MemberQuest.objects.filter(member=self.m, key=group_key("rhythm")).exists()
+            )
+            r2 = self._buy(self.amer, "g2")             # 두 번은 없다
+            self.assertFalse([x for x in r2.rewards if x["type"] == "quest_group"])
 
     def test_reward_capped(self):
         from .quests import MAX_REWARD, active_group
@@ -1680,8 +1680,8 @@ class ImportBaselineTests(TestCase):
         self.assertFalse([x for x in r.rewards if x["type"].startswith("mission")])
         # 미션이 아닌 보상(개인 퀘스트 등)은 **우리 앱에서 방금 한 행동**에
         # 붙은 것이라 정상이다. 여기서 '적립분 말고는 한 푼도 안 된다'로
-        # 재면 저녁에 오면 뜨는 timeslot 퀘스트에 걸려 오후 6시 이후로는
-        # 항상 깨진다(시간에 따라 결과가 달라지는 테스트가 된다).
+        # 재면 그날 상황에 따라 뜨는 퀘스트에 걸려 결과가 달라지는 테스트가
+        # 된다(예전에 시간대 퀘스트로 오후 6시 이후에 항상 깨졌다).
         other = sum(x.get("points", 0) for x in r.rewards
                     if not x["type"].startswith("mission"))
         m.refresh_from_db()
@@ -2338,26 +2338,82 @@ class RewardTuningTests(TestCase):
             toss_order_id=oid,
         )
 
-    def test_first_meet_quest_pays_200(self):
-        from .quests import TASTE_REWARD
+    def test_retired_quests_pay_nothing(self):
+        """처음 만나기·한 끗 다르게·시간대 전환 폐지 — 후보에도 안 뜬다."""
+        from .quests import build_candidates
 
-        self.assertEqual(TASTE_REWARD, 200)
         self._buy(self.amer, "t1")
-        r = self._buy(self.cake, "t2")           # '디저트 처음 만나기' 달성
-        first = [x for x in r.rewards
-                 if x["type"] == "quest" and "처음 만나기" in x["title"]]
-        self.assertTrue(first)
-        self.assertEqual(first[0]["points"], 200)
+        self._buy(self.cake, "t2")
+        self.m.refresh_from_db()
+        titles = [q.title for q in build_candidates(self.m)]
+        self.assertFalse([t for t in titles if "처음 만나기" in t])
+        self.assertFalse([t for t in titles if "바꿔보기" in t])
+        self.assertFalse([t for t in titles if "들르기" in t])
 
     def test_group_clear_bonus_is_500(self):
-        from .quests import GROUP_CLEAR_BONUS
+        from .quests import GROUP_CLEAR_BONUS, GROUP_META
 
         self.assertEqual(GROUP_CLEAR_BONUS, 500)
-        self._buy(self.amer, "g1")
-        r = self._buy(self.cake, "g2")           # taste 챕터 완주
-        bonus = [x for x in r.rewards if x["type"] == "quest_group"]
-        self.assertTrue(bonus)
-        self.assertEqual(bonus[0]["points"], 500)
+        # 포인트 보너스가 걸린 챕터는 이제 '나만의 리듬' 하나다.
+        self.assertEqual(GROUP_META["rhythm"][2], 500)
+
+    def test_comeback_opens_after_two_months(self):
+        """다시 만나기는 두 달 비었을 때만 열린다."""
+        from .quests import COMEBACK_DAYS, build_candidates
+
+        self.assertEqual(COMEBACK_DAYS, 60)
+        t = self._buy(self.amer, "cb1").transaction
+        self.m.refresh_from_db()
+        Transaction.objects.filter(pk=t.pk).update(
+            paid_at=timezone.now() - timedelta(days=40)
+        )
+        self.assertFalse([q for q in build_candidates(self.m) if q.kind == "comeback"])
+        Transaction.objects.filter(pk=t.pk).update(
+            paid_at=timezone.now() - timedelta(days=70)
+        )
+        self.assertTrue([q for q in build_candidates(self.m) if q.kind == "comeback"])
+
+    def test_visit5_mission_lowered_to_500(self):
+        """'이번 시즌 5회 방문' 보상은 1,000P → 500P (마이그레이션 0024)."""
+        import importlib
+
+        from django.apps import apps as global_apps
+
+        mod = importlib.import_module(
+            "membership.migrations.0024_mission_visit5_reward_down"
+        )
+        old = Mission.objects.create(
+            store=self.store, title="이번 시즌 5회 방문",
+            description="5번 방문하고 1,000P 받기",
+            condition_type=Mission.Condition.VISIT_COUNT,
+            target_value=5, reward_points=1000,
+        )
+        keep = Mission.objects.create(
+            store=self.store, title="단골 인증 10회 방문", description="10번 방문하면 500P",
+            condition_type=Mission.Condition.VISIT_COUNT,
+            target_value=10, reward_points=500,
+        )
+        mod._down(global_apps, None)
+        old.refresh_from_db()
+        keep.refresh_from_db()
+        self.assertEqual(old.reward_points, 500)
+        self.assertIn("500P", old.description)
+        self.assertEqual(keep.reward_points, 500)      # 다른 미션은 안 건드린다
+
+    def test_monthly_stretch_caps_at_1000(self):
+        from .quests import STRETCH_MAX, build_candidates
+
+        self.assertEqual(STRETCH_MAX, 1000)
+        for i in range(12):                      # 자주 오시는 분 → 목표가 커진다
+            t = self._buy(self.amer, f"s{i}").transaction
+            Transaction.objects.filter(pk=t.pk).update(
+                paid_at=timezone.now() - timedelta(days=i)
+            )
+        self.m.refresh_from_db()
+        stretch = [q for q in build_candidates(self.m) if q.kind == "stretch"]
+        self.assertTrue(stretch)
+        self.assertGreater(stretch[0].target, 3)     # 300 × 목표 > 1,000 인 구간
+        self.assertEqual(stretch[0].reward, 1000)
 
     def test_collection_clear_gives_spin_not_points(self):
         # 도장깨기 완주는 포인트 대신 룰렛 기회 1번.

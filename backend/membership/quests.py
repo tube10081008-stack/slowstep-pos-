@@ -22,7 +22,6 @@ import math
 from dataclasses import dataclass, asdict, field
 from datetime import timedelta
 
-from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
 from .models import MenuItem, OrderItem, Transaction
@@ -31,9 +30,10 @@ MAX_REWARD = 2000               # 퀘스트 1개 보상 상한
 MAX_REWARD_PER_CHECKOUT = 3000  # 결제 1건에서 나갈 수 있는 퀘스트 보상 총액
 GROUP_SIZE = 3                  # 한 그룹에 담는 퀘스트 수 상한
 
-TASTE_REWARD = 200      # '처음 만나기' 1건 — 문턱이 낮으니 보상도 낮게
 GROUP_CLEAR_BONUS = 500  # 챕터 완주 보너스(공통)
 COLLECTION_MIN_KINDS = 3  # 이 종류 수 미만인 갈래는 도장깨기로 치지 않는다
+COMEBACK_DAYS = 60      # 이만큼 안 오시면 '다시 만나기'가 열린다(두 달)
+STRETCH_MAX = 1000      # 월간 도전 보상 상한 — 방문 수에 비례하되 여기서 끊는다
 
 # 그룹(챕터) 정의 — 위에서부터 우선순위.
 # (키, 제목, 한 줄 설명, 클리어 보너스 포인트, 클리어 시 룰렛 기회)
@@ -44,10 +44,7 @@ COLLECTION_MIN_KINDS = 3  # 이 종류 수 미만인 갈래는 도장깨기로 �
 GROUPS = (
     ("comeback", "다시 만나기", "오랜만이에요. 발걸음만 해주시면 돼요", 0, 0),
     ("collection", "도장깨기", "거의 다 모으셨어요. 마무리만 남았습니다", 0, 1),
-    ("taste", "취향 탐험대", "아직 안 드셔본 갈래를 하나씩", GROUP_CLEAR_BONUS, 0),
     ("rhythm", "나만의 리듬", "평소 오시던 박자를 이어가요", GROUP_CLEAR_BONUS, 0),
-    ("option", "한 끗 다르게", "늘 마시던 잔을 조금만 바꿔서", GROUP_CLEAR_BONUS, 0),
-    ("timeslot", "다른 시간의 슬로우스텝", "같은 자리도 시간에 따라 달라요", GROUP_CLEAR_BONUS, 0),
 )
 GROUP_META = {k: (t, d, b, s) for k, t, d, b, s in GROUPS}
 GROUP_ORDER = [k for k, *_ in GROUPS]
@@ -56,7 +53,7 @@ GROUP_ORDER = [k for k, *_ in GROUPS]
 @dataclass
 class Quest:
     key: str            # 달성 기록용 안정 식별자
-    kind: str           # taste / collection / rhythm / stretch / option / timeslot / comeback
+    kind: str           # comeback / collection / rhythm / stretch
     title: str
     description: str
     progress: int
@@ -102,36 +99,6 @@ def avg_interval_days(member) -> float | None:
     return sum(gaps) / len(gaps)
 
 
-def _cat_counts(member) -> dict:
-    rows = (
-        OrderItem.objects.filter(
-            transaction__member=member, transaction__status=Transaction.Status.PAID
-        )
-        .values("menu_item__category")
-        .annotate(qty=Sum("quantity"))
-    )
-    return {r["menu_item__category"]: r["qty"] or 0 for r in rows if r["menu_item__category"]}
-
-
-def _option_counts(member) -> dict:
-    return OrderItem.objects.filter(
-        transaction__member=member, transaction__status=Transaction.Status.PAID
-    ).aggregate(
-        oat=Count("id", filter=Q(oatmilk=True)),
-        decaf=Count("id", filter=Q(decaf=True)),
-        shot=Count("id", filter=Q(shot=True)),
-    )
-
-
-def _slot_counts(member) -> dict:
-    times = [timezone.localtime(t) for t in _paid(member).values_list("paid_at", flat=True)]
-    return {
-        "morning": sum(1 for t in times if t.hour < 11),
-        "afternoon": sum(1 for t in times if 11 <= t.hour < 18),
-        "evening": sum(1 for t in times if t.hour >= 18),
-    }
-
-
 def _collection(member) -> dict:
     """카테고리별 (맛본 종수, 전체 종수, 다음 도전 메뉴)."""
     tried = set(
@@ -168,26 +135,24 @@ def _visits_since(member, start_date) -> int:
 def build_candidates(member) -> list[Quest]:
     """이 회원에게 어울리는 퀘스트 후보를 우선순위 순으로 만든다."""
     labels = dict(MenuItem.Category.choices)
-    cats = _cat_counts(member)
     coll = _collection(member)
-    opts = _option_counts(member)
-    slots = _slot_counts(member)
     now = timezone.localtime(timezone.now())
     out: list[Quest] = []
 
-    # ── 1) 복귀: 평소 주기의 1.5배 넘게 안 오셨다 ──
+    # ── 1) 복귀: 두 달 넘게 안 오셨다 ──
+    # 예전에는 '평소 주기의 1.5배'라 자주 오시는 분은 2주만 비어도 열렸다.
+    # 발걸음 한 번에 1,000P라 문턱이 너무 낮았고, 이제 고정 두 달로 본다.
     avg = avg_interval_days(member)
     days = _visit_dates(member)
-    if avg and len(days) >= 2:
-        last_gap = (days[-1] - days[-2]).days
+    if days:
+        last_gap = (days[-1] - days[-2]).days if len(days) >= 2 else 0
         away = (now.date() - days[-1]).days
-        threshold = max(7, round(avg * 1.5))
-        if last_gap >= threshold or away >= threshold:
+        if last_gap >= COMEBACK_DAYS or away >= COMEBACK_DAYS:
             out.append(Quest(
                 key=f"comeback:{_month_key(now)}", kind="comeback",
                 title="오랜만이에요",
-                description=f"평소 {round(avg)}일마다 오셨어요. 이번에 오시면 보너스!",
-                progress=1 if last_gap >= threshold else 0, target=1, reward=1000,
+                description="두 달 만이에요. 이번에 오시면 보너스!",
+                progress=1 if last_gap >= COMEBACK_DAYS else 0, target=1, reward=1000,
             ))
 
     # ── 2) 컬렉션 마무리: 거의 다 모은 카테고리(2종 이내로 남음) ──
@@ -215,25 +180,7 @@ def build_candidates(member) -> list[Quest]:
             if picked >= GROUP_SIZE:
                 break
 
-    # ── 3) 취향 확장: 선호 순서대로 '처음 만나기' ──
-    # 후보 조건에 '아직 안 먹었을 것'을 넣으면 먹는 순간 후보에서 사라져
-    # 보상을 지급할 기회가 없어진다. 후보는 고정하고 진행률로 판정한다.
-    picked = 0
-    for cat in ("dessert", "coldbrew", "tea", "ade", "noncoffee"):
-        if cat not in coll:
-            continue
-        out.append(Quest(
-            key=f"taste:{cat}", kind="taste",
-            title=f"{labels.get(cat, cat)} 처음 만나기",
-            description=(f"{coll[cat]['next']} 어떠세요?" if coll[cat]["next"]
-                         else "새로운 맛을 만나요"),
-            progress=min(1, cats.get(cat, 0)), target=1, reward=TASTE_REWARD,
-        ))
-        picked += 1
-        if picked >= GROUP_SIZE:
-            break
-
-    # ── 4) 개인 주기: 이번 주에도 오시면 ──
+    # ── 3) 개인 주기: 이번 주에도 오시면 ──
     if avg and avg <= 12:
         monday = now.date() - timedelta(days=now.weekday())
         out.append(Quest(
@@ -243,7 +190,7 @@ def build_candidates(member) -> list[Quest]:
             progress=_visits_since(member, monday), target=1, reward=300,
         ))
 
-    # ── 5) 월간 도전(난이도 개인화): 평소보다 조금만 더 ──
+    # ── 4) 월간 도전(난이도 개인화): 평소보다 조금만 더 ──
     first = now.date().replace(day=1)
     this_month = _visits_since(member, first)
     if member.visit_count >= 3:
@@ -254,30 +201,8 @@ def build_candidates(member) -> list[Quest]:
             title=f"이번 달 {target}번 방문",
             description="평소보다 한 걸음만 더",
             progress=this_month, target=target,
-            reward=min(MAX_REWARD, 300 * target),
+            reward=min(STRETCH_MAX, 300 * target),
         ))
-
-    # ── 6) 옵션 탐험 (같은 이유로 후보는 고정) ──
-    for key, label, price_hint in (
-        ("oat", "오트밀크", "고소하게"), ("decaf", "디카페인", "부담 없이"),
-        ("shot", "샷 추가", "진하게"),
-    ):
-        out.append(Quest(
-            key=f"option:{key}", kind="option",
-            title=f"{label} 한 번 바꿔보기",
-            description=f"{price_hint} 즐기는 방법이에요",
-            progress=min(1, opts.get(key, 0)), target=1, reward=300,
-        ))
-
-    # ── 7) 시간대 전환 ──
-    if member.visit_count >= 3:
-        for slot, label in (("morning", "오전"), ("evening", "저녁")):
-            out.append(Quest(
-                key=f"timeslot:{slot}", kind="timeslot",
-                title=f"{label}에 한 번 들르기",
-                description=f"{label}의 슬로우스텝은 또 다른 분위기예요",
-                progress=min(1, slots.get(slot, 0)), target=1, reward=500,
-            ))
 
     return out
 
