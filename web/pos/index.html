@@ -240,6 +240,26 @@
   .tabbar button .ti { font-size:18px; line-height:1; }
   .tabbar button.on { color:var(--brand); }
   .msec .mh { font-size:15px; font-weight:700; margin:0 0 14px; }
+  /* 메뉴 관리 — 클래스만 있고 스타일이 없어 기본 버튼으로 나오던 자리다. */
+  .mm-add { background:var(--card2); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .mm-row { display:flex; gap:8px; margin-top:8px; }
+  .mm-row input { flex:1; min-width:0; padding:11px 12px; border:1px solid var(--line);
+    border-radius:10px; background:#fff; color:var(--txt); font-size:14px; font-family:var(--sans); }
+  .mm-row input:last-child { max-width:130px; }
+  .mm-h { font-size:12px; font-weight:700; color:var(--muted); margin:16px 0 6px; }
+  .mm-i { display:flex; align-items:center; gap:8px; padding:9px 4px;
+    border-bottom:1px solid var(--line); font-size:14px; }
+  .mm-i.off { opacity:.5; }
+  .mm-i.dragging { opacity:.4; }
+  .mm-i.over { box-shadow:inset 0 2px 0 var(--brand); }
+  .mm-i .n { flex:1; min-width:0; font-weight:600; }
+  .mm-i .n small { display:block; font-size:11px; font-weight:400; color:var(--muted); margin-top:2px; }
+  .mm-i .p { color:var(--muted); font-variant-numeric:tabular-nums; }
+  .mm-i button { padding:7px 10px; border:1px solid var(--line); border-radius:8px;
+    background:#fff; color:var(--txt); font-size:12px; font-weight:600; cursor:pointer; font-family:var(--sans); }
+  .mm-i button.temp { min-width:74px; color:var(--brand); border-color:#c7d0ff; background:var(--brand-soft); }
+  .mm-i button.del { color:var(--red); border-color:#f6cdcd; }
+  .mm-grip { cursor:grab; color:var(--muted); padding:0 4px; touch-action:none; user-select:none; }
   .kv { display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px; }
   .kv:last-child { border-bottom:0; }
   .kv b { color:var(--brand); font-weight:700; }
@@ -489,6 +509,7 @@
           <input id="mmName" placeholder="메뉴 이름" />
           <input id="mmPrice" inputmode="numeric" placeholder="가격" />
         </div>
+        <div class="pill-row" id="mmTemp"></div>
         <button class="confirm" style="width:100%;margin-top:10px" onclick="addMenu()">메뉴 추가</button>
         <div id="mmMsg" class="muted" style="margin-top:8px"></div>
       </div>
@@ -1382,11 +1403,28 @@
                    ["ade","스무디·에이드"], ["noncoffee","논커피"], ["tea","티"]];
   let mmCat = "dessert", mmAll = [];
 
+  /* 온도 옵션 — 예전에는 '디저트가 아니면 무조건 핫·아이스'로 넣었다. 그래서
+     컵빙수·스무디처럼 찬 것만 파는 메뉴에도 HOT 이 붙었고, 만든 뒤에 고칠
+     방법도 없었다. 이제 추가할 때 고르고, 목록에서 눌러 바꾼다. */
+  const TEMPS = [["none","온도 없음"], ["ice","아이스만"], ["hotice","핫·아이스"]];
+  const TEMP_LABEL = { none:"온도없음", ice:"ICE만", hotice:"HOT·ICE" };
+  // 카테고리별 기본값 — 대부분 맞고, 틀리면 그 자리에서 한 번 누르면 된다.
+  const TEMP_DEFAULT = { dessert:"none", ade:"ice", coldbrew:"ice",
+                         coffee:"hotice", noncoffee:"hotice", tea:"hotice" };
+  let mmTemp = TEMP_DEFAULT.dessert;
+
   function renderMmCats(){
     $("mmCat").innerHTML = MM_CATS.map(([k,ko])=>
       `<span class="pill${k===mmCat?" on":""}" onclick="pickMmCat('${k}')">${ko}</span>`).join("");
+    $("mmTemp").innerHTML = TEMPS.map(([k,ko])=>
+      `<span class="pill${k===mmTemp?" on":""}" onclick="pickMmTemp('${k}')">${ko}</span>`).join("");
   }
-  function pickMmCat(k){ mmCat = k; renderMmCats(); }
+  function pickMmCat(k){
+    mmCat = k;
+    mmTemp = TEMP_DEFAULT[k] || "hotice";    // 카테고리를 바꾸면 기본값도 따라간다
+    renderMmCats();
+  }
+  function pickMmTemp(k){ mmTemp = k; renderMmCats(); }
 
   async function loadMenuAdmin(){
     renderMmCats();
@@ -1405,10 +1443,12 @@
         const opt = [];
         if(m.size_up_price > 0) opt.push(`사이즈업 +${won(m.size_up_price)}`);
         if(!m.is_available) opt.push("판매중지");
+        const t = m.temp_option || "hotice";
         return `<div class="mm-i${m.is_available?"":" off"}" data-id="${m.id}" data-cat="${k}">
           <span class="mm-grip" onpointerdown="dragStart(event, ${m.id})" title="끌어서 순서 변경">≡</span>
           <span class="n">${m.name}${opt.length?`<small>${opt.join(" · ")}</small>`:""}</span>
           <span class="p">${won(m.price)}</span>
+          <button class="temp" onclick="cycleTemp(${m.id})" title="눌러서 온도 옵션 변경">${TEMP_LABEL[t]||t}</button>
           <button onclick="toggleMenu(${m.id}, ${m.is_available?"false":"true"})">${m.is_available?"내리기":"올리기"}</button>
           <button class="del" onclick="deleteMenu(${m.id})">삭제</button>
         </div>`;
@@ -1479,13 +1519,11 @@
     const msg = $("mmMsg");
     if(!name || !price){ msg.textContent = "이름과 가격을 모두 입력하세요."; return; }
     msg.textContent = "추가하는 중…";
-    // 디저트는 온도 선택이 없고, 음료는 핫/아이스를 고를 수 있게 기본값을 나눈다
-    const isDessert = mmCat === "dessert";
     try {
       await api("/api/v1/menu", { method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
           name, price, category: mmCat,
-          temp_option: isDessert ? "none" : "hotice",
+          temp_option: mmTemp,               // 위 온도 칸에서 고른 값
           shot_available: mmCat === "coffee",
           sort_order: 99,
         })});
@@ -1493,6 +1531,27 @@
       msg.textContent = `${name} 추가됨`;
       await refreshMenus();
     } catch(e){ msg.textContent = "❌ " + e.message; }
+  }
+
+  /* 온도 옵션 바꾸기 — 없음 → ICE만 → HOT·ICE 순으로 돈다.
+     장바구니에 담긴 줄은 이미 온도가 박혀 있으므로 건드리지 않는다. */
+  async function cycleTemp(id){
+    const m = mmAll.find(x => x.id === id);
+    if(!m) return;
+    const order = TEMPS.map(([k]) => k);
+    const next = order[(order.indexOf(m.temp_option || "hotice") + 1) % order.length];
+    m.temp_option = next;                    // 먼저 그려서 손이 기다리지 않게
+    renderMenuAdmin();
+    try {
+      await api(`/api/v1/menu/${id}`, { method:"PATCH",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ temp_option: next }) });
+      $("mmMsg").textContent = `${m.name} — ${TEMP_LABEL[next]}`;
+      await refreshMenus();
+    } catch(e){
+      $("mmMsg").textContent = "❌ " + e.message;
+      await loadMenuAdmin();                 // 서버 값으로 되돌린다
+    }
   }
 
   async function toggleMenu(id, on){
