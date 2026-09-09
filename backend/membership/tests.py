@@ -2400,6 +2400,32 @@ class RewardTuningTests(TestCase):
         self.assertIn("500P", old.description)
         self.assertEqual(keep.reward_points, 500)      # 다른 미션은 안 건드린다
 
+    def test_pin_flattens_stale_mission_rewards(self):
+        """운영에 남아 있던 5,000P·2,000P 미션을 500P로 못 박는다 (0025)."""
+        import importlib
+
+        from django.apps import apps as global_apps
+
+        mod = importlib.import_module("membership.migrations.0025_pin_mission_rewards")
+        ten = Mission.objects.create(
+            store=self.store, title="단골 인증 10회 방문", description="10번 방문하면 5,000P",
+            condition_type=Mission.Condition.VISIT_COUNT,
+            target_value=10, reward_points=5000,
+        )
+        spent = Mission.objects.create(
+            store=self.store, title="누적 5만원 달성",
+            description="누적 결제 50,000원 달성 시 2,000P",
+            condition_type=Mission.Condition.TOTAL_SPENT,
+            target_value=50000, reward_points=2000,
+        )
+        mod._pin(global_apps, None)
+        ten.refresh_from_db()
+        spent.refresh_from_db()
+        self.assertEqual(ten.reward_points, 500)
+        self.assertEqual(spent.reward_points, 500)
+        self.assertIn("500P", ten.description)
+        self.assertIn("500P", spent.description)
+
     def test_monthly_stretch_caps_at_1000(self):
         from .quests import STRETCH_MAX, build_candidates
 
@@ -2931,6 +2957,31 @@ class IntegrityCheckTests(TestCase):
         self._pay("i2", split_method="CASH", split_amount=1000)
         r = run_all()
         self.assertTrue(r["ok"], r["checks"])
+
+    def test_catches_stale_mission_reward(self):
+        """운영에 옛 금액이 남은 미션을 잡는다(5,000P 사건)."""
+        from .integrity import check_reward_config
+
+        Mission.objects.create(
+            store=self.store, title="단골 인증 10회 방문", description="10번 방문하면 500P",
+            condition_type=Mission.Condition.VISIT_COUNT,
+            target_value=10, reward_points=5000,
+        )
+        r = check_reward_config()
+        self.assertEqual(r["bad"], 3)                   # 금액 불일치 1 + 빠진 미션 2
+        stale = [x for x in r["sample"] if x["issue"] == "보상 금액 불일치"]
+        self.assertEqual(stale[0]["reward"], 5000)
+        self.assertEqual(stale[0]["expected"], 500)
+
+    def test_catches_stale_store_settings(self):
+        from .integrity import check_reward_config
+
+        Store.objects.filter(pk=self.store.pk).update(
+            signup_bonus_points=3000, happy_start=14, happy_end=16
+        )
+        issues = {x["issue"] for x in check_reward_config()["sample"]}
+        self.assertIn("가입 축하 포인트", issues)
+        self.assertIn("해피아워가 켜져 있다", issues)
 
     def test_catches_ledger_mismatch(self):
         from .integrity import check_point_ledger

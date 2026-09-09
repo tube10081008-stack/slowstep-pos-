@@ -12,7 +12,17 @@ from __future__ import annotations
 
 from django.db.models import Count, F, Q, Sum
 
-from .models import Coupon, Member, OrderItem, PointEntry, Transaction
+from .models import Coupon, Member, Mission, OrderItem, PointEntry, Store, Transaction
+
+# 미션은 코드 상수가 아니라 DB 행이라, 시드를 고쳐도 이미 만들어진 매장의
+# 행은 옛 금액을 그대로 들고 있는다(2026-08-08 이후 운영에 5,000P 짜리 미션이
+# 남아 있던 이유). 코드가 의도한 금액을 여기 적어 두고 실제 행과 대조한다.
+# (조건, 목표값) → (제목, 보상)
+INTENDED_MISSIONS = {
+    ("visit_count", 5): ("이번 시즌 5회 방문", 500),
+    ("visit_count", 10): ("단골 인증 10회 방문", 500),
+    ("total_spent", 50000): ("누적 5만원 달성", 500),
+}
 
 
 def _rows(qs, limit, fmt):
@@ -199,6 +209,52 @@ def check_negative_points(limit=20) -> dict:
     }
 
 
+def check_reward_config(limit=20) -> dict:
+    """
+    포인트를 주는 **설정값**이 코드가 의도한 값과 같은가.
+
+    다른 검사들과 성격이 다르다 — 데이터가 깨진 게 아니라 **설정이 조용히
+    옛날 값으로 남아 있는** 경우를 잡는다. 운영에는 셸이 없어 `manage.py`로
+    확인할 수 없고, 개발 DB 는 다시 시드하면 최신값이 되어 차이가 안 보인다.
+    실제로 이 구멍으로 5,000P 짜리 미션이 한참 살아 있었다.
+    """
+    bad = []
+    seen = set()
+    for m in Mission.objects.all():
+        key = (m.condition_type, m.target_value)
+        seen.add(key)
+        want = INTENDED_MISSIONS.get(key)
+        if want is None:
+            bad.append({"mission_id": m.id, "title": m.title,
+                        "issue": "코드에 없는 미션", "reward": m.reward_points})
+        elif m.reward_points != want[1]:
+            bad.append({"mission_id": m.id, "title": m.title,
+                        "issue": "보상 금액 불일치",
+                        "reward": m.reward_points, "expected": want[1]})
+    # 미션이 하나도 없는 DB(테스트·시드 전)까지 '빠졌다'고 잡으면 소음만 된다.
+    # 한 줄이라도 있으면 세 줄이 다 있어야 맞다.
+    if seen:
+        for key, (title, reward) in INTENDED_MISSIONS.items():
+            if key not in seen:
+                bad.append({"mission_id": None, "title": title,
+                            "issue": "DB 에 없는 미션", "expected": reward})
+
+    for s in Store.objects.all():
+        if s.signup_bonus_points != 1000:
+            bad.append({"store": s.name, "issue": "가입 축하 포인트",
+                        "reward": s.signup_bonus_points, "expected": 1000})
+        if s.happy_start or s.happy_end:
+            bad.append({"store": s.name, "issue": "해피아워가 켜져 있다",
+                        "reward": f"{s.happy_start}~{s.happy_end}시"})
+
+    return {
+        "name": "포인트 지급 설정",
+        "bad": len(bad),
+        "sample": bad[:limit],
+        "hint": "DB 행이 옛 값으로 남은 것 — 마이그레이션으로 덮어써야 한다.",
+    }
+
+
 CHECKS = (
     check_point_ledger,
     check_transaction_amounts,
@@ -209,6 +265,7 @@ CHECKS = (
     check_paid_without_time,
     check_duplicate_orders,
     check_negative_points,
+    check_reward_config,
 )
 
 
