@@ -3155,6 +3155,68 @@ class PointGrantTests(TestCase):
         self.assertEqual(res.status_code, 403)
 
 
+class CouponGrantTests(TestCase):
+    """수기 쿠폰 발행 — 계산대에서 한 장 드릴 수 있어야 한다."""
+
+    def setUp(self):
+        from .models import Coupon
+
+        self.Coupon = Coupon
+        self.store = make_store()
+        self.m = Member.objects.create(
+            store=self.store, phone="01022222222", name="느긋한 수달"
+        )
+        authenticate(self.client)
+
+    def _grant(self, kind, **extra):
+        return self.client.post(
+            "/api/v1/coupons/grant",
+            data={"member_id": self.m.id, "kind": kind, **extra},
+            content_type="application/json",
+        )
+
+    def test_issues_bogo_coupon(self):
+        res = self._grant("bogo", note="사장님 지급")
+        self.assertEqual(res.status_code, 201)
+        c = self.Coupon.objects.get(member=self.m)
+        self.assertEqual(c.kind, self.Coupon.Kind.BOGO)
+        self.assertEqual(c.source, self.Coupon.Source.MANUAL)   # 자동 발행분과 구분
+        self.assertEqual(c.note, "사장님 지급")
+        self.assertTrue(c.is_usable)
+        self.assertIsNotNone(c.expires_at)                      # 90일 만료가 붙는다
+        self.assertEqual(res.json()["name"], "음료 1+1")
+
+    def test_appears_in_member_coupons(self):
+        self._grant("bogo")
+        got = self.client.get(f"/api/v1/members/{self.m.id}/coupons").json()
+        self.assertEqual([c["kind"] for c in got], ["bogo"])
+        self.assertEqual(got[0]["source"], "수기 지급")
+
+    def test_bad_kind_rejected(self):
+        self.assertEqual(self._grant("free_coffee_forever").status_code, 400)
+        self.assertEqual(self.Coupon.objects.count(), 0)
+
+    def test_no_points_moved(self):
+        """쿠폰은 장 단위 — 포인트 원장은 건드리지 않는다."""
+        from .integrity import check_point_ledger
+        from .models import PointEntry
+
+        self._grant("bogo")
+        self.m.refresh_from_db()
+        self.assertEqual(self.m.points, 0)
+        self.assertEqual(PointEntry.objects.filter(member=self.m).count(), 0)
+        self.assertEqual(check_point_ledger()["bad"], 0)
+
+    def test_needs_staff_token(self):
+        res = self.client_class().post(
+            "/api/v1/coupons/grant",
+            data={"member_id": self.m.id, "kind": "bogo"},
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(self.Coupon.objects.count(), 0)
+
+
 class PrepaidChargeTests(TestCase):
     """선결제(충전) — 낸 만큼 포인트로, 3% 적립은 붙지 않는다."""
 

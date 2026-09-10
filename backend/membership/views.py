@@ -14,7 +14,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Member, MenuItem, Mission, OrderItem, PointEntry, Store, Transaction
+from .models import (
+    Coupon, Member, MenuItem, Mission, OrderItem, PointEntry, Store, Transaction,
+)
 from .payments import TossError
 from .serializers import (
     CheckoutRequestSerializer,
@@ -42,7 +44,8 @@ from .exports import EXPORTERS, export_csv
 from .integrity import run_all as integrity_run_all
 from .member_qr import QrUnavailable, member_url, qr_svg
 from .margins import margin_summary, menu_item_margins, to_supply
-from .profile import build_member_dashboard, hall_of_fame
+from .rewards import issue_coupon
+from .profile import build_member_dashboard, coupon_list, hall_of_fame
 from .services import (
     CheckoutError,
     CouponError,
@@ -226,6 +229,37 @@ class PointGrantView(APIView):
         except PointGrantError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response(MemberSerializer(updated).data)
+
+
+class CouponGrantView(APIView):
+    """
+    수기 쿠폰 발행 🔒 — `POST {"member_id": 1, "kind": "bogo", "note": "사장님 지급"}`.
+
+    지금까지 쿠폰은 룰렛·등급 승급·랭킹으로만 나갔다. 계산대에서 손님께 한 장
+    드리려면 관리자 화면에 들어가 만료일까지 직접 채워야 했는데, 운영 중에
+    할 수 있는 일이 아니다. 발행 사유는 **`manual`로 남겨** 나중에 정산할 때
+    자동 발행분과 섞이지 않게 한다.
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def post(self, request):
+        member = _resolve_member(request.data.get("member_id"))
+        if member is None:
+            return Response({"detail": "회원을 선택해 주세요."}, status=400)
+        kind = (request.data.get("kind") or "").strip()
+        if kind not in Coupon.Kind.values:
+            return Response({"detail": "쿠폰 종류가 올바르지 않습니다."}, status=400)
+        note = (request.data.get("note") or "").strip()[:100]
+        coupon = issue_coupon(member, kind, Coupon.Source.MANUAL, note)
+        return Response({
+            "id": coupon.id,
+            "member_name": member.name,
+            "kind": coupon.kind,
+            "name": coupon.get_kind_display(),
+            "expires_at": coupon.expires_at,
+            "coupons": coupon_list(member),      # 발행 직후 보유 목록
+        }, status=201)
 
 
 class PrepaidView(APIView):
