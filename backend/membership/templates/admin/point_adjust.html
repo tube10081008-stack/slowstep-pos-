@@ -1,0 +1,14 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<p>선택한 회원 <b>{{ members|length }}명</b>의 포인트를 조정합니다.
+   조정 내역은 <b>포인트 원장에 기록</b>되어 손님 화면의 적립 내역에도 그대로 남습니다.</p>
+<ul>{% for m in members %}<li>{{ m.name }} ({{ m.phone }}) — 현재 {{ m.points }}P</li>{% endfor %}</ul>
+<form method="post">{% csrf_token %}
+  {{ form.as_p }}
+  {% for m in members %}
+    <input type="hidden" name="{{ action_checkbox_name }}" value="{{ m.pk }}">
+  {% endfor %}
+  <input type="hidden" name="action" value="adjust_points">
+  <button type="submit" name="apply" value="1" class="default">조정 실행</button>
+</form>
+{% endblock %}

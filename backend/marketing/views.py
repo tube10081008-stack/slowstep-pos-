@@ -7,6 +7,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from membership.auth import StorePinPermission
 from membership.serializers import MemberSerializer
 
 from .models import Campaign, Segment
@@ -21,7 +22,9 @@ from .services import CampaignError, dashboard_stats, send_campaign
 
 
 class DashboardView(APIView):
-    """점주 대시보드 핵심 지표."""
+    """점주 대시보드 핵심 지표. (매출·고객 지표 → 매장 PIN 필수)"""
+
+    permission_classes = [StorePinPermission]
 
     def get(self, request):
         return Response(dashboard_stats())
@@ -30,6 +33,7 @@ class DashboardView(APIView):
 class SegmentViewSet(viewsets.ModelViewSet):
     queryset = Segment.objects.all()
     serializer_class = SegmentSerializer
+    permission_classes = [StorePinPermission]
 
     @action(detail=False, methods=["post"])
     def preview(self, request):
@@ -59,6 +63,7 @@ class SegmentViewSet(viewsets.ModelViewSet):
 class CampaignViewSet(viewsets.ModelViewSet):
     queryset = Campaign.objects.select_related("segment").all()
     serializer_class = CampaignSerializer
+    permission_classes = [StorePinPermission]
 
     @action(detail=True, methods=["post"])
     def send(self, request, pk=None):
