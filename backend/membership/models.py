@@ -573,6 +573,14 @@ class Coupon(models.Model):
     source = models.CharField(
         "발행 사유", max_length=20, choices=Source.choices, default=Source.ROULETTE
     )
+    # 특정 메뉴에만 쓰는 쿠폰. 비면 음료 전체에 걸린다.
+    # '아메리카노 1+1'처럼 원가가 낮은 메뉴로 한정해야 부담을 예측할 수 있다.
+    # 룰렛·등급 승급으로 나가는 쿠폰은 비워 두므로 예전 동작 그대로다.
+    menu_item = models.ForeignKey(
+        "MenuItem", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="coupons", verbose_name="사용 가능 메뉴",
+        help_text="비우면 음료 전체",
+    )
     note = models.CharField("메모", max_length=100, blank=True, default="")
     issued_at = models.DateTimeField("발행 시각", auto_now_add=True)
     expires_at = models.DateTimeField("만료 시각", null=True, blank=True)
@@ -589,7 +597,26 @@ class Coupon(models.Model):
         indexes = [models.Index(fields=["member", "used_at"])]
 
     def __str__(self) -> str:
-        return f"{self.member.name} · {self.get_kind_display()}"
+        return f"{self.member.name} · {self.label}"
+
+    # 메뉴 제한이 걸렸을 때 쓰는 이름. 기본 표기를 그대로 앞에 붙이면
+    # '아메리카노 음료 1+1'처럼 어색해져서 종류별로 따로 적어 둔다.
+    RESTRICTED_LABEL = {
+        Kind.BOGO: "{menu} 1+1",
+        Kind.FREE_DRINK: "{menu} 무료",
+        Kind.DISCOUNT_10: "{menu} 10% 할인",
+        Kind.DISCOUNT_20: "{menu} 20% 할인",
+    }
+
+    @property
+    def label(self) -> str:
+        """손님이 보는 이름. 메뉴 제한이 있으면 그 메뉴로 읽히게 한다."""
+        base = self.get_kind_display()
+        if not self.menu_item_id:
+            return base
+        name = self.menu_item.name
+        tpl = self.RESTRICTED_LABEL.get(self.kind, "{menu} " + base)
+        return tpl.format(menu=name)
 
     def save(self, *args, **kwargs):
         if self.expires_at is None:

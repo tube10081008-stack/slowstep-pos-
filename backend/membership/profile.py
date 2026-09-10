@@ -474,17 +474,19 @@ def coupon_list(member: Member) -> list[dict]:
     """보유 쿠폰 — 쓸 수 있는 것 먼저, 만료 임박 순."""
     now = timezone.now()
     out = []
-    for c in member.coupons.filter(used_at__isnull=True, expires_at__gt=now).order_by(
-        "expires_at"
-    ):
+    for c in member.coupons.filter(
+        used_at__isnull=True, expires_at__gt=now
+    ).select_related("menu_item").order_by("expires_at"):
         left = (c.expires_at - now).days
         out.append({
             "id": c.id,
             "kind": c.kind,
-            "name": c.get_kind_display(),
+            "name": c.label,                     # 메뉴 제한이 있으면 '아메리카노 1+1'
             "source": c.get_source_display(),
             "note": c.note,
             "discount_pct": c.discount_pct,
+            "menu_item_id": c.menu_item_id,
+            "menu_item_name": c.menu_item.name if c.menu_item_id else "",
             "expires_at": c.expires_at,
             "days_left": left,
         })

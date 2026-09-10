@@ -44,7 +44,10 @@ class Campaign(models.Model):
     """마케팅 캠페인(알림톡 발송 단위)."""
 
     class Channel(models.TextChoices):
-        ALIMTALK = "ALIMTALK", "알림톡"
+        # 값은 그대로 둔다 — 이미 쌓인 캠페인 행을 건드리지 않기 위함.
+        # 실제로 나가는 건 문자(SMS/LMS)다. 알림톡은 템플릿 검수가 필요해
+        # 아직 붙이지 않았다.
+        ALIMTALK = "ALIMTALK", "문자"
 
     class Status(models.TextChoices):
         DRAFT = "draft", "작성중"

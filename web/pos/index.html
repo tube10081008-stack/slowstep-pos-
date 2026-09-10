@@ -260,6 +260,8 @@
   .mm-i button.temp { min-width:74px; color:var(--brand); border-color:#c7d0ff; background:var(--brand-soft); }
   .mm-i button.del { color:var(--red); border-color:#f6cdcd; }
   .mm-grip { cursor:grab; color:var(--muted); padding:0 4px; touch-action:none; user-select:none; }
+  .modal select { padding:11px 12px; border:1px solid var(--line); border-radius:10px;
+    background:#fff; color:var(--txt); font-size:14px; font-family:var(--sans); }
   .kv { display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px; }
   .kv:last-child { border-bottom:0; }
   .kv b { color:var(--brand); font-weight:700; }
@@ -548,6 +550,7 @@
       </div>
       <div class="opt-sec">
         <div class="lbl">쿠폰 주기 <span class="muted" style="font-weight:400">· 누르면 바로 발행됩니다</span></div>
+        <select id="grantMenu" style="width:100%;margin-bottom:8px;"></select>
         <div class="opt-row" id="grantCoupons"></div>
         <div class="muted" style="margin-top:8px;font-size:12px;" id="grantHas"></div>
       </div>
@@ -1729,6 +1732,12 @@
     $("grantMsg").textContent = "";
     $("grantCoupons").innerHTML = GRANT_COUPONS.map(([k, ko])=>
       `<div class="opt" onclick="doCoupon('${k}','${ko}')">${ko}</div>`).join("");
+    // 메뉴 제한 — 비워 두면 음료 전체. 디저트는 1+1·무료음료 계산에
+    // 안 잡히므로 목록에서 뺀다(발행돼도 결제에서 영영 안 걸린다).
+    const drinks = (menu||[]).filter(m => m.category !== "dessert");
+    $("grantMenu").innerHTML =
+      `<option value="">음료 전체</option>` +
+      drinks.map(m => `<option value="${m.id}">${m.name} 전용</option>`).join("");
     $("grantHas").textContent = "";
     loadGrantCoupons(id);
     $("grantModal").classList.remove("hidden");
@@ -1746,9 +1755,11 @@
   async function doCoupon(kind, label){
     if(!grantId) return;
     $("grantMsg").textContent = "";
+    const menuId = $("grantMenu").value || null;
     try {
       const r = await api("/api/v1/coupons/grant", { method:"POST",
-        body: JSON.stringify({ member_id: grantId, kind, note:"매장 지급" }) });
+        body: JSON.stringify({ member_id: grantId, kind, note:"매장 지급",
+                               menu_item_id: menuId }) });
       toast(`${r.member_name} 님께 ${r.name} 쿠폰 발행`);
       loadGrantCoupons(grantId);
     } catch(e){ $("grantMsg").textContent = e.message; }

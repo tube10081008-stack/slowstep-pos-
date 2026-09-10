@@ -71,8 +71,17 @@ def spin_roulette(rng: random.Random | None = None) -> tuple[str, int]:
     return kinds[idx], idx
 
 
-def issue_coupon(member, kind, source=Coupon.Source.ROULETTE, note="") -> Coupon:
-    return Coupon.objects.create(member=member, kind=kind, source=source, note=note)
+def issue_coupon(member, kind, source=Coupon.Source.ROULETTE, note="",
+                 menu_item=None) -> Coupon:
+    """
+    쿠폰 1장 발행. `menu_item` 을 주면 그 메뉴에만 쓰는 쿠폰이 된다.
+
+    룰렛·등급 승급은 메뉴를 지정하지 않는다(전체 음료) — 자동 발행분까지
+    한 메뉴로 묶으면 손님이 고를 재미가 없다.
+    """
+    return Coupon.objects.create(
+        member=member, kind=kind, source=source, note=note, menu_item=menu_item
+    )
 
 
 def earn_multiplier(store, when=None) -> Decimal:

@@ -220,16 +220,16 @@ TOSS_CLIENT_KEY = os.environ.get(
 TOSS_API_BASE = os.environ.get("TOSS_API_BASE", "https://api.tosspayments.com")
 TOSS_WEBHOOK_SECRET = os.environ.get("TOSS_WEBHOOK_SECRET", "")
 
-# ── 알림톡(카카오) ──────────────────────────────────────────────
-# 미주입 시 alimtalk.py가 Mock 발송으로 폴백(스캐폴드/데모).
-# 실연동은 NHN Cloud / Solapi / Aligo 등 발송 대행사 키를 주입.
-ALIMTALK_API_KEY = os.environ.get("ALIMTALK_API_KEY", "")
-ALIMTALK_SENDER_KEY = os.environ.get("ALIMTALK_SENDER_KEY", "")  # 발신 프로필 키
-ALIMTALK_API_BASE = os.environ.get("ALIMTALK_API_BASE", "")
-# 발신번호(매장 대표번호) — 알림톡 실패 시 문자(LMS) 대체발송에 사용
-ALIMTALK_SENDER_PHONE = os.environ.get("ALIMTALK_SENDER_PHONE", "")
-# 광고성 메시지 무료 수신거부 번호(법적 표기) — 실제 매장 번호로 교체
-ALIMTALK_OPT_OUT_NUMBER = os.environ.get("ALIMTALK_OPT_OUT_NUMBER", "080-0000-0000")
+# ── 문자 발송(솔라피) ─────────────────────────────────────────
+# 미주입 시 sender.py 가 Mock 발송으로 폴백한다 — 대행사 계약 전에도
+# 세그먼트·치환·발송 로그를 끝까지 돌려 볼 수 있어야 한다.
+# SOLAPI_API_SECRET 은 **서명에만** 쓰이고 어디에도 실려 나가지 않는다.
+SOLAPI_API_KEY = os.environ.get("SOLAPI_API_KEY", "")
+SOLAPI_API_SECRET = os.environ.get("SOLAPI_API_SECRET", "")
+# 발신번호 — 솔라피에 사전 등록한 매장 번호여야 한다(미등록 번호는 거부).
+SMS_SENDER_PHONE = os.environ.get("SMS_SENDER_PHONE", "")
+# 광고성 문자 무료 수신거부 번호(법적 표기)
+SMS_OPT_OUT_NUMBER = os.environ.get("SMS_OPT_OUT_NUMBER", "080-0000-0000")
 
 # ── 로깅 ────────────────────────────────────────────────────────
 LOGGING = {

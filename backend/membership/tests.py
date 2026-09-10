@@ -3216,6 +3216,118 @@ class CouponGrantTests(TestCase):
         self.assertEqual(res.status_code, 403)
         self.assertEqual(self.Coupon.objects.count(), 0)
 
+    def test_menu_restricted_coupon(self):
+        amer = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000,
+            category=MenuItem.Category.COFFEE,
+        )
+        res = self._grant("bogo", menu_item_id=amer.id)
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.json()["name"], "아메리카노 1+1")
+        c = self.Coupon.objects.get(member=self.m)
+        self.assertEqual(c.menu_item_id, amer.id)
+
+    def test_dessert_cannot_be_restricted_to(self):
+        """디저트로 묶으면 1+1 계산에 영영 안 걸리는 쿠폰이 된다."""
+        cake = MenuItem.objects.create(
+            store=self.store, name="치즈케이크", price=6000,
+            category=MenuItem.Category.DESSERT, temp_option=MenuItem.Temp.NONE,
+        )
+        self.assertEqual(self._grant("bogo", menu_item_id=cake.id).status_code, 400)
+        self.assertEqual(self.Coupon.objects.count(), 0)
+
+    def test_unknown_menu_rejected(self):
+        self.assertEqual(self._grant("bogo", menu_item_id=99999).status_code, 400)
+
+    def test_blank_menu_means_all_drinks(self):
+        self._grant("bogo", menu_item_id="")
+        self.assertIsNone(self.Coupon.objects.get(member=self.m).menu_item_id)
+
+
+class MenuRestrictedCouponUseTests(TestCase):
+    """'아메리카노 1+1' 은 아메리카노 2잔에만 걸린다."""
+
+    def setUp(self):
+        from .models import Coupon
+
+        self.Coupon = Coupon
+        self.store = make_store(stamp_goal=99)
+        self.m = Member.objects.create(
+            store=self.store, phone="01023232323", name="느긋한 수달"
+        )
+        self.amer = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000,
+            category=MenuItem.Category.COFFEE,
+        )
+        self.latte = MenuItem.objects.create(
+            store=self.store, name="카페 라떼", price=5000,
+            category=MenuItem.Category.COFFEE,
+        )
+
+    def _coupon(self, menu_item=None, kind=None):
+        return self.Coupon.objects.create(
+            member=self.m, kind=kind or self.Coupon.Kind.BOGO,
+            source=self.Coupon.Source.MANUAL, menu_item=menu_item,
+        )
+
+    def _buy(self, items, coupon, oid):
+        return checkout(
+            member=self.m, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=items, toss_order_id=oid, coupon_id=coupon.id,
+        )
+
+    def test_two_americanos_discounts_one(self):
+        c = self._coupon(self.amer)
+        r = self._buy([{"menu_item_id": self.amer.id, "quantity": 2}], c, "mr1")
+        self.assertEqual(r.transaction.discount, 4000)
+
+    def test_latte_pair_rejected(self):
+        """라떼 2잔으로는 못 쓴다 — 싼 쿠폰으로 비싼 잔을 가져가지 못하게."""
+        from .services import CouponError
+
+        c = self._coupon(self.amer)
+        with self.assertRaises(CouponError) as ctx:
+            self._buy([{"menu_item_id": self.latte.id, "quantity": 2}], c, "mr2")
+        self.assertIn("아메리카노", str(ctx.exception))
+
+    def test_one_americano_plus_latte_rejected(self):
+        from .services import CouponError
+
+        c = self._coupon(self.amer)
+        with self.assertRaises(CouponError):
+            self._buy(
+                [{"menu_item_id": self.amer.id, "quantity": 1},
+                 {"menu_item_id": self.latte.id, "quantity": 1}], c, "mr3")
+
+    def test_discount_is_americano_price_not_latte(self):
+        """아메리카노 2 + 라떼 1 → 깎이는 건 4,000원(아메리카노 값)."""
+        c = self._coupon(self.amer)
+        r = self._buy(
+            [{"menu_item_id": self.amer.id, "quantity": 2},
+             {"menu_item_id": self.latte.id, "quantity": 1}], c, "mr4")
+        self.assertEqual(r.transaction.discount, 4000)
+
+    def test_unrestricted_coupon_still_works_on_any_drink(self):
+        """룰렛으로 나간 기존 쿠폰은 예전 그대로 — 회귀가 없어야 한다."""
+        c = self._coupon(None)
+        r = self._buy([{"menu_item_id": self.latte.id, "quantity": 2}], c, "mr5")
+        self.assertEqual(r.transaction.discount, 5000)
+
+    def test_free_drink_restricted(self):
+        c = self._coupon(self.amer, self.Coupon.Kind.FREE_DRINK)
+        r = self._buy(
+            [{"menu_item_id": self.amer.id, "quantity": 1},
+             {"menu_item_id": self.latte.id, "quantity": 1}], c, "mr6")
+        self.assertEqual(r.transaction.discount, 4000)   # 라떼(5,000)가 아니다
+
+    def test_label_reads_naturally(self):
+        self.assertEqual(self._coupon(self.amer).label, "아메리카노 1+1")
+        self.assertEqual(
+            self._coupon(self.amer, self.Coupon.Kind.FREE_DRINK).label, "아메리카노 무료"
+        )
+        self.assertEqual(self._coupon(None).label, "음료 1+1")
+
 
 class PrepaidChargeTests(TestCase):
     """선결제(충전) — 낸 만큼 포인트로, 3% 적립은 붙지 않는다."""

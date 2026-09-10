@@ -134,9 +134,25 @@ class HealthView(APIView):
         # 운영에는 코드 기본값이 없으므로, 환경변수가 없으면 직원 로그인이
         # 아예 막힌다(손님 화면은 계속 열려 있다). 그 상태를 눈에 보이게 한다.
         pin_from_env = bool(os.environ.get("STORE_PIN"))
-        body["config"] = {
-            "store_pin": "env" if pin_from_env else ("dev" if settings.DEBUG else "unset")
+        # 문자 발송 상태. **키 값은 싣지 않는다** — 설정됐는지만 본다.
+        # 반쯤 설정된 상태(키는 있는데 발신번호가 없음)가 가장 위험하다:
+        # 살아 있는 줄 알고 캠페인을 눌렀다가 솔라피가 통째로 거부한다.
+        sms_parts = {
+            "SOLAPI_API_KEY": bool(settings.SOLAPI_API_KEY),
+            "SOLAPI_API_SECRET": bool(settings.SOLAPI_API_SECRET),
+            "SMS_SENDER_PHONE": bool(settings.SMS_SENDER_PHONE),
         }
+        sms_live = all(sms_parts.values())
+        body["config"] = {
+            "store_pin": "env" if pin_from_env else ("dev" if settings.DEBUG else "unset"),
+            "sms": "live" if sms_live else ("mock" if not any(sms_parts.values()) else "partial"),
+        }
+        if any(sms_parts.values()) and not sms_live:
+            missing = ", ".join(k for k, v in sms_parts.items() if not v)
+            warnings.append(
+                f"문자 발송 설정이 덜 됐습니다({missing} 없음). "
+                "이 상태로 캠페인을 보내면 전부 실패합니다."
+            )
         if not pin_from_env and not settings.DEBUG:
             warnings.append(
                 "매장 PIN이 설정되지 않아 POS·대시보드에 로그인할 수 없습니다. "
@@ -251,12 +267,28 @@ class CouponGrantView(APIView):
         if kind not in Coupon.Kind.values:
             return Response({"detail": "쿠폰 종류가 올바르지 않습니다."}, status=400)
         note = (request.data.get("note") or "").strip()[:100]
-        coupon = issue_coupon(member, kind, Coupon.Source.MANUAL, note)
+
+        # 메뉴 제한(선택) — '아메리카노 1+1'처럼 한 메뉴로 묶을 때 쓴다.
+        menu_item = None
+        raw_menu = request.data.get("menu_item_id")
+        if raw_menu not in (None, "", 0, "0"):
+            menu_item = MenuItem.objects.filter(pk=raw_menu).first()
+            if menu_item is None:
+                return Response({"detail": "메뉴를 찾을 수 없습니다."}, status=400)
+            if menu_item.category == MenuItem.Category.DESSERT:
+                # 1+1·무료음료는 '음료' 기준으로 계산한다. 디저트로 묶으면
+                # 발행은 되는데 결제에서 영영 안 걸리는 쿠폰이 된다.
+                return Response(
+                    {"detail": "음료 메뉴만 지정할 수 있습니다."}, status=400
+                )
+
+        coupon = issue_coupon(member, kind, Coupon.Source.MANUAL, note, menu_item)
         return Response({
             "id": coupon.id,
             "member_name": member.name,
             "kind": coupon.kind,
-            "name": coupon.get_kind_display(),
+            "name": coupon.label,
+            "menu_item_name": menu_item.name if menu_item else "",
             "expires_at": coupon.expires_at,
             "coupons": coupon_list(member),      # 발행 직후 보유 목록
         }, status=201)

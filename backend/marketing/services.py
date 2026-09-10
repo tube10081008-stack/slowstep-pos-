@@ -3,41 +3,69 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from django.db import transaction as db_transaction
 from django.db.models import Avg, Count, Sum
 from django.utils import timezone
 
 from membership.models import Member, Transaction
 
-from .alimtalk import AlimtalkClient, AlimtalkError
 from .models import Campaign, MessageLog
 from .segments import render_message, resolve_members
+from .sender import MessageClient, SendError, ad_window_open
 
 
 class CampaignError(Exception):
     pass
 
 
-@db_transaction.atomic
 def send_campaign(campaign: Campaign) -> Campaign:
     """
-    캠페인 대상 회원에게 알림톡 발송. 회원별 MessageLog 기록.
-    수신 미동의자(광고성)는 제외(skipped)로 안전 처리.
+    캠페인 대상 회원에게 문자 발송. 회원별 MessageLog 기록.
+
+    **트랜잭션으로 감싸지 않는다.** 문자는 한 번 나가면 못 되돌리는데,
+    실패 시 롤백하면 '보냈을지도 모르는' 기록까지 사라진다. 특히 타임아웃은
+    솔라피가 이미 접수했을 수도 있는 경우라, 기록 없이 되돌리면 다시 눌렀을 때
+    같은 손님이 두 번 받는다. 로그는 진행하면서 남기고 캠페인 상태만 마지막에
+    정리한다.
+
+    **한 번에 묶어 보낸다.** 예전에는 회원마다 API를 한 번씩 호출했는데,
+    220명이면 요청이 220번이라 서버리스 응답 시간(수십 초)에 먼저 걸린다.
+    중간에 끊기면 절반만 나가고 로그도 절반만 남아 누가 받았는지 모른다.
+
+    제외(skipped) 처리하는 경우:
+    - 광고성인데 수신 미동의 — 정보통신망법
+    - 연락처가 없거나 형식이 이상함 — 보낼 곳이 없다
     """
     if campaign.status == Campaign.Status.SENT:
         raise CampaignError("이미 발송된 캠페인입니다.")
     if not campaign.segment:
         raise CampaignError("세그먼트가 지정되지 않았습니다.")
+    if campaign.is_ad and not ad_window_open():
+        # 발송하고 나서 사과할 수 없는 종류의 실수라 아예 막는다.
+        raise CampaignError(
+            "광고성 문자는 08시~21시에만 보낼 수 있습니다(정보통신망법). "
+            "정보성이면 캠페인의 '광고성' 체크를 해제하세요."
+        )
 
     members = list(resolve_members(campaign.segment))
-    client = AlimtalkClient()
+    client = MessageClient()
     sent = failed = skipped = 0
+    pending: list[tuple[str, str]] = []       # (번호, 본문)
+    bodies: dict[str, str] = {}
+    by_phone: dict[str, list] = {}
 
     for member in members:
-        # 광고성인데 미동의면 발송 제외(법적 보호).
+        phone = (member.phone or "").strip()
+        if len("".join(c for c in phone if c.isdigit())) < 10:
+            MessageLog.objects.create(
+                campaign=campaign, member=member, phone=phone,
+                rendered_message="", status=MessageLog.Status.SKIPPED,
+                reason="연락처 없음",
+            )
+            skipped += 1
+            continue
         if campaign.is_ad and not member.marketing_opt_in:
             MessageLog.objects.create(
-                campaign=campaign, member=member, phone=member.phone,
+                campaign=campaign, member=member, phone=phone,
                 rendered_message="", status=MessageLog.Status.SKIPPED,
                 reason="마케팅 수신 미동의",
             )
@@ -47,24 +75,44 @@ def send_campaign(campaign: Campaign) -> Campaign:
         body = client.decorate(
             render_message(campaign.message_template, member), campaign.is_ad
         )
-        try:
-            result = client.send(member.phone, body)
-            status = (
-                MessageLog.Status.SENT if result.success else MessageLog.Status.FAILED
-            )
-            reason = "Mock 발송" if result.mocked else result.reason
-            if result.success:
-                sent += 1
-            else:
-                failed += 1
-        except AlimtalkError as exc:
-            status, reason = MessageLog.Status.FAILED, str(exc)
-            failed += 1
+        pending.append((phone, body))
+        bodies[phone] = body
+        by_phone.setdefault(phone, []).append(member)
 
-        MessageLog.objects.create(
-            campaign=campaign, member=member, phone=member.phone,
-            rendered_message=body, status=status, reason=reason,
-        )
+    try:
+        results = client.send_many(pending)
+    except SendError as exc:
+        # 요청 자체가 실패(인증·네트워크). 전부 실패로 남기고 캠페인은
+        # **작성중으로 되돌린다** — 발송완료로 잠기면 다시 못 보낸다.
+        for phone, _body in pending:
+            for member in by_phone.get(phone, []):
+                MessageLog.objects.create(
+                    campaign=campaign, member=member, phone=phone,
+                    rendered_message=bodies.get(phone, ""),
+                    status=MessageLog.Status.FAILED, reason=str(exc)[:200],
+                )
+        campaign.recipient_count = len(members)
+        campaign.sent_count = 0
+        campaign.failed_count = len(pending)
+        campaign.skipped_count = skipped
+        campaign.save()
+        raise CampaignError(str(exc)) from exc
+
+    for phone, _body in pending:
+        res = results.get(phone)
+        ok = bool(res and res.success)
+        reason = "" if res is None else (res.reason or "")
+        for member in by_phone.get(phone, []):
+            MessageLog.objects.create(
+                campaign=campaign, member=member, phone=phone,
+                rendered_message=bodies.get(phone, ""),
+                status=MessageLog.Status.SENT if ok else MessageLog.Status.FAILED,
+                reason=reason if ok else (reason or "발송 실패"),
+            )
+        if ok:
+            sent += 1
+        else:
+            failed += 1
 
     campaign.recipient_count = len(members)
     campaign.sent_count = sent

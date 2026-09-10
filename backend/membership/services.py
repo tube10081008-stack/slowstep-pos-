@@ -552,7 +552,13 @@ def coupon_discount(coupon: Coupon, lines) -> int:
     - 음료 1+1: 음료 2잔 이상일 때 **싼 쪽 1잔** 값
     - 무료 음료: 음료 중 **가장 비싼 1잔** 값
     - 원두 200g: 물건으로 나가므로 금액 할인은 0
+
+    **메뉴 제한이 걸린 쿠폰**(`menu_item`)은 위 계산을 그 메뉴 줄에만 적용한다.
+    '아메리카노 1+1'이면 아메리카노가 2잔 있어야 하고, 깎이는 것도 아메리카노
+    값이다 — 싼 쿠폰으로 비싼 잔을 가져가지 못하게.
     """
+    if coupon.menu_item_id:
+        lines = [l for l in lines if l.menu_item.id == coupon.menu_item_id]
     drinks = sorted(
         (l.unit_price for l in lines
          for _ in range(l.quantity)
@@ -583,10 +589,21 @@ def resolve_coupon(member: Member | None, coupon_id, lines) -> tuple[Coupon | No
         raise CouponError("사용 기한이 지난 쿠폰입니다.")
     amount = coupon_discount(coupon, lines or [])
     if amount <= 0:
+        # 메뉴 제한이 걸린 쿠폰은 **왜 안 되는지**를 메뉴 이름으로 말해 준다.
+        # "음료 2잔 이상"만 띄우면 아메리카노 전용인 걸 모르고 실랑이가 난다.
+        only = coupon.menu_item.name if coupon.menu_item_id else ""
         if coupon.kind == Coupon.Kind.BOGO:
-            raise CouponError("1+1 쿠폰은 음료 2잔 이상일 때 사용할 수 있어요.")
+            raise CouponError(
+                f"{only} 1+1 쿠폰이에요. {only} 2잔을 담아 주세요." if only
+                else "1+1 쿠폰은 음료 2잔 이상일 때 사용할 수 있어요."
+            )
         if coupon.kind == Coupon.Kind.FREE_DRINK:
-            raise CouponError("무료 음료 쿠폰은 음료가 있어야 사용할 수 있어요.")
+            raise CouponError(
+                f"{only} 무료 쿠폰이에요. {only}를 담아 주세요." if only
+                else "무료 음료 쿠폰은 음료가 있어야 사용할 수 있어요."
+            )
+        if only:
+            raise CouponError(f"{only}에만 쓸 수 있는 쿠폰이에요.")
         raise CouponError("이 주문에는 적용할 수 없는 쿠폰입니다.")
     return coupon, amount
 
