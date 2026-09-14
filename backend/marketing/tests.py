@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import io
+import json
 from datetime import datetime, timezone as dt_timezone
 from unittest.mock import patch
 
@@ -218,6 +219,45 @@ class ComposeTests(TestCase):
             body = self._post().json()
         self.assertEqual(body["source"], "rule")
         self.assertTrue(body["text"])
+
+    # ── 아래 셋은 _gemini 를 통째로 가짜로 바꾸지 않는다 ──────────────
+    # 그렇게 하면 프롬프트를 만드는 코드가 한 번도 안 돌아서, 거기서 터지는
+    # 버그를 못 잡는다. 실제로 프롬프트의 {이름} 예시가 str.format 에 걸려
+    # 운영에서 500 이 났는데 테스트는 전부 통과했다. urlopen 만 막는다.
+
+    def _fake_gemini_http(self, reply="아메리카노 1+1 오늘까지예요."):
+        import io
+        body = json.dumps({"output": [{"text": reply}]}).encode()
+        return patch("marketing.compose.urllib.request.urlopen",
+                     return_value=io.BytesIO(body))
+
+    def test_prompt_builds_with_api_key(self):
+        """프롬프트에 중괄호 예시가 있어도 터지지 않아야 한다."""
+        with patch.dict("os.environ", {"GEMINI_API_KEY": "k"}, clear=False), \
+             self._fake_gemini_http():
+            body = self._post(purpose="coupon", benefit="아메리카노 1+1").json()
+        self.assertEqual(body["source"], "gemini")
+        self.assertIn("아메리카노 1+1", body["text"])
+
+    def test_prompt_keeps_variable_examples_literal(self):
+        """{이름} 예시가 모델에게 그대로 전달돼야 한다."""
+        from marketing.compose import render_prompt
+
+        out = render_prompt(
+            PURPOSE="p", TONE="t", BENEFIT="b", BUDGET=56,
+            CHARS=28, SENTENCES="s", VARS="{이름}",
+        )
+        self.assertIn("{이름}님, 오늘까지", out)
+        self.assertNotIn("<<", out)
+
+    def test_compose_never_500s(self):
+        """편의 기능이 터져서 캠페인 화면을 못 쓰게 되면 안 된다."""
+        with patch.dict("os.environ", {"GEMINI_API_KEY": "k"}, clear=False), \
+             patch("marketing.compose._gemini", side_effect=RuntimeError("펑")):
+            res = self._post(purpose="coupon")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["source"], "rule")
+        self.assertTrue(res.json()["text"])
 
     def test_uses_gemini_when_available(self):
         with patch("marketing.compose._gemini", return_value="{이름}님, 오랜만이에요."):

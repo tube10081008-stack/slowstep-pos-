@@ -52,24 +52,36 @@ TONES = {
     "crisp": "군더더기 없이 짧고 담백하게",
 }
 
+# 프롬프트 본문에 **치환 변수 예시({이름} 등)가 들어간다.** str.format 을 쓰면
+# 그걸 치환 자리로 읽어 KeyError 로 터진다(실제로 운영에서 500 을 냈다).
+# 그래서 포맷 대신 <<...>> 토큰을 직접 갈아 끼운다 — 중괄호를 마음대로 써도
+# 안전하고, 나중에 예시를 추가하다 또 터질 일이 없다.
 PROMPT = """너는 동네 카페 '슬로우스텝'의 사장이다. 단골에게 보낼 문자 한 통을 쓴다.
 
-목적: {purpose}
-말투: {tone}
-{benefit}
+목적: <<PURPOSE>>
+말투: <<TONE>>
+<<BENEFIT>>
 
 지켜야 할 것:
-- 한국어로, **{budget}바이트 안에서**(한글 1자 = 2바이트) 끝낼 것. 이게 가장 중요하다.
-  → 한글 {chars}자 안팎이다. {sentences}
+- 한국어로, **<<BUDGET>>바이트 안에서**(한글 1자 = 2바이트) 끝낼 것. 이게 가장 중요하다.
+  → 한글 <<CHARS>>자 안팎이다. <<SENTENCES>>
 - **인사말로 시작하지 마라.** "안녕하세요", "슬로우스텝입니다" 같은 문장은 쓰지 마라.
   예산이 빠듯해서 인사에 쓸 자리가 없다. **첫 문장부터 핵심을 말해라.**
-- 쓸 수 있는 치환 변수는 {vars} 뿐이다. 다른 변수를 지어내지 마라. 안 써도 된다.
+- 쓸 수 있는 치환 변수는 <<VARS>> 뿐이다. 다른 변수를 지어내지 마라. 안 써도 된다.
   {이름}은 문장 앞에 붙여도 좋다(예: "{이름}님, 오늘까지 …").
 - "(광고)" 표기, 수신거부 안내, 전화번호, 링크는 **절대 쓰지 마라.** 시스템이 따로 붙인다.
 - 이모지는 최대 1개. 느낌표 남발 금지. 없는 혜택을 지어내지 마라.
 - 설명이나 따옴표 없이 **문자 본문만** 출력해라.
 
 문자 본문:"""
+
+
+def render_prompt(**tokens) -> str:
+    """<<TOKEN>> 을 값으로 바꾼다. 중괄호는 건드리지 않는다."""
+    out = PROMPT
+    for key, value in tokens.items():
+        out = out.replace(f"<<{key}>>", str(value))
+    return out
 
 
 def _bytes(text: str) -> int:
@@ -202,18 +214,18 @@ def _gemini(purpose: str, benefit: str, tone: str, budget: int) -> str | None:
     if not api_key:
         return None
 
-    prompt = PROMPT.format(
-        purpose=PURPOSES.get(purpose, PURPOSES["notice"]),
-        tone=TONES.get(tone, TONES["warm"]),
-        benefit=(
+    prompt = render_prompt(
+        PURPOSE=PURPOSES.get(purpose, PURPOSES["notice"]),
+        TONE=TONES.get(tone, TONES["warm"]),
+        BENEFIT=(
             f"꼭 담을 내용(이건 반드시 살려라): {benefit}" if benefit
             else "특별히 담을 혜택은 없다."
         ),
-        budget=budget,
-        chars=budget // 2,
-        sentences=("**한 문장으로 끝내라.**" if budget <= 70
+        BUDGET=budget,
+        CHARS=budget // 2,
+        SENTENCES=("**한 문장으로 끝내라.**" if budget <= 70
                    else "두세 문장이면 충분하다."),
-        vars=", ".join(VARS),
+        VARS=", ".join(VARS),
     )
     body = json.dumps({"model": GEMINI_MODEL, "input": prompt}).encode()
     req = urllib.request.Request(
@@ -254,7 +266,14 @@ def compose(purpose: str, benefit: str = "", tone: str = "warm",
             is_ad: bool = True, long_form: bool = False) -> dict:
     """옵션 → 문자 초안. `source` 로 AI가 썼는지 폴백인지 알려 준다."""
     budget = budget_for(is_ad, long_form)
-    raw = _gemini(purpose, benefit, tone, budget)
+    # 문구 생성은 편의 기능이다. 여기서 터져 500 이 나면 사장님은 캠페인
+    # 화면 자체를 못 쓴다 — 무슨 일이 나든 초안은 내놓고, 원인은 로그에 남긴다.
+    # (실제로 프롬프트의 {이름} 예시가 str.format 에 걸려 운영에서 500 을 냈다)
+    try:
+        raw = _gemini(purpose, benefit, tone, budget)
+    except Exception:
+        log.exception("문구 생성 실패 — 규칙 폴백")
+        raw = None
     source = "gemini"
     if raw:
         text = sanitize(raw, budget)
