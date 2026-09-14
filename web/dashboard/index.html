@@ -332,6 +332,8 @@
             <button type="button" class="lnk" onclick="pickSendable()">받을 수 있는 분만</button>
           </span>
         </div>
+        <input id="rcpFind" placeholder="이름·연락처로 찾기" oninput="renderRecipients(rcpAll)"
+               style="margin-top:6px;" />
         <div class="rcp" id="rcpList">불러오는 중…</div>
         <div class="muted" id="rcpCount" style="margin-top:6px;font-size:12px;"></div>
       </div>
@@ -363,6 +365,12 @@
           </div>
         </div>
         <input id="aiBenefit" placeholder="꼭 담을 내용 (예: 아메리카노 1+1 · 이번 주까지)" />
+        <!-- 광고성 SMS 는 본문이 56바이트뿐이라 한 문장도 빠듯하다.
+             길게 쓰려면 LMS 라 요금이 약 3배 — 고르게 해 두고 값을 밝힌다. -->
+        <select id="aiLen" style="margin-top:8px;">
+          <option value="">짧게 — 1건 약 20원 (SMS)</option>
+          <option value="1">길게 — 1건 약 60원 (LMS, 할 말이 많을 때)</option>
+        </select>
         <button type="button" id="aiBtn" class="ghost" onclick="composeMsg()"
           style="width:100%;margin-top:8px;">✨ 문구 만들기</button>
         <div class="muted" id="aiNote" style="margin-top:6px;font-size:12px;"></div>
@@ -579,12 +587,26 @@
   function renderRecipients(list){
     rcpAll = list;
     const box = $("rcpList");
+    // 찾기는 **보이는 것만 거른다.** 체크 상태(rcpOff)는 전체 기준으로
+    // 유지되므로, 걸러서 안 보이는 손님의 선택이 풀리지 않는다.
+    const q = ($("rcpFind")?.value || "").trim().toLowerCase();
+    // 번호 비교는 **검색어에 숫자가 있을 때만.** 빈 문자열은 어떤 번호에도
+    // 들어 있어서(''.includes 는 언제나 true), 이름을 치면 전원이 걸렸다.
+    const qd = q.replace(/\D/g, "");
+    const shown = q
+      ? list.filter(m => (m.name||"").toLowerCase().includes(q) ||
+                         (qd && (m.phone||"").replace(/\D/g,"").includes(qd)))
+      : list;
     if(!list.length){
       box.innerHTML = '<div class="empty">조건에 맞는 손님이 없습니다.</div>';
       updateRcpCount(); return;
     }
+    if(!shown.length){
+      box.innerHTML = '<div class="empty">찾는 손님이 없습니다.</div>';
+      updateRcpCount(); return;
+    }
     const ad = $("isAd").checked;
-    box.innerHTML = list.map(m=>{
+    box.innerHTML = shown.map(m=>{
       // 광고성이면 미동의자는 골라도 서버가 제외한다. 왜 안 가는지
       // 여기서 미리 보여 줘야 "보냈는데 안 왔다"가 안 생긴다.
       const blocked = (!m.has_phone && "번호없음") || (ad && !m.marketing_opt_in && "수신거부");
@@ -629,7 +651,7 @@
           tone: $("aiTone").value,
           benefit: $("aiBenefit").value,
           is_ad: $("isAd").checked,
-          long_form: false,
+          long_form: !!$("aiLen").value,
         })});
       $("msg").value = r.text;
       renderPreview();

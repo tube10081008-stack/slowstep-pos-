@@ -60,7 +60,11 @@ PROMPT = """너는 동네 카페 '슬로우스텝'의 사장이다. 단골에게
 
 지켜야 할 것:
 - 한국어로, **{budget}바이트 안에서**(한글 1자 = 2바이트) 끝낼 것. 이게 가장 중요하다.
+  → 한글 {chars}자 안팎이다. {sentences}
+- **인사말로 시작하지 마라.** "안녕하세요", "슬로우스텝입니다" 같은 문장은 쓰지 마라.
+  예산이 빠듯해서 인사에 쓸 자리가 없다. **첫 문장부터 핵심을 말해라.**
 - 쓸 수 있는 치환 변수는 {vars} 뿐이다. 다른 변수를 지어내지 마라. 안 써도 된다.
+  {이름}은 문장 앞에 붙여도 좋다(예: "{이름}님, 오늘까지 …").
 - "(광고)" 표기, 수신거부 안내, 전화번호, 링크는 **절대 쓰지 마라.** 시스템이 따로 붙인다.
 - 이모지는 최대 1개. 느낌표 남발 금지. 없는 혜택을 지어내지 마라.
 - 설명이나 따옴표 없이 **문자 본문만** 출력해라.
@@ -79,19 +83,52 @@ def budget_for(is_ad: bool, long_form: bool) -> int:
     return cap - (AD_OVERHEAD if is_ad else 0)
 
 
+# 알맹이가 없는 인사말. 예산이 모자라면 **이것부터** 버린다.
+GREETING = re.compile(
+    r"^(?:.{0,12}님[,\s]*)?(?:안녕하세요|반갑습니다|슬로우\s*스텝\s*(?:입니다|이에요)"
+    r"|저희\s*슬로우\s*스텝|\S{0,10}카페\s*입니다)[.!~]?$"
+)
+
+
+def _is_greeting(s: str) -> bool:
+    """인사만 하고 끝나는 문장인가. 숫자·혜택이 섞이면 알맹이로 본다."""
+    s = s.strip()
+    if not s or re.search(r"\d", s):
+        return False
+    return bool(GREETING.match(s))
+
+
 def trim_to(text: str, budget: int) -> str:
-    """예산을 넘으면 자른다. 문장 끝에서 자르고, 안 되면 글자에서 끊는다."""
+    """
+    예산을 넘으면 자른다.
+
+    **인사말부터 버리고, 그래도 넘치면 뒤에서 덜어낸다.**
+    예전에는 무조건 뒤에서 덜어냈는데, AI가 쓰는 문자는 거의 항상
+    "○○님, 슬로우스텝입니다. (본론)" 꼴이라 인사말만 남고 정작 알맹이가
+    통째로 날아갔다 — 목적을 뭘로 고르든 결과가 같아 보이던 이유다.
+    """
     if _bytes(text) <= budget:
         return text
-    # 문장 단위로 뒤에서부터 덜어낸다 — 말이 끊긴 문자는 안 보내느니만 못하다.
-    parts = re.split(r"(?<=[.!?~다요])\s+", text)
+
+    parts = [p for p in re.split(r"(?<=[.!?~다요])\s+", text) if p.strip()]
+
+    # 1) 알맹이 없는 인사말 걷어내기 (전부 인사면 손대지 않는다)
+    meat = [p for p in parts if not _is_greeting(p)]
+    if meat and len(meat) < len(parts):
+        parts = meat
+        joined = " ".join(parts).strip()
+        if _bytes(joined) <= budget:
+            return joined
+
+    # 2) 그래도 넘치면 뒤에서 덜어낸다 — 말이 끊긴 문자는 안 보내느니만 못하다
     while len(parts) > 1:
         parts.pop()
         joined = " ".join(parts).strip()
         if _bytes(joined) <= budget:
             return joined
+
     out = ""
-    for ch in text:
+    for ch in " ".join(parts).strip():
         if _bytes(out + ch) > budget:
             break
         out += ch
@@ -168,8 +205,14 @@ def _gemini(purpose: str, benefit: str, tone: str, budget: int) -> str | None:
     prompt = PROMPT.format(
         purpose=PURPOSES.get(purpose, PURPOSES["notice"]),
         tone=TONES.get(tone, TONES["warm"]),
-        benefit=(f"꼭 담을 내용: {benefit}" if benefit else "특별히 담을 혜택은 없다."),
+        benefit=(
+            f"꼭 담을 내용(이건 반드시 살려라): {benefit}" if benefit
+            else "특별히 담을 혜택은 없다."
+        ),
         budget=budget,
+        chars=budget // 2,
+        sentences=("**한 문장으로 끝내라.**" if budget <= 70
+                   else "두세 문장이면 충분하다."),
         vars=", ".join(VARS),
     )
     body = json.dumps({"model": GEMINI_MODEL, "input": prompt}).encode()

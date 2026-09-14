@@ -217,6 +217,10 @@ class SegmentViewSet(viewsets.ModelViewSet):
             }
             for m in qs[:500]
         ]
+        # 명단은 **이름 가나다순**. 누적결제 순(resolve_members 기본)으로 두면
+        # 42명 중에서 한 사람을 찾을 때 눈으로 훑을 기준이 없다.
+        # 한글은 유니코드 코드포인트 순서가 가나다순과 같아 단순 정렬로 맞는다.
+        rows.sort(key=lambda r: (r["name"] or "", r["phone"] or ""))
         return Response({
             "count": qs.count(),
             "members": rows,

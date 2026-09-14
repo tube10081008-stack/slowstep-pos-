@@ -270,6 +270,56 @@ class ComposeTests(TestCase):
         out = trim_to("첫 문장입니다. 둘째 문장입니다. 셋째 문장입니다.", 20)
         self.assertTrue(out.endswith("다."), out)
 
+    def test_greeting_is_dropped_before_the_message(self):
+        """
+        AI가 쓰는 문자는 거의 항상 '○○님, 슬로우스텝입니다. (본론)' 꼴이다.
+        뒤에서만 자르면 인사만 남고 알맹이가 통째로 날아간다 —
+        목적을 뭘로 고르든 결과가 같아 보이던 이유.
+        """
+        from marketing.compose import trim_to
+
+        out = trim_to(
+            "{이름}님, 슬로우스텝입니다. 아메리카노 1+1 이번 주까지예요. 들러 주세요!", 56
+        )
+        self.assertIn("아메리카노 1+1", out)
+        self.assertNotIn("슬로우스텝입니다", out)
+
+    def test_greeting_only_text_survives(self):
+        """전부 인사말이면 지울 게 없다 — 빈 문자를 만들면 안 된다."""
+        from marketing.compose import trim_to
+
+        out = trim_to("안녕하세요 슬로우스텝입니다.", 56)
+        self.assertTrue(out.strip())
+
+    def test_sentence_with_numbers_is_not_a_greeting(self):
+        """'10% 할인입니다' 처럼 숫자가 든 문장은 알맹이다."""
+        from marketing.compose import _is_greeting
+
+        self.assertTrue(_is_greeting("{이름}님, 슬로우스텝입니다."))
+        self.assertTrue(_is_greeting("안녕하세요"))
+        self.assertFalse(_is_greeting("아메리카노 1+1입니다."))
+        self.assertFalse(_is_greeting("새 메뉴가 나왔어요."))
+
+    def test_gemini_output_keeps_the_point(self):
+        """실제 경로로도 알맹이가 남는지 — 단위 함수만 보면 놓친다."""
+        ai = "{이름}님, 슬로우스텝입니다. 아메리카노 1+1 이번 주까지예요."
+        with patch("marketing.compose._gemini", return_value=ai):
+            body = self._post(purpose="coupon", is_ad=True).json()
+        self.assertIn("아메리카노 1+1", body["text"])
+        self.assertLessEqual(body["bytes"], body["budget"])
+
+    def test_long_form_gets_a_bigger_budget(self):
+        from marketing.compose import budget_for
+
+        self.assertGreater(
+            budget_for(is_ad=True, long_form=True),
+            budget_for(is_ad=True, long_form=False),
+        )
+        with patch("marketing.compose._gemini", return_value=None):
+            short = self._post(purpose="coupon", is_ad=True, long_form=False).json()
+            long = self._post(purpose="coupon", is_ad=True, long_form=True).json()
+        self.assertGreater(long["budget"], short["budget"])
+
     def test_benefit_survives_tight_ad_budget(self):
         """사장님이 적어 넣은 혜택이 잘려나가면 문자를 보낼 이유가 없다."""
         with patch.dict("os.environ", {"GEMINI_API_KEY": ""}, clear=False):
@@ -368,6 +418,19 @@ class RecipientPickTests(TestCase):
         for key in ("id", "name", "phone", "tier_display",
                     "marketing_opt_in", "has_phone"):
             self.assertIn(key, row)
+
+    def test_preview_is_sorted_by_name(self):
+        """누적결제 순으로 두면 42명 중에 한 사람을 눈으로 못 찾는다."""
+        make_member(self.store, "01099990000", "하손님", True)
+        make_member(self.store, "01088880000", "라손님", True)
+        res = self.client.post(
+            "/api/v1/segments/preview",
+            data={"require_opt_in": False}, content_type="application/json",
+        ).json()
+        names = [m["name"] for m in res["members"]]
+        self.assertEqual(names, sorted(names))
+        self.assertEqual(names[0], "가손님")
+        self.assertEqual(names[-1], "하손님")
 
     def test_preview_flags_unreachable(self):
         make_member(self.store, "없음", "번호이상", True)
