@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from django.urls import path
 
-from .views import CampaignViewSet, DashboardView, SegmentViewSet, SmsTestView
+from .views import CampaignViewSet, DashboardView, SegmentViewSet, SmsStatusView, SmsTestView
 
 router = DefaultRouter(trailing_slash=False)
 router.register("segments", SegmentViewSet, basename="segment")
@@ -12,5 +12,6 @@ router.register("campaigns", CampaignViewSet, basename="campaign")
 urlpatterns = [
     path("dashboard/stats", DashboardView.as_view(), name="dashboard-stats"),
     path("sms/test", SmsTestView.as_view(), name="sms-test"),
+    path("sms/status", SmsStatusView.as_view(), name="sms-status"),
 ]
 urlpatterns += router.urls

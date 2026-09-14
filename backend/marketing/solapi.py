@@ -26,6 +26,7 @@ from django.conf import settings
 
 API_BASE = "https://api.solapi.com"
 SEND_MANY = "/messages/v4/send-many/detail"
+BALANCE = "/cash/v1/balance"      # 인증·잔액 확인용(문자를 보내지 않는다)
 
 # 한 번에 보낼 건수. 솔라피 한도는 훨씬 크지만 서버리스 응답 시간이
 # 먼저 걸린다 — 220명이면 3번 나눠 보내는 정도가 안전하다.
@@ -37,8 +38,23 @@ TIMEOUT = 15
 SMS_MAX_BYTES = 90
 
 
+_TIMEOUT_MSG = (
+    "솔라피 응답이 시간 안에 오지 않았습니다. 이미 발송됐을 수 있으니 "
+    "솔라피 콘솔에서 발송 내역을 확인한 뒤 다시 보내세요."
+)
+
+
 class SolapiError(Exception):
-    """발송 요청 자체가 실패(인증·네트워크·형식). 개별 수신 실패와 다르다."""
+    """
+    발송 요청 자체가 실패(인증·네트워크·형식). 개별 수신 실패와 다르다.
+
+    `kind` 로 갈래를 남긴다 — 진단 화면이 '키를 확인하세요'와 '망이 막혔습니다'를
+    구분해 안내해야 하는데, 메시지 문자열을 뒤져 맞히면 문구를 고칠 때마다 깨진다.
+    """
+
+    def __init__(self, message: str, kind: str = "unknown"):
+        super().__init__(message)
+        self.kind = kind        # auth / http / network / timeout / parse
 
 
 @dataclass
@@ -79,7 +95,11 @@ class SolapiClient:
         return bool(self.api_key and self.api_secret and self.sender)
 
     def _auth_header(self) -> str:
-        date = datetime.now(dt_timezone.utc).isoformat()
+        # **오프셋(+00:00)을 붙이지 않는다.** 솔라피 공식 SDK 는 UTC 를
+        # naive ISO8601 로 보내고(2026-09-14T05:07:09.710793), 오프셋이 붙은
+        # 형식은 서명 검증에서 거부될 수 있다. 여기서 한 글자 틀리면 401 이라
+        # 발송이 통째로 안 나간다.
+        date = datetime.now(dt_timezone.utc).replace(tzinfo=None).isoformat()
         salt = secrets.token_hex(16)
         signature = hmac.new(
             self.api_secret.encode(), (date + salt).encode(), hashlib.sha256
@@ -89,38 +109,48 @@ class SolapiClient:
             f"salt={salt}, signature={signature}"
         )
 
+    def balance(self) -> dict:
+        """
+        잔액 조회. **문자를 보내지 않고** 키가 맞는지 확인하는 용도다.
+
+        '문자가 안 온다'는 원인이 여러 개다(키 오류·잔액 0·발신번호 미등록·
+        수신 거부). 여기서 401 이 나면 키 문제로 좁혀지고, 잔액이 보이면
+        인증은 통과한 것이라 그 다음을 볼 수 있다.
+        """
+        return self._request("GET", BALANCE, None)
+
     def _post(self, path: str, payload: dict) -> dict:
+        return self._request("POST", path, payload)
+
+    def _request(self, method: str, path: str, payload: dict | None) -> dict:
         req = request.Request(
             API_BASE + path,
-            data=json.dumps(payload).encode(),
+            data=json.dumps(payload).encode() if payload is not None else None,
             headers={
                 "Content-Type": "application/json",
                 "Authorization": self._auth_header(),
             },
-            method="POST",
+            method=method,
         )
         try:
             with request.urlopen(req, timeout=TIMEOUT) as resp:
                 return json.loads(resp.read().decode() or "{}")
         except error.HTTPError as exc:
             body = exc.read().decode(errors="replace")[:300]
-            raise SolapiError(f"솔라피 응답 {exc.code}: {body}") from exc
+            kind = "auth" if exc.code in (401, 403) else "http"
+            raise SolapiError(f"솔라피 응답 {exc.code}: {body}", kind) from exc
         except TimeoutError as exc:
             # 접수까지 됐는지 알 수 없는 유일한 경우다. 그냥 '실패'라고 하면
             # 사장님이 다시 누르고, 같은 손님이 두 통 받는다.
-            raise SolapiError(
-                "솔라피 응답이 시간 안에 오지 않았습니다. **이미 발송됐을 수 "
-                "있으니** 솔라피 콘솔에서 발송 내역을 확인한 뒤 다시 보내세요."
-            ) from exc
+            raise SolapiError(_TIMEOUT_MSG, "timeout") from exc
         except error.URLError as exc:
             if isinstance(exc.reason, TimeoutError):
-                raise SolapiError(
-                    "솔라피 응답이 시간 안에 오지 않았습니다. **이미 발송됐을 수 "
-                    "있으니** 솔라피 콘솔에서 발송 내역을 확인한 뒤 다시 보내세요."
-                ) from exc
-            raise SolapiError(f"솔라피에 연결하지 못했습니다: {exc.reason}") from exc
+                raise SolapiError(_TIMEOUT_MSG, "timeout") from exc
+            raise SolapiError(
+                f"솔라피에 연결하지 못했습니다: {exc.reason}", "network"
+            ) from exc
         except json.JSONDecodeError as exc:
-            raise SolapiError("솔라피 응답을 해석하지 못했습니다.") from exc
+            raise SolapiError("솔라피 응답을 해석하지 못했습니다.", "parse") from exc
 
     def send_many(self, items: list[tuple[str, str]]) -> BulkResult:
         """
@@ -132,7 +162,7 @@ class SolapiClient:
         """
         result = BulkResult()
         if not self.is_live:
-            raise SolapiError("솔라피 키가 설정되지 않았습니다.")
+            raise SolapiError("솔라피 키가 설정되지 않았습니다.", "unset")
 
         for i in range(0, len(items), CHUNK):
             chunk = items[i:i + CHUNK]

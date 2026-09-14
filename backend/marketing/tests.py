@@ -196,6 +196,103 @@ class SolapiClientTests(TestCase):
         self.assertIn("send-many", seen["path"])
 
 
+class SmsStatusTests(TestCase):
+    """'안 온다'의 원인을 갈라 주는 진단 — 문자를 보내지 않는다."""
+
+    def setUp(self):
+        from membership.tests import authenticate
+
+        self.store = Store.objects.create(name="슬로우스텝")
+        authenticate(self.client)
+
+    def test_reports_missing_env(self):
+        with override_settings(SOLAPI_API_KEY="", SOLAPI_API_SECRET="",
+                               SMS_SENDER_PHONE=""):
+            r = self.client.get("/api/v1/sms/status").json()
+        self.assertFalse(r["live"])
+        self.assertEqual(r["auth"], "미설정")
+        self.assertIn("재배포", r["hint"])
+
+    @override_settings(**LIVE)
+    def test_auth_failure_points_at_the_key(self):
+        with patch.object(SolapiClient, "balance",
+                          side_effect=SolapiError("솔라피 응답 401: bad key", "auth")):
+            res = self.client.get("/api/v1/sms/status")
+        self.assertEqual(res.status_code, 502)
+        body = res.json()
+        self.assertEqual(body["auth"], "실패")
+        self.assertIn("401", body["error"])
+        self.assertIn("API Key", body["hint"])
+
+    @override_settings(**LIVE)
+    def test_network_failure_does_not_blame_the_key(self):
+        """연결 실패를 키 문제로 안내하면 멀쩡한 키를 계속 다시 넣게 된다."""
+        with patch.object(
+            SolapiClient, "balance",
+            side_effect=SolapiError("연결하지 못했습니다: 403", "network")
+        ):
+            body = self.client.get("/api/v1/sms/status").json()
+        self.assertEqual(body["kind"], "network")
+        self.assertIn("네트워크", body["hint"])
+        self.assertNotIn("API Key", body["hint"])
+
+    @override_settings(**LIVE)
+    def test_zero_balance_is_called_out(self):
+        with patch.object(SolapiClient, "balance", return_value={"point": 0}):
+            body = self.client.get("/api/v1/sms/status").json()
+        self.assertEqual(body["auth"], "성공")
+        self.assertIn("잔액이 0", body["hint"])
+
+    @override_settings(**LIVE)
+    def test_healthy_shows_sender_to_compare(self):
+        with patch.object(SolapiClient, "balance", return_value={"point": 5000}):
+            body = self.client.get("/api/v1/sms/status").json()
+        self.assertEqual(body["auth"], "성공")
+        self.assertEqual(body["sender"], "021234567")
+        self.assertIn("5000", body["hint"])
+
+    @override_settings(**LIVE)
+    def test_sends_no_message(self):
+        """진단이 문자를 보내면 확인할 때마다 요금이 나간다."""
+        with patch.object(SolapiClient, "balance", return_value={"point": 1}), \
+             patch.object(SolapiClient, "_post") as post:
+            self.client.get("/api/v1/sms/status")
+        post.assert_not_called()
+
+    def test_needs_staff_token(self):
+        self.assertEqual(
+            self.client_class().get("/api/v1/sms/status").status_code, 403
+        )
+
+
+class SolapiAuthFormatTests(TestCase):
+    """서명 date 형식 — 한 글자 틀리면 401 이라 발송이 통째로 안 나간다."""
+
+    @override_settings(**LIVE)
+    def test_date_has_no_utc_offset(self):
+        header = SolapiClient()._auth_header()
+        date = dict(
+            p.strip().split("=", 1) for p in header[len("HMAC-SHA256 "):].split(",")
+        )["date"]
+        self.assertNotIn("+00:00", date)     # 공식 SDK 는 오프셋을 안 붙인다
+        self.assertNotIn("Z", date)
+        datetime.fromisoformat(date)         # 그래도 ISO8601 이어야 한다
+
+    @override_settings(**LIVE)
+    def test_balance_is_a_get(self):
+        seen = {}
+
+        def fake(self, method, path, payload):
+            seen.update(method=method, path=path, payload=payload)
+            return {"point": 100}
+
+        with patch.object(SolapiClient, "_request", fake):
+            SolapiClient().balance()
+        self.assertEqual(seen["method"], "GET")
+        self.assertIsNone(seen["payload"])   # GET 에 본문을 실으면 거부된다
+        self.assertIn("balance", seen["path"])
+
+
 class SmsTestSendTests(TestCase):
     """테스트 발송 — 실전 첫 발송이 42명에게 나가기 전에 한 대로 확인."""
 
