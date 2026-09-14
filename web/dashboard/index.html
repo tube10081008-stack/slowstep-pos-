@@ -137,6 +137,24 @@
   button:disabled { opacity:.5; }
   .preview-box { background:var(--card2); border:1px solid var(--line); border-radius:10px;
     padding:12px; margin-top:10px; font-size:13px; }
+  /* 대상 명단 — 42명이 한 화면을 덮으면 아래 버튼이 안 보인다. 상자 안에서만 구른다. */
+  .rcp-head { display:flex; align-items:center; justify-content:space-between;
+    gap:8px; margin-top:14px; flex-wrap:wrap; }
+  .rcp-head .lnk { background:none; border:0; color:var(--brand); font-size:12px;
+    font-weight:600; cursor:pointer; padding:2px 4px; }
+  .rcp { max-height:260px; overflow-y:auto; border:1px solid var(--line);
+    border-radius:10px; background:#fff; margin-top:6px; }
+  .rcp label { display:flex; align-items:center; gap:9px; flex-direction:row;
+    padding:8px 11px; border-bottom:1px solid var(--line); font-size:13px;
+    margin:0; cursor:pointer; }
+  .rcp label:last-child { border-bottom:0; }
+  .rcp label:hover { background:var(--card2); }
+  .rcp input[type=checkbox] { width:auto; margin:0; flex:0 0 auto; }
+  .rcp .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rcp .nm small { color:var(--muted); font-weight:400; }
+  .rcp .no { font-size:10.5px; font-weight:700; color:#b45309; background:#fff7ed;
+    border:1px solid #fed7aa; border-radius:5px; padding:2px 6px; white-space:nowrap; }
+  .rcp .empty { padding:16px; color:var(--muted); font-size:13px; text-align:center; }
   .chip { display:inline-block; font-size:11px; background:var(--brand-soft); border:1px solid #dfe4ff;
     color:var(--brand-dk); border-radius:6px; padding:4px 8px; margin:2px 3px 0 0; cursor:pointer; font-weight:500; }
   .kakao { background:#fee500; color:#191600; border-radius:12px; padding:12px 14px;
@@ -303,13 +321,53 @@
           마케팅 수신 동의자만 (광고성 필수)
         </label>
         <div class="preview-box" id="previewBox">대상 계산 중…</div>
+
+        <!-- 누구에게 가는지 눈으로 보고 고른다. 숫자만 보고 보내면
+             빼야 할 손님이 섞여 있어도 알 수가 없다. -->
+        <div class="rcp-head">
+          <label style="margin:0">대상 명단</label>
+          <span>
+            <button type="button" class="lnk" onclick="pickAll(true)">전체 선택</button>
+            <button type="button" class="lnk" onclick="pickAll(false)">전체 해제</button>
+            <button type="button" class="lnk" onclick="pickSendable()">받을 수 있는 분만</button>
+          </span>
+        </div>
+        <div class="rcp" id="rcpList">불러오는 중…</div>
+        <div class="muted" id="rcpCount" style="margin-top:6px;font-size:12px;"></div>
       </div>
 
       <!-- 메시지 작성 -->
       <div>
         <label>② 캠페인명</label>
         <input id="campName" placeholder="예: 휴면 고객 컴백 쿠폰" value="이번 주 한정 혜택" />
-        <label>③ 메시지 (변수 클릭 삽입)</label>
+        <!-- 빈 칸을 마주보고 문장을 짜내는 게 제일 오래 걸린다.
+             옵션 몇 개로 초안을 만들고 손보는 쪽이 빠르다. -->
+        <label>③ 문구 자동 생성</label>
+        <div class="frow">
+          <div><label>목적</label>
+            <select id="aiPurpose">
+              <option value="comeback">한동안 안 오신 분께</option>
+              <option value="new_menu">새 메뉴 알림</option>
+              <option value="coupon">쿠폰·혜택 안내</option>
+              <option value="points">포인트 쓰시라고</option>
+              <option value="thanks">감사 인사</option>
+              <option value="notice">매장 소식(휴무 등)</option>
+            </select>
+          </div>
+          <div><label>말투</label>
+            <select id="aiTone">
+              <option value="warm">따뜻하게</option>
+              <option value="casual">친근하게</option>
+              <option value="crisp">짧고 담백하게</option>
+            </select>
+          </div>
+        </div>
+        <input id="aiBenefit" placeholder="꼭 담을 내용 (예: 아메리카노 1+1 · 이번 주까지)" />
+        <button type="button" id="aiBtn" class="ghost" onclick="composeMsg()"
+          style="width:100%;margin-top:8px;">✨ 문구 만들기</button>
+        <div class="muted" id="aiNote" style="margin-top:6px;font-size:12px;"></div>
+
+        <label style="margin-top:14px;">④ 메시지 (변수 클릭 삽입)</label>
         <div>
           <span class="chip" onclick="insertVar('{이름}')">{이름}</span>
           <span class="chip" onclick="insertVar('{포인트}')">{포인트}</span>
@@ -321,7 +379,10 @@
 보유 포인트 {포인트}P로 이번 주 따뜻한 한 잔 어떠세요?
 {등급} 등급 고객님께 아메리카노 1+1 혜택!</textarea>
         <label style="display:flex;align-items:center;gap:8px;flex-direction:row;margin-top:6px;">
-          <input id="isAd" type="checkbox" checked style="width:auto" onchange="renderPreview()" />
+          <!-- 광고성 여부가 바뀌면 '누가 받을 수 있나'도 바뀐다(미동의자 제외).
+               명단의 경고 표시를 같이 다시 그린다. -->
+          <input id="isAd" type="checkbox" checked style="width:auto"
+                 onchange="renderPreview(); renderRecipients(rcpAll);" />
           광고성 메시지 ((광고) 표기 + 수신거부 자동 부가)
         </label>
         <div class="muted" style="margin-top:8px;">미리보기 (첫 대상 기준)</div>
@@ -332,12 +393,11 @@
           <div class="muted" style="margin-bottom:6px;">테스트 발송 · 이 번호 한 대로만 보냅니다(정보성)</div>
           <div style="display:flex;gap:8px;">
             <input id="testPhone" placeholder="010-0000-0000" style="flex:1" />
-            <button id="testBtn" onclick="sendTest()"
-              style="white-space:nowrap;padding:9px 14px;border:1px solid #cfd4da;border-radius:8px;background:#fff;cursor:pointer;font-weight:600;">
-              테스트 발송</button>
-            <button id="diagBtn" onclick="checkSms()" title="문자를 보내지 않고 키·잔액만 확인합니다"
-              style="white-space:nowrap;padding:9px 14px;border:1px solid #cfd4da;border-radius:8px;background:#fff;cursor:pointer;">
-              연결 확인</button>
+            <button id="testBtn" class="ghost" onclick="sendTest()"
+              style="white-space:nowrap;padding:9px 13px;font-size:13px;">테스트 발송</button>
+            <button id="diagBtn" class="ghost" onclick="checkSms()"
+              title="문자를 보내지 않고 키·잔액만 확인합니다"
+              style="white-space:nowrap;padding:9px 13px;font-size:13px;">연결 확인</button>
           </div>
           <div class="muted" id="testResult" style="margin-top:6px;"></div>
         </div>
@@ -505,8 +565,80 @@
       const names = r.sample.slice(0,5).map(m=>m.name).join(", ");
       $("previewBox").innerHTML = `대상 <b style="font-size:16px">${r.count}명</b>` +
         (r.count? `<div class="muted" style="margin-top:6px;">${names}${r.count>5?" 외 "+(r.count-5)+"명":""}</div>`:"");
+      renderRecipients(r.members || []);
       renderPreview();
     } catch(e){ $("previewBox").textContent = "오류: "+e.message; }
+  }
+
+  /* ── 대상 명단 ──────────────────────────────────────────
+     조건이 바뀌면 명단을 다시 그린다. 이때 **이전에 손으로 푼 체크는
+     기억한다** — 조건을 한 번 만질 때마다 뺐던 손님이 되살아나면
+     고른 의미가 없다. */
+  let rcpAll = [], rcpOff = new Set();
+
+  function renderRecipients(list){
+    rcpAll = list;
+    const box = $("rcpList");
+    if(!list.length){
+      box.innerHTML = '<div class="empty">조건에 맞는 손님이 없습니다.</div>';
+      updateRcpCount(); return;
+    }
+    const ad = $("isAd").checked;
+    box.innerHTML = list.map(m=>{
+      // 광고성이면 미동의자는 골라도 서버가 제외한다. 왜 안 가는지
+      // 여기서 미리 보여 줘야 "보냈는데 안 왔다"가 안 생긴다.
+      const blocked = (!m.has_phone && "번호없음") || (ad && !m.marketing_opt_in && "수신거부");
+      return `<label>
+        <input type="checkbox" value="${m.id}" ${rcpOff.has(m.id)?"":"checked"}
+               onchange="toggleRcp(${m.id}, this.checked)" />
+        <span class="nm"><b>${m.name}</b> <small>${m.phone} · ${m.tier_display} · 방문 ${m.visit_count}회</small></span>
+        ${blocked?`<span class="no">${blocked}</span>`:""}
+      </label>`;
+    }).join("");
+    updateRcpCount();
+  }
+
+  function toggleRcp(id, on){ on ? rcpOff.delete(id) : rcpOff.add(id); updateRcpCount(); }
+  function pickAll(on){
+    rcpOff = on ? new Set() : new Set(rcpAll.map(m=>m.id));
+    renderRecipients(rcpAll);
+  }
+  function pickSendable(){
+    const ad = $("isAd").checked;
+    rcpOff = new Set(rcpAll.filter(m => !m.has_phone || (ad && !m.marketing_opt_in)).map(m=>m.id));
+    renderRecipients(rcpAll);
+  }
+  function checkedIds(){ return rcpAll.filter(m=>!rcpOff.has(m.id)).map(m=>m.id); }
+  function updateRcpCount(){
+    const n = checkedIds().length;
+    const ad = $("isAd").checked;
+    const real = rcpAll.filter(m=>!rcpOff.has(m.id) && m.has_phone && (!ad || m.marketing_opt_in)).length;
+    $("rcpCount").innerHTML = `선택 <b>${n}명</b>` +
+      (real !== n ? ` · 실제로 나갈 사람 <b>${real}명</b>(나머지는 자동 제외)` : "");
+  }
+
+  /* 문구 자동 생성 — 키가 없으면 서버가 규칙 기반 초안으로 떨어진다.
+     어느 쪽이 썼는지 밝혀 준다(초안을 그대로 믿고 보내면 안 된다). */
+  async function composeMsg(){
+    $("aiBtn").disabled = true;
+    $("aiNote").textContent = "만드는 중…";
+    try {
+      const r = await api("/api/v1/campaigns/compose", { method:"POST",
+        body: JSON.stringify({
+          purpose: $("aiPurpose").value,
+          tone: $("aiTone").value,
+          benefit: $("aiBenefit").value,
+          is_ad: $("isAd").checked,
+          long_form: false,
+        })});
+      $("msg").value = r.text;
+      renderPreview();
+      $("aiNote").innerHTML = (r.source === "gemini"
+        ? "AI가 쓴 초안입니다."
+        : "기본 문구입니다(GEMINI_API_KEY 를 넣으면 AI가 씁니다).") +
+        " <b>보내기 전에 한 번 읽어 주세요.</b>";
+    } catch(e){ $("aiNote").textContent = "❌ " + e.message; }
+    finally { $("aiBtn").disabled = false; }
   }
 
   function insertVar(v){
@@ -589,25 +721,28 @@
   async function sendCampaign(){
     const f = filters();
     if(!$("campName").value.trim()) return toast("캠페인명을 입력하세요");
+    const ids = checkedIds();
+    if(!ids.length) return toast("보낼 손님을 한 명 이상 선택하세요");
     // 실제로 나가는 상태면 몇 명에게 가는지 보여주고 한 번 묻는다.
     // 문자는 되돌릴 수 없어서, 잘못 누른 걸 알았을 땐 이미 늦다.
     if(SMS_LIVE){
-      let n = "";
-      try { n = (await api("/api/v1/segments/preview", {
-        method:"POST", body: JSON.stringify(f) })).count; } catch(e){}
-      const kind = $("isAd").checked ? "광고성" : "정보성";
+      const ad = $("isAd").checked;
+      const real = rcpAll.filter(m=>!rcpOff.has(m.id) && m.has_phone && (!ad||m.marketing_opt_in)).length;
       if(!confirm(
-        `실제로 문자가 나갑니다.\n\n대상 ${n}명 · ${kind}\n` +
-        (($("isAd").checked) ? "(수신 미동의자는 자동 제외됩니다)\n" : "") +
+        `실제로 문자가 나갑니다.\n\n선택 ${ids.length}명 중 ${real}명에게 발송 · ` +
+        (ad ? "광고성" : "정보성") + "\n" +
+        (ad ? "(수신 미동의자는 자동 제외됩니다)\n" : "") +
         `\n보낸 문자는 되돌릴 수 없습니다. 진행할까요?`)) return;
     }
     $("sendBtn").disabled = true; $("sendBtn").textContent = "발송 중…";
     try {
-      // 1) 세그먼트 저장 → 2) 캠페인 생성 → 3) 발송
+      // 1) 세그먼트 저장(기록용) → 2) 캠페인 생성 → 3) 발송
+      // 고른 사람 목록을 캠페인에 박아 둔다. 세그먼트만 남기면 나중에
+      // 조건이 같아도 '그때 누구에게 보냈나'를 되짚을 수 없다.
       const seg = await api("/api/v1/segments", { method:"POST", body: JSON.stringify({
         name: $("campName").value + " 대상", ...f }) });
       const camp = await api("/api/v1/campaigns", { method:"POST", body: JSON.stringify({
-        name: $("campName").value, segment: seg.id,
+        name: $("campName").value, segment: seg.id, recipients: ids,
         message_template: $("msg").value, is_ad: $("isAd").checked }) });
       const res = await api(`/api/v1/campaigns/${camp.id}/send`, { method:"POST" });
       $("sendResult").innerHTML =

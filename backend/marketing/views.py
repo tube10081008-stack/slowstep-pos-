@@ -22,6 +22,42 @@ from .sender import MessageClient, SendError
 from .services import CampaignError, dashboard_stats, send_campaign
 
 
+class ComposeView(APIView):
+    """
+    문자 문구 자동 생성 🔒 — `POST {"purpose": "comeback", "benefit": "...",
+    "tone": "warm", "is_ad": true, "long_form": false}`.
+
+    빈 칸을 마주보고 문장을 짜내는 게 실제로 제일 오래 걸린다. 옵션 몇 개로
+    초안을 만들고 사장님이 손보는 쪽이 빠르다.
+
+    `GEMINI_API_KEY` 가 없으면 규칙 기반 초안으로 떨어진다(`source: "rule"`).
+    AI가 없다고 기능이 멈추면 안 된다.
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def post(self, request):
+        from .compose import PURPOSES, TONES, compose
+
+        purpose = (request.data.get("purpose") or "").strip()
+        if purpose not in PURPOSES:
+            return Response(
+                {"detail": f"목적은 {', '.join(PURPOSES)} 중 하나여야 합니다."},
+                status=400,
+            )
+        tone = (request.data.get("tone") or "warm").strip()
+        if tone not in TONES:
+            tone = "warm"
+        benefit = (request.data.get("benefit") or "").strip()[:200]
+        return Response(compose(
+            purpose=purpose,
+            benefit=benefit,
+            tone=tone,
+            is_ad=bool(request.data.get("is_ad", True)),
+            long_form=bool(request.data.get("long_form", False)),
+        ))
+
+
 class SmsStatusView(APIView):
     """
     문자 연결 진단 🔒 — `GET`. **문자를 보내지 않는다.**
@@ -153,16 +189,39 @@ class SegmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"])
     def preview(self, request):
-        """저장 없이 필터로 대상 회원 수·샘플 미리보기."""
+        """
+        저장 없이 필터로 대상 회원 미리보기.
+
+        `sample` 은 예전 호환용으로 10명만 남기고, **`members` 에 전체를 싣는다** —
+        화면에서 체크박스로 골라야 하므로 앞 10명만 봐서는 고를 수가 없다.
+        `sendable` 은 이 캠페인이 광고성일 때 실제로 받을 수 있는 사람인지다
+        (수신 미동의·연락처 없음은 골라도 서버가 제외한다).
+        """
         ser = SegmentPreviewSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         # 임시 Segment 인스턴스로 쿼리 (저장 X).
         tmp = Segment(**ser.validated_data)
         qs = resolve_members(tmp)
-        sample = qs[:10]
+        rows = [
+            {
+                "id": m.id,
+                "name": m.name,
+                "phone": m.phone,
+                "tier": m.tier,
+                "tier_display": m.get_tier_display(),
+                "points": m.points,
+                "visit_count": m.visit_count,
+                "total_spent": m.total_spent,
+                "marketing_opt_in": m.marketing_opt_in,
+                "has_phone": len([c for c in (m.phone or "") if c.isdigit()]) >= 10,
+            }
+            for m in qs[:500]
+        ]
         return Response({
             "count": qs.count(),
-            "sample": MemberSerializer(sample, many=True).data,
+            "members": rows,
+            "opt_in_count": sum(1 for r in rows if r["marketing_opt_in"]),
+            "sample": MemberSerializer(qs[:10], many=True).data,
         })
 
     @action(detail=True, methods=["get"])

@@ -58,6 +58,13 @@ class Campaign(models.Model):
         Segment, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="campaigns", verbose_name="세그먼트",
     )
+    # 직접 고른 수신자. 비어 있으면 세그먼트로 대상을 뽑는다.
+    # 세그먼트만으로는 "이 사람은 빼고 보내자"가 안 된다 — 계산대에서
+    # 아는 사정(그만 받겠다고 하셨다든지)은 필터로 표현되지 않는다.
+    # **고른 뒤에도 수신 동의 확인은 그대로 한다**(services.send_campaign).
+    recipients = models.ManyToManyField(
+        Member, blank=True, related_name="campaigns", verbose_name="직접 고른 수신자"
+    )
     channel = models.CharField(
         "채널", max_length=20, choices=Channel.choices, default=Channel.ALIMTALK
     )

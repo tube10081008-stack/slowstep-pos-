@@ -37,8 +37,11 @@ def send_campaign(campaign: Campaign) -> Campaign:
     """
     if campaign.status == Campaign.Status.SENT:
         raise CampaignError("이미 발송된 캠페인입니다.")
-    if not campaign.segment:
-        raise CampaignError("세그먼트가 지정되지 않았습니다.")
+    # 직접 고른 수신자가 있으면 그 사람들에게만 보낸다(세그먼트 무시).
+    # 화면에서 체크를 푼 손님이 필터에 걸려 다시 들어오면 고른 의미가 없다.
+    chosen = list(campaign.recipients.all()) if campaign.pk else []
+    if not chosen and not campaign.segment:
+        raise CampaignError("받을 대상이 없습니다. 세그먼트를 고르거나 손님을 선택하세요.")
     if campaign.is_ad and not ad_window_open():
         # 발송하고 나서 사과할 수 없는 종류의 실수라 아예 막는다.
         raise CampaignError(
@@ -46,7 +49,7 @@ def send_campaign(campaign: Campaign) -> Campaign:
             "정보성이면 캠페인의 '광고성' 체크를 해제하세요."
         )
 
-    members = list(resolve_members(campaign.segment))
+    members = chosen or list(resolve_members(campaign.segment))
     client = MessageClient()
     sent = failed = skipped = 0
     pending: list[tuple[str, str]] = []       # (번호, 본문)

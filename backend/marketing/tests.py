@@ -196,6 +196,201 @@ class SolapiClientTests(TestCase):
         self.assertIn("send-many", seen["path"])
 
 
+class ComposeTests(TestCase):
+    """문구 자동 생성 — 모델이 돌려준 문장을 그대로 믿지 않는다."""
+
+    def setUp(self):
+        from membership.tests import authenticate
+
+        self.store = Store.objects.create(name="슬로우스텝")
+        authenticate(self.client)
+
+    def _post(self, **data):
+        return self.client.post(
+            "/api/v1/campaigns/compose",
+            data={"purpose": "comeback", **data},
+            content_type="application/json",
+        )
+
+    def test_falls_back_without_api_key(self):
+        """AI가 없다고 기능이 멈추면 안 된다."""
+        with patch.dict("os.environ", {"GEMINI_API_KEY": ""}, clear=False):
+            body = self._post().json()
+        self.assertEqual(body["source"], "rule")
+        self.assertTrue(body["text"])
+
+    def test_uses_gemini_when_available(self):
+        with patch("marketing.compose._gemini", return_value="{이름}님, 오랜만이에요."):
+            body = self._post().json()
+        self.assertEqual(body["source"], "gemini")
+        self.assertEqual(body["text"], "{이름}님, 오랜만이에요.")
+
+    def test_strips_ad_notice_the_system_adds(self):
+        """모델이 (광고)·수신거부를 쓰면 발송 때 두 번 들어간다."""
+        from marketing.compose import sanitize
+
+        out = sanitize("(광고) 신메뉴 나왔어요\n\n무료수신거부 080-111-2222", 200)
+        self.assertNotIn("(광고)", out)
+        self.assertNotIn("무료수신거부", out)
+        self.assertIn("신메뉴", out)
+
+    def test_strips_invented_variables(self):
+        """모르는 변수는 치환이 안 된 채 손님에게 그대로 간다."""
+        from marketing.compose import sanitize
+
+        out = sanitize("{성함}님 {이름}님 {잔액}P", 200)
+        self.assertNotIn("{성함}", out)
+        self.assertNotIn("{잔액}", out)
+        self.assertIn("{이름}", out)
+
+    def test_strips_phone_and_link(self):
+        from marketing.compose import sanitize
+
+        out = sanitize("문의 031-900-9231 https://example.com 오세요", 200)
+        self.assertNotIn("031", out)
+        self.assertNotIn("http", out)
+
+    def test_respects_sms_budget_for_ads(self):
+        """광고성은 (광고)+수신거부가 34바이트를 먼저 먹는다."""
+        from marketing.compose import budget_for
+
+        self.assertEqual(budget_for(is_ad=True, long_form=False), 56)
+        self.assertEqual(budget_for(is_ad=False, long_form=False), 90)
+
+    def test_long_output_is_trimmed(self):
+        long_text = "안녕하세요 슬로우스텝입니다. " * 20
+        with patch("marketing.compose._gemini", return_value=long_text):
+            body = self._post(is_ad=True).json()
+        self.assertLessEqual(body["bytes"], body["budget"])
+        self.assertEqual(body["type"], "SMS")
+
+    def test_trim_prefers_sentence_end(self):
+        from marketing.compose import trim_to
+
+        out = trim_to("첫 문장입니다. 둘째 문장입니다. 셋째 문장입니다.", 20)
+        self.assertTrue(out.endswith("다."), out)
+
+    def test_benefit_survives_tight_ad_budget(self):
+        """사장님이 적어 넣은 혜택이 잘려나가면 문자를 보낼 이유가 없다."""
+        with patch.dict("os.environ", {"GEMINI_API_KEY": ""}, clear=False):
+            body = self._post(
+                purpose="coupon", benefit="아메리카노 1+1, 이번 주까지", is_ad=True
+            ).json()
+        self.assertIn("아메리카노 1+1", body["text"])
+        self.assertIn("이번 주까지", body["text"])
+        self.assertLessEqual(body["bytes"], body["budget"])
+
+    def test_bad_purpose_rejected(self):
+        self.assertEqual(self._post(purpose="아무거나").status_code, 400)
+
+    def test_needs_staff_token(self):
+        res = self.client_class().post(
+            "/api/v1/campaigns/compose",
+            data={"purpose": "comeback"}, content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 403)
+
+
+class RecipientPickTests(TestCase):
+    """체크해서 고른 사람에게만 나가야 한다."""
+
+    def setUp(self):
+        from membership.tests import authenticate
+
+        self.store = Store.objects.create(name="슬로우스텝")
+        self.a = make_member(self.store, "01011112222", "가손님", True)
+        self.b = make_member(self.store, "01033334444", "나손님", True)
+        self.c = make_member(self.store, "01055556666", "다손님", True)
+        self.seg = Segment.objects.create(name="전체", require_opt_in=False)
+        authenticate(self.client)
+
+    def test_sends_only_to_chosen(self):
+        c = Campaign.objects.create(
+            name="고른 사람만", segment=self.seg,
+            message_template="{이름}님 안녕하세요", is_ad=False,
+        )
+        c.recipients.set([self.a, self.c])       # 나손님은 뺐다
+        send_campaign(c)
+        got = set(MessageLog.objects.values_list("member__name", flat=True))
+        self.assertEqual(got, {"가손님", "다손님"})
+        self.assertEqual(c.sent_count, 2)
+
+    def test_chosen_wins_over_segment(self):
+        """조건에 맞아도 체크를 풀었으면 안 간다."""
+        c = Campaign.objects.create(
+            name="교집합 아님", segment=self.seg,
+            message_template="안녕", is_ad=False,
+        )
+        c.recipients.set([self.b])
+        send_campaign(c)
+        self.assertEqual(c.recipient_count, 1)
+        self.assertEqual(
+            list(MessageLog.objects.values_list("member__name", flat=True)), ["나손님"]
+        )
+
+    def test_opt_in_still_enforced_on_chosen(self):
+        """골랐다고 미동의자에게 광고가 나가면 안 된다 — 과태료 대상이다."""
+        no = make_member(self.store, "01077778888", "미동의", False)
+        c = Campaign.objects.create(
+            name="광고", segment=self.seg, message_template="신메뉴", is_ad=True,
+        )
+        c.recipients.set([self.a, no])
+        with patch("marketing.services.ad_window_open", return_value=True):
+            send_campaign(c)
+        self.assertEqual(c.sent_count, 1)
+        self.assertEqual(c.skipped_count, 1)
+        self.assertEqual(
+            MessageLog.objects.get(member=no).reason, "마케팅 수신 미동의"
+        )
+
+    def test_falls_back_to_segment_when_none_chosen(self):
+        c = Campaign.objects.create(
+            name="세그먼트", segment=self.seg, message_template="안녕", is_ad=False,
+        )
+        send_campaign(c)
+        self.assertEqual(c.recipient_count, 3)
+
+    def test_no_target_at_all_is_rejected(self):
+        c = Campaign.objects.create(name="대상없음", message_template="안녕")
+        with self.assertRaises(CampaignError) as ctx:
+            send_campaign(c)
+        self.assertIn("받을 대상이 없습니다", str(ctx.exception))
+
+    def test_preview_lists_members_for_checkboxes(self):
+        """앞 10명만 줘서는 체크해서 고를 수가 없다."""
+        res = self.client.post(
+            "/api/v1/segments/preview",
+            data={"require_opt_in": False}, content_type="application/json",
+        ).json()
+        self.assertEqual(res["count"], 3)
+        self.assertEqual(len(res["members"]), 3)
+        row = res["members"][0]
+        for key in ("id", "name", "phone", "tier_display",
+                    "marketing_opt_in", "has_phone"):
+            self.assertIn(key, row)
+
+    def test_preview_flags_unreachable(self):
+        make_member(self.store, "없음", "번호이상", True)
+        res = self.client.post(
+            "/api/v1/segments/preview",
+            data={"require_opt_in": False}, content_type="application/json",
+        ).json()
+        bad = [m for m in res["members"] if m["name"] == "번호이상"][0]
+        self.assertFalse(bad["has_phone"])
+
+    def test_campaign_api_accepts_recipients(self):
+        res = self.client.post(
+            "/api/v1/campaigns",
+            data={"name": "API", "segment": self.seg.id,
+                  "recipients": [self.a.id, self.b.id],
+                  "message_template": "안녕", "is_ad": False},
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 201)
+        c = Campaign.objects.get(pk=res.json()["id"])
+        self.assertEqual(c.recipients.count(), 2)
+
+
 class SmsStatusTests(TestCase):
     """'안 온다'의 원인을 갈라 주는 진단 — 문자를 보내지 않는다."""
 
