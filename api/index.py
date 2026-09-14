@@ -4,15 +4,23 @@ Vercel 서버리스 진입점 — Django(WSGI) 전체를 하나의 함수로 서
 - API(/api/v1) + 웹페이지(/pos /member /dashboard)를 같은 함수가 처리.
 - 콜드스타트 시 DB 스키마가 없으면 자동 migrate + 데모 시드(터미널 불필요).
 - DATABASE_URL(Neon 등) 주입 시 영구 Postgres, 미주입 시 /tmp SQLite(임시).
+
+복원력 설계:
+- 부팅 시 DB 준비(migrate/seed)가 실패해도 인스턴스를 죽이지 않고,
+  이후 매 요청 진입 시 준비를 재시도한다(성공하면 플래그로 스킵).
+  → Neon 콜드스타트(수 초) 타이밍에 깨어난 인스턴스가 영구 500에 빠지지 않음.
+- Postgres에서는 advisory lock으로 동시 콜드스타트 인스턴스들의
+  migrate/seed 동시 실행(레이스)을 막는다.
 """
 import logging
 import os
 import sys
+import threading
 from pathlib import Path
 
 log = logging.getLogger("slowstep")
 
-# backend/ 를 import 경로에 추가 (이 파일은 slowstep-pos/api/index.py).
+# backend/ 를 import 경로에 추가 (이 파일은 <repo>/api/index.py).
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
 
@@ -22,35 +30,125 @@ import django  # noqa: E402
 
 django.setup()
 
+# migrate/seed 동시 실행 방지용 advisory lock 키(임의 고정값).
+_MIGRATION_LOCK_KEY = 815_001
+
 
 def _ensure_database() -> None:
-    """스키마가 없으면 migrate, 비어 있으면 데모 데이터 시드(멱등)."""
+    """migrate(항상) + 비어 있으면 데모 데이터 시드(멱등).
+
+    **migrate는 조건 없이 실행한다.** 예전에는 '테이블이 없을 때만' 돌렸는데,
+    그러면 첫 배포 이후에 추가된 마이그레이션이 영영 적용되지 않는다
+    (기존 테이블은 존재하므로 조회가 성공해 버린다). 새 컬럼을 읽는 순간
+    'column does not exist'로 API 전체가 500이 됐다.
+    적용할 게 없으면 migrate는 사실상 즉시 끝나므로 매번 호출해도 안전하다.
+
+    Postgres에서는 advisory lock으로 감싸 동시 인스턴스의 중복 실행을 막는다.
+    """
     from django.core.management import call_command
-    from django.db.utils import OperationalError, ProgrammingError
+    from django.db import connection
 
     from membership.models import Store
 
+    is_pg = connection.vendor == "postgresql"
+    if is_pg:
+        with connection.cursor() as cur:
+            cur.execute("SELECT pg_advisory_lock(%s)", [_MIGRATION_LOCK_KEY])
     try:
-        seeded = Store.objects.exists()
-    except (OperationalError, ProgrammingError):
         call_command("migrate", "--noinput")
-        seeded = False
+        seeded = Store.objects.exists()
 
-    if not seeded:
+        if not seeded:
+            try:
+                # 매장·메뉴·미션은 운영에 필요한 설정 → 항상 시드.
+                # 샘플 회원(김슬로우 등)은 만들지 않는다 — 실매장 랭킹에 섞인다.
+                call_command("seed_demo", "--no-members")
+                # 가짜 회원·매출은 데모용 → 명시적으로 켤 때만.
+                # (실매장에서 켜면 매출·마진 지표가 오염된다)
+                if os.environ.get("SEED_MARKETING", "").lower() in ("1", "true", "yes"):
+                    call_command("seed_marketing")
+            except Exception as exc:  # 시드 실패는 치명적이지 않음
+                log.warning("seed skipped: %s", exc)
+
+        # 레시피는 매장이 이미 만들어진 뒤에 추가된 기능이라 위 블록에 못 넣는다.
+        # 서버리스엔 셸이 없어 manage.py 를 못 돌리므로 부팅 때 보장한다.
+        # 이미 적혀 있는 레시피는 덮어쓰지 않으므로 매번 돌아도 안전하다.
         try:
-            call_command("seed_demo")
-            call_command("seed_marketing")
-        except Exception as exc:  # 시드 실패는 치명적이지 않음
-            log.warning("seed skipped: %s", exc)
+            from membership.models import MenuItem
+
+            if not MenuItem.objects.exclude(recipe="").exists():
+                call_command("seed_recipes")
+
+            # 사이즈업 추가금도 메뉴가 만들어진 뒤 추가된 설정이라 여기서 보장한다.
+            # 이미 값이 있으면(사장님이 바꿨으면) 건드리지 않는다.
+            from membership.management.commands.seed_demo import SIZE_UP
+
+            for _name, _up in SIZE_UP.items():
+                MenuItem.objects.filter(name=_name, size_up_price=0).update(size_up_price=_up)
+        except Exception as exc:
+            log.warning("seed_recipes skipped: %s", exc)
+
+        # 이미 들어간 데모 데이터 정리(실매장 전환). 대상이 없으면 no-op이라
+        # 환경변수를 켜둔 채로 둬도 안전하다.
+        if os.environ.get("PURGE_DEMO", "").lower() in ("1", "true", "yes"):
+            try:
+                call_command("purge_demo")
+            except Exception as exc:
+                log.warning("purge_demo skipped: %s", exc)
+
+        # 관리자 계정(메뉴·원가 관리용): 환경변수가 있고 아직 없으면 생성.
+        # 서버리스엔 셸이 없어 createsuperuser를 못 돌리므로 여기서 보장한다.
+        try:
+            call_command("ensure_admin")
+        except Exception as exc:  # 관리자 생성 실패도 서비스는 계속
+            log.warning("ensure_admin skipped: %s", exc)
+    finally:
+        if is_pg:
+            try:
+                with connection.cursor() as cur:
+                    cur.execute(
+                        "SELECT pg_advisory_unlock(%s)", [_MIGRATION_LOCK_KEY]
+                    )
+            except Exception:  # 연결이 이미 닫혔으면 세션 종료로 자동 해제됨
+                pass
 
 
+_db_ready = False
+_db_lock = threading.Lock()
+
+
+def _prepare_database() -> None:
+    """DB 준비를 1회 성공할 때까지 재시도 가능하게 감싼 래퍼(스레드 안전)."""
+    global _db_ready
+    if _db_ready:
+        return
+    with _db_lock:
+        if _db_ready:
+            return
+        _ensure_database()
+        _db_ready = True
+
+
+# 부팅 시 1차 시도 — 실패해도 인스턴스는 살리고 요청 시 재시도.
 try:
-    _ensure_database()
-except Exception as exc:  # 부팅은 계속, 로그만 남김
-    log.error("DB setup error: %s", exc)
+    _prepare_database()
+except Exception as exc:
+    log.error("DB setup deferred (will retry per-request): %s", exc)
 
 from django.core.wsgi import get_wsgi_application  # noqa: E402
 
+_django_app = get_wsgi_application()
+
+
+def app(environ, start_response):
+    """WSGI 진입점: DB가 아직 준비 안 됐으면 요청마다 재시도 후 위임."""
+    if not _db_ready:
+        try:
+            _prepare_database()
+        except Exception as exc:
+            log.error("DB setup retry failed: %s", exc)
+    return _django_app(environ, start_response)
+
+
 # Vercel @vercel/python 은 `app`(WSGI/ASGI)을 자동 인식한다.
-app = get_wsgi_application()
 application = app

@@ -20,7 +20,7 @@ services:
     runtime: python
     plan: free
     rootDir: backend
-    branch: claude/multi-project-bottleneck-analysis-ppa8qq
+    branch: main
     buildCommand: "pip install -r requirements-prod.txt && python manage.py collectstatic --noinput"
     startCommand: "python manage.py migrate && python manage.py seed_demo && python manage.py seed_marketing && gunicorn config.wsgi:application"
     healthCheckPath: /api/v1/store
