@@ -326,6 +326,19 @@
         </label>
         <div class="muted" style="margin-top:8px;">미리보기 (첫 대상 기준)</div>
         <div class="kakao" id="kakaoPreview">—</div>
+        <div class="muted" id="msgLen" style="margin-top:6px;font-size:12px;"></div>
+        <!-- 실전 전 한 대로 확인 — 42명에게 나간 문자는 못 되돌린다 -->
+        <div style="margin-top:12px;padding:10px 12px;background:#f6f7f9;border:1px solid #e3e6ea;border-radius:8px;">
+          <div class="muted" style="margin-bottom:6px;">테스트 발송 · 이 번호 한 대로만 보냅니다(정보성)</div>
+          <div style="display:flex;gap:8px;">
+            <input id="testPhone" placeholder="010-0000-0000" style="flex:1" />
+            <button id="testBtn" onclick="sendTest()"
+              style="white-space:nowrap;padding:9px 14px;border:1px solid #cfd4da;border-radius:8px;background:#fff;cursor:pointer;font-weight:600;">
+              테스트 발송</button>
+          </div>
+          <div class="muted" id="testResult" style="margin-top:6px;"></div>
+        </div>
+
         <button class="send" id="sendBtn" onclick="sendCampaign()">발송하기</button>
         <div class="result" id="sendResult"></div>
       </div>
@@ -506,13 +519,66 @@
       body = body.replace(/{이름}/g,m.name).replace(/{포인트}/g,num(m.points))
         .replace(/{등급}/g,TIER_LABEL[m.tier]).replace(/{스탬프}/g,m.stamps).replace(/{방문}/g,m.visit_count);
     }
-    if($("isAd").checked) body = "(광고) "+body+"\n\n무료수신거부 080-000-0000";
+    if($("isAd").checked) body = "(광고) "+body+"\n\n무료수신거부 "+OPT_OUT;
     $("kakaoPreview").textContent = body || "—";
+
+    /* SMS 냐 LMS 냐 — 요금이 3배 가까이 차이 난다. 광고성은 (광고) 표기와
+       수신거부 안내(34바이트)가 먼저 먹고 들어가서, 본문 한글 28자만 넘으면
+       바로 LMS 다. 보내고 나서 청구서로 알면 늦다. */
+    const bytes = euckrBytes(body);
+    const el = $("msgLen");
+    if(el){
+      const lms = bytes > 90;
+      el.innerHTML = lms
+        ? `<b style="color:#b45309">LMS</b> · ${bytes}바이트 — 90바이트를 넘어 장문 요금(약 3배)입니다.`
+        : `<b style="color:#16a34a">SMS</b> · ${bytes}/90바이트 — 한글 ${Math.floor((90-bytes)/2)}자 더 쓸 수 있습니다.`;
+    }
   }
+
+  /* EUC-KR 기준 바이트 — 한글·전각 2, 나머지 1. 서버(solapi.py)와 같은 잣대로
+     재야 미리보기와 실제 발송이 어긋나지 않는다. */
+  function euckrBytes(s){
+    let n = 0;
+    for(const ch of (s||"")) n += ch.codePointAt(0) > 0x7f ? 2 : 1;
+    return n;
+  }
+
+  /* 테스트 발송 — 본인 폰 한 대로. 발신번호 등록·잔액·키가 다 맞는지
+     확인하는 용도라 항상 정보성으로 나간다(광고 표기 없음). */
+  async function sendTest(){
+    const phone = ($("testPhone").value||"").trim();
+    const text = ($("msg").value||"").trim();
+    if(!phone) return toast("받을 번호를 입력하세요");
+    if(!text) return toast("메시지를 입력하세요");
+    $("testBtn").disabled = true;
+    $("testResult").textContent = "보내는 중…";
+    try {
+      const r = await api("/api/v1/sms/test", { method:"POST",
+        body: JSON.stringify({ phone, text }) });
+      $("testResult").innerHTML = r.mocked
+        ? "🧪 Mock — 실제로는 안 나갔습니다. 솔라피 키를 넣어야 진짜 발송됩니다."
+        : `✅ ${phone} 로 발송했습니다. 폰을 확인해 보세요.`;
+    } catch(e){ $("testResult").innerHTML = "❌ " + e.message; }
+    finally { $("testBtn").disabled = false; }
+  }
+
+  let SMS_LIVE = false, OPT_OUT = "080-0000-0000";   // /health 가 실제 값으로 덮어쓴다
 
   async function sendCampaign(){
     const f = filters();
     if(!$("campName").value.trim()) return toast("캠페인명을 입력하세요");
+    // 실제로 나가는 상태면 몇 명에게 가는지 보여주고 한 번 묻는다.
+    // 문자는 되돌릴 수 없어서, 잘못 누른 걸 알았을 땐 이미 늦다.
+    if(SMS_LIVE){
+      let n = "";
+      try { n = (await api("/api/v1/segments/preview", {
+        method:"POST", body: JSON.stringify(f) })).count; } catch(e){}
+      const kind = $("isAd").checked ? "광고성" : "정보성";
+      if(!confirm(
+        `실제로 문자가 나갑니다.\n\n대상 ${n}명 · ${kind}\n` +
+        (($("isAd").checked) ? "(수신 미동의자는 자동 제외됩니다)\n" : "") +
+        `\n보낸 문자는 되돌릴 수 없습니다. 진행할까요?`)) return;
+    }
     $("sendBtn").disabled = true; $("sendBtn").textContent = "발송 중…";
     try {
       // 1) 세그먼트 저장 → 2) 캠페인 생성 → 3) 발송
@@ -655,6 +721,9 @@
       const h = await api("/api/v1/health");
       // 문자 발송이 실제로 나가는 상태인지 — 눌러 보고 알면 늦다.
       const mode = (h.config||{}).sms;
+      SMS_LIVE = mode === "live";
+      OPT_OUT = (h.config||{}).sms_opt_out || OPT_OUT;
+      renderPreview();                     // 실제 수신거부 번호로 다시 그린다
       const el = $("smsMode");
       if(el){
         if(mode === "live") el.innerHTML = "📨 <b>실제 발송</b> — 누르면 손님 폰으로 문자가 나갑니다.";

@@ -146,6 +146,9 @@ class HealthView(APIView):
         body["config"] = {
             "store_pin": "env" if pin_from_env else ("dev" if settings.DEBUG else "unset"),
             "sms": "live" if sms_live else ("mock" if not any(sms_parts.values()) else "partial"),
+            # 광고 문자마다 찍혀 나가는 번호라 비밀이 아니다. 대시보드
+            # 미리보기가 실제로 나갈 문구와 같아야 해서 함께 내려 준다.
+            "sms_opt_out": settings.SMS_OPT_OUT_NUMBER,
         }
         if any(sms_parts.values()) and not sms_live:
             missing = ", ".join(k for k, v in sms_parts.items() if not v)

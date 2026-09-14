@@ -18,7 +18,47 @@ from .serializers import (
     SegmentPreviewSerializer,
     SegmentSerializer,
 )
+from .sender import MessageClient, SendError
 from .services import CampaignError, dashboard_stats, send_campaign
+
+
+class SmsTestView(APIView):
+    """
+    테스트 발송 🔒 — `POST {"phone": "01012345678", "text": "..."}`.
+
+    실전 첫 발송이 곧바로 42명에게 나가면 되돌릴 수 없다. 발신번호 등록,
+    잔액, 키가 다 맞는지 **본인 폰 한 대로** 먼저 확인하는 통로다.
+
+    - 항상 정보성으로 나간다((광고) 표기 없음). 광고성 테스트는 야간 제한과
+      동의 확인에 걸리므로 여기서 다루지 않는다.
+    - MessageLog 를 남기지 않는다 — 캠페인 발송 통계가 테스트로 오염된다.
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def post(self, request):
+        phone = (request.data.get("phone") or "").strip()
+        if len([c for c in phone if c.isdigit()]) < 10:
+            return Response({"detail": "받을 번호를 정확히 입력해 주세요."}, status=400)
+        text = (request.data.get("text") or "").strip()
+        if not text:
+            return Response({"detail": "보낼 내용을 입력해 주세요."}, status=400)
+        if len(text) > 1000:
+            return Response({"detail": "내용이 너무 깁니다(1,000자 이내)."}, status=400)
+
+        client = MessageClient()
+        try:
+            res = client.send_one(phone, text)
+        except SendError as exc:
+            return Response({"detail": str(exc)}, status=502)
+        if not res.success:
+            return Response({"detail": res.reason or "발송에 실패했습니다."}, status=502)
+        return Response({
+            "success": True,
+            "phone": phone,
+            "mocked": res.mocked,
+            "live": client.is_live,
+        })
 
 
 class DashboardView(APIView):

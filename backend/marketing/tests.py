@@ -196,6 +196,80 @@ class SolapiClientTests(TestCase):
         self.assertIn("send-many", seen["path"])
 
 
+class SmsTestSendTests(TestCase):
+    """테스트 발송 — 실전 첫 발송이 42명에게 나가기 전에 한 대로 확인."""
+
+    def setUp(self):
+        from membership.tests import authenticate
+
+        self.store = Store.objects.create(name="슬로우스텝")
+        authenticate(self.client)
+
+    def _post(self, **data):
+        return self.client.post(
+            "/api/v1/sms/test", data=data, content_type="application/json"
+        )
+
+    def test_mock_when_no_keys(self):
+        res = self._post(phone="010-1111-2222", text="테스트입니다")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json()["mocked"])
+        self.assertFalse(res.json()["live"])
+
+    @override_settings(**LIVE)
+    def test_live_send(self):
+        seen = {}
+
+        def fake(self, path, payload):
+            seen["payload"] = payload
+            return {}
+
+        with patch.object(SolapiClient, "_post", fake):
+            res = self._post(phone="010-1111-2222", text="테스트입니다")
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.json()["mocked"])
+        self.assertEqual(seen["payload"]["messages"][0]["to"], "01011112222")
+
+    @override_settings(**LIVE)
+    def test_never_marked_as_ad(self):
+        """테스트는 항상 정보성 — (광고) 표기가 붙으면 안 된다."""
+        seen = {}
+        with patch.object(
+            SolapiClient, "_post",
+            lambda s, p, pay: seen.update(payload=pay) or {}
+        ):
+            self._post(phone="01011112222", text="신메뉴 안내")
+        self.assertEqual(seen["payload"]["messages"][0]["text"], "신메뉴 안내")
+
+    def test_leaves_no_campaign_log(self):
+        """캠페인 통계가 테스트 발송으로 오염되면 안 된다."""
+        self._post(phone="01011112222", text="테스트")
+        self.assertEqual(MessageLog.objects.count(), 0)
+
+    def test_bad_phone_rejected(self):
+        self.assertEqual(self._post(phone="123", text="테스트").status_code, 400)
+
+    def test_empty_text_rejected(self):
+        self.assertEqual(self._post(phone="01011112222", text="  ").status_code, 400)
+
+    @override_settings(**LIVE)
+    def test_provider_failure_reported(self):
+        with patch.object(
+            SolapiClient, "_post", side_effect=SolapiError("인증 실패")
+        ):
+            res = self._post(phone="01011112222", text="테스트")
+        self.assertEqual(res.status_code, 502)
+        self.assertIn("인증 실패", res.json()["detail"])
+
+    def test_needs_staff_token(self):
+        res = self.client_class().post(
+            "/api/v1/sms/test",
+            data={"phone": "01011112222", "text": "테스트"},
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 403)
+
+
 class CampaignSendTests(TestCase):
     def setUp(self):
         self.store = Store.objects.create(name="슬로우스텝")
