@@ -91,6 +91,17 @@
     border-radius:10px; border:0; cursor:pointer; }
   .foot .cancel { background:#fff; border:1px solid var(--line); color:var(--txt); }
   .foot .save { background:var(--brand); color:#fff; }
+  .opts { display:flex; gap:6px; flex-wrap:wrap; }
+  .opts button { flex:1; min-width:80px; font-family:inherit; font-size:13px; font-weight:600;
+    padding:10px 8px; border-radius:9px; border:1px solid var(--line); background:#fff;
+    color:var(--muted); cursor:pointer; }
+  .opts button.on { background:var(--brand-soft); border-color:#c7d0ff; color:var(--brand-dk); }
+
+  .samples { display:grid; grid-template-columns:repeat(4, 1fr); gap:7px; margin-top:4px; }
+  .samples button { padding:0; border:1px solid var(--line); border-radius:9px;
+    background:var(--card2); cursor:pointer; aspect-ratio:1; overflow:hidden; }
+  .samples img { width:100%; height:100%; object-fit:cover; display:block; }
+
   .msg { font-size:12.5px; color:var(--red); margin-top:10px; min-height:16px; }
 
   .toast { position:fixed; left:50%; bottom:22px; transform:translateX(-50%);
@@ -140,11 +151,29 @@
       <button type="button" onclick="pickFile()">사진 고르기</button>
       <button type="button" class="danger" onclick="dropPic()">사진 지우기</button>
     </div>
+    <!-- 진짜 사진을 찍기 전에 메뉴판이 어떻게 보이는지 확인할 수 있게. -->
+    <label>샘플 사진으로 먼저 보기</label>
+    <div class="samples" id="eSamples"></div>
 
     <label>메뉴 이름</label>
     <input type="text" id="eName" />
     <label>가격</label>
     <input type="number" id="ePrice" inputmode="numeric" />
+
+    <!-- POS에서 메뉴를 추가하면 샷만 켜진 채 들어간다. 여기서 켜야
+         주문할 때 디카페인·오트 고르는 칸이 생긴다. -->
+    <label>주문할 때 고를 수 있는 옵션</label>
+    <div class="opts" id="eOpts">
+      <button type="button" data-k="decaf_available" onclick="tgOpt(this)">디카페인</button>
+      <button type="button" data-k="oatmilk_available" onclick="tgOpt(this)">오트밀크</button>
+      <button type="button" data-k="shot_available" onclick="tgOpt(this)">샷 추가</button>
+    </div>
+    <label>온도</label>
+    <div class="opts" id="eTemp">
+      <button type="button" data-v="none" onclick="tgTemp(this)">없음</button>
+      <button type="button" data-v="ice" onclick="tgTemp(this)">아이스만</button>
+      <button type="button" data-v="hotice" onclick="tgTemp(this)">핫·아이스</button>
+    </div>
 
     <div class="msg" id="eMsg"></div>
     <div class="foot">
@@ -211,6 +240,79 @@
       img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("사진을 읽지 못했습니다")); };
       img.src = url;
     });
+  }
+
+  /* ── 샘플 사진 ────────────────────────────────────────────
+     진짜 사진을 찍으러 나가기 전에 메뉴판이 어떻게 보이는지 확인용.
+     SVG 라 한 장 1KB 도 안 되고, 저장해도 DB에 부담이 없다. 넣고 빼기를
+     반복해도 남는 게 없으니 마음껏 눌러 봐도 된다. */
+  function svgPic(bg, draw){
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">` +
+      `<rect width="120" height="120" fill="${bg}"/>${draw}</svg>`;
+    return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg)));
+  }
+
+  const SAMPLES = [
+    ["아메리카노", svgPic("#e9dfd3",
+      `<circle cx="60" cy="58" r="34" fill="#fff"/><circle cx="60" cy="58" r="26" fill="#43261a"/>
+       <path d="M96 48h9a10 10 0 0 1 0 20h-9" fill="none" stroke="#fff" stroke-width="7"/>`)],
+    ["라떼", svgPic("#efe6da",
+      `<circle cx="60" cy="58" r="34" fill="#fff"/><circle cx="60" cy="58" r="26" fill="#c9a227"/>
+       <path d="M60 44c7 6 7 22 0 28-7-6-7-22 0-28z" fill="#fff8ec"/>`)],
+    ["콜드브루", svgPic("#dfe6ef",
+      `<rect x="40" y="26" width="40" height="70" rx="8" fill="#fff"/>
+       <rect x="44" y="46" width="32" height="46" rx="6" fill="#4a2c1c"/>
+       <rect x="50" y="52" width="9" height="9" rx="2" fill="#ffffff" opacity=".45"/>
+       <rect x="62" y="66" width="9" height="9" rx="2" fill="#ffffff" opacity=".35"/>`)],
+    ["에이드", svgPic("#e4f2ea",
+      `<rect x="40" y="26" width="40" height="70" rx="8" fill="#fff"/>
+       <rect x="44" y="44" width="32" height="48" rx="6" fill="#7fd1a6"/>
+       <circle cx="55" cy="60" r="5" fill="#fff" opacity=".6"/>
+       <circle cx="67" cy="74" r="4" fill="#fff" opacity=".5"/>`)],
+    ["티", svgPic("#f0ebe0",
+      `<path d="M34 46h48v22a24 24 0 0 1-48 0z" fill="#fff"/>
+       <path d="M40 52h36v16a18 18 0 0 1-36 0z" fill="#c98b3e"/>
+       <path d="M82 52h10a9 9 0 0 1 0 18h-4" fill="none" stroke="#fff" stroke-width="6"/>
+       <rect x="30" y="92" width="60" height="6" rx="3" fill="#fff"/>`)],
+    ["디저트", svgPic("#f6e7e7",
+      `<path d="M36 56h48l-6 38a6 6 0 0 1-6 5H48a6 6 0 0 1-6-5z" fill="#fff"/>
+       <path d="M36 56c0-12 11-20 24-20s24 8 24 20z" fill="#e6a4a4"/>
+       <circle cx="60" cy="32" r="5" fill="#d46a6a"/>`)],
+    ["원두", svgPic("#e6ded6",
+      `<ellipse cx="60" cy="60" rx="30" ry="22" fill="#5b3a21" transform="rotate(-25 60 60)"/>
+       <path d="M38 70c14-14 30-22 44-20" fill="none" stroke="#e6ded6" stroke-width="5"/>`)],
+    ["빈 접시", svgPic("#eceff3",
+      `<ellipse cx="60" cy="62" rx="36" ry="26" fill="#fff"/>
+       <ellipse cx="60" cy="60" rx="24" ry="17" fill="#e3e8ee"/>`)],
+  ];
+
+  function renderSamples(){
+    $("eSamples").innerHTML = SAMPLES.map((s, i) =>
+      `<button type="button" title="${s[0]}" onclick="useSample(${i})">
+         <img src="${s[1]}" alt="${s[0]}" /></button>`).join("");
+  }
+
+  function useSample(i){
+    const [label, uri] = SAMPLES[i];
+    pendingImage = uri;
+    $("ePic").innerHTML = `<img src="${uri}" alt="" />`;
+    $("eMsg").style.color = "var(--muted)";
+    $("eMsg").textContent = `샘플 '${label}' — 저장을 눌러야 반영됩니다.`;
+  }
+
+  /* ── 옵션 토글 ─────────────────────────────────────────── */
+  let optState = {}, tempState = "hotice";
+
+  function tgOpt(btn){
+    const k = btn.dataset.k;
+    optState[k] = !optState[k];
+    btn.classList.toggle("on", optState[k]);
+  }
+  function tgTemp(btn){
+    tempState = btn.dataset.v;
+    document.querySelectorAll("#eTemp button")
+      .forEach(b => b.classList.toggle("on", b.dataset.v === tempState));
   }
 
   function pickFile(){ $("file").value = ""; $("file").click(); }
@@ -293,6 +395,17 @@
     $("eName").value = m.name;
     $("ePrice").value = m.price;
     $("ePic").innerHTML = m.image ? `<img src="${m.image}" alt="" />` : "눌러서 사진 고르기";
+    optState = {
+      decaf_available: !!m.decaf_available,
+      oatmilk_available: !!m.oatmilk_available,
+      shot_available: !!m.shot_available,
+    };
+    document.querySelectorAll("#eOpts button")
+      .forEach(b => b.classList.toggle("on", !!optState[b.dataset.k]));
+    tempState = m.temp_option || "hotice";
+    document.querySelectorAll("#eTemp button")
+      .forEach(b => b.classList.toggle("on", b.dataset.v === tempState));
+    renderSamples();
     $("eMsg").textContent = "";
     $("edit").classList.remove("hidden");
   }
@@ -305,7 +418,7 @@
     if(!name){ $("eMsg").style.color = "var(--red)"; $("eMsg").textContent = "이름을 입력하세요."; return; }
     if(!price || price <= 0){ $("eMsg").style.color = "var(--red)"; $("eMsg").textContent = "가격을 입력하세요."; return; }
 
-    const body = { name, price };
+    const body = { name, price, temp_option: tempState, ...optState };
     if(pendingImage !== null) body.image = pendingImage;   // 손댔을 때만 보낸다
     $("eSave").disabled = true;
     $("eMsg").style.color = "var(--muted)";

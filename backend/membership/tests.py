@@ -1976,6 +1976,35 @@ class MenuBoardEditTests(TestCase):
         )
         self.assertEqual(res.status_code, 403)
 
+    def test_can_turn_on_missing_options(self):
+        """
+        POS로 추가한 커피는 샷만 켜진 채 들어와 디카페인 칸이 아예 안 떴다
+        (엑셀렌트라떼). 고칠 화면이 없어 손도 못 댔다.
+        """
+        late = MenuItem.objects.create(
+            store=self.store, name="엑셀렌트라떼", price=5800,
+            category=MenuItem.Category.COFFEE, shot_available=True,
+        )
+        self.assertFalse(late.decaf_available)
+        res = self.client.patch(
+            f"/api/v1/menu/{late.id}",
+            data={"decaf_available": True, "oatmilk_available": True},
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        late.refresh_from_db()
+        self.assertTrue(late.decaf_available)
+        self.assertTrue(late.oatmilk_available)
+        self.assertTrue(late.shot_available)      # 원래 켜진 건 그대로
+
+    def test_svg_sample_image_accepted(self):
+        """샘플 사진은 SVG data URI 다 — 서버가 막으면 안 된다."""
+        svg = ("data:image/svg+xml;base64,"
+               "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=")
+        self.assertEqual(self._patch(image=svg).status_code, 200)
+        self.amer.refresh_from_db()
+        self.assertEqual(self.amer.image, svg)
+
     def test_hide_rules_carried_over(self):
         """코드에 박혀 있던 숨김 규칙이 DB로 그대로 옮겨져야 한다 (0028)."""
         import importlib

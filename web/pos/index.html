@@ -1534,7 +1534,13 @@
         body: JSON.stringify({
           name, price, category: mmCat,
           temp_option: mmTemp,               // 위 온도 칸에서 고른 값
+          // 옵션 기본값. 예전에는 샷만 켜져서, POS로 추가한 커피 메뉴에
+          // **디카페인 칸이 아예 안 떴다**(엑셀렌트라떼). 커피면 디카페인을
+          // 켜고, 이름에 우유가 들어가는 메뉴면 오트밀크도 켠다.
+          // 틀리면 메뉴판 수정 페이지에서 한 번 눌러 바꾸면 된다.
           shot_available: mmCat === "coffee",
+          decaf_available: mmCat === "coffee",
+          oatmilk_available: /라떼|밀크|우유|크림/.test(name),
           sort_order: 99,
         })});
       $("mmName").value = ""; $("mmPrice").value = "";
