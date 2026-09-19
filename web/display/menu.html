@@ -75,6 +75,16 @@
   .items.t2 .tag { font-size:1.25vh; }
 
   .it { min-width:0; padding:1.5vh 0; }
+  /* 사진이 있는 줄만 가로로 나란히. 사진이 없는 줄은 예전 그대로라
+     일부만 찍어 올려도 목록이 들쭉날쭉해지지 않는다. */
+  .it.pic { display:flex; align-items:center; gap:1vw; }
+  .it.pic .tx { flex:1; min-width:0; }
+  .it .ph { width:8.4vh; height:8.4vh; flex:0 0 auto; border-radius:1.2vh;
+    object-fit:cover; background:var(--card2); border:1px solid var(--line); }
+  .items.dense .it .ph { width:6.6vh; height:6.6vh; }
+  .items.t1 .it .ph { width:7vh; height:7vh; }
+  .items.t2 .it .ph { width:5.6vh; height:5.6vh; }
+  .it.out .ph { filter:grayscale(1); opacity:.5; }
   .it .nm { font-size:3.6vh; font-weight:700; letter-spacing:-.02em; line-height:1.2;
     word-break:keep-all; }
   .items.dense .it .nm { font-size:2.9vh; }
@@ -187,12 +197,14 @@
   /* 메뉴판에서 빼는 것들. **POS에서는 그대로 판다** — 여기서만 안 보인다.
      - 디저트: 매일 바뀌어서 붙박이 메뉴판에 올리면 틀린 정보가 된다.
      - 레온 · 킹: 특정 손님을 위한 주문 상품이라 일반 메뉴로 노출하지 않는다. */
+  // 이제 **메뉴마다 DB의 show_on_board** 로 정한다(메뉴판 수정 페이지에서 켜고 끈다).
+  // 아래 낱말 규칙은 그 값이 없을 때만 쓰는 옛 규칙이다 — 배포 순서가 엇갈려
+  // 서버가 아직 새 필드를 안 내려줄 때 메뉴판이 갑자기 다 보이면 안 된다.
   const HIDE_CATEGORIES = ["dessert"];
-  // 이름에 이 낱말이 들어가면 메뉴판에서 뺀다. 정확한 이름 대신 낱말로 맞춘다 —
-  // "레온 킹"인지 "킹 레온"인지, 뒤에 무엇이 붙는지에 흔들리지 않게.
   const HIDE_WORDS = ["레온", "킹"];
   const squash = (t) => (t || "").replace(/\s+/g, "");
   const showOnBoard = (m) => {
+    if(typeof m.show_on_board === "boolean") return m.show_on_board;
     if(HIDE_CATEGORIES.includes(m.category)) return false;
     const n = squash(m.name);
     return !HIDE_WORDS.some(w => n.includes(squash(w)));
@@ -237,12 +249,15 @@
         <h2><span class="ko">${p.ko}</span><span class="en">${p.en}</span><span class="rule"></span></h2>
         <div class="items${p.items.length > 10 ? " dense" : ""}">
           ${p.items.map(m => `
-            <div class="it${m.sold_out ? " out" : ""}">
-              <div class="nm">${m.name}</div>
-              <div class="ln">
-                <span class="sub">${tags(m)}</span>
-                <span class="lead"></span>
-                <span class="pr">${won(m.price)}</span>
+            <div class="it${m.sold_out ? " out" : ""}${m.image ? " pic" : ""}">
+              ${m.image ? `<img class="ph" src="${m.image}" alt="" />` : ""}
+              <div class="tx">
+                <div class="nm">${m.name}</div>
+                <div class="ln">
+                  <span class="sub">${tags(m)}</span>
+                  <span class="lead"></span>
+                  <span class="pr">${won(m.price)}</span>
+                </div>
               </div>
             </div>`).join("")}
         </div>

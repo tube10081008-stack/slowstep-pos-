@@ -221,6 +221,14 @@ class MenuItem(models.Model):
     topping = models.CharField("토핑·데코", max_length=200, blank=True, default="")
     recipe_note = models.CharField("비고(잔·분쇄도 등)", max_length=200, blank=True, default="")
     emoji = models.CharField("이모지", max_length=8, blank=True, default="")
+    # 메뉴판 사진 — data URI(base64)로 **DB에 그대로 담는다.**
+    # 서버리스에는 쓸 수 있는 디스크가 없고, S3·클라우디너리를 붙이면 계정과
+    # 키가 하나 더 늘어난다. 브라우저에서 가로 900px·JPEG로 줄여 올리므로
+    # 한 장 60~120KB, 메뉴 30종이면 3MB 남짓이라 Neon 무료(0.5GB)로 충분하다.
+    image = models.TextField("메뉴판 사진", blank=True, default="")
+    # 메뉴판(고객 화면)에 띄울지. 파는 것과 보여주는 것은 다르다 —
+    # 디저트는 매일 바뀌고, 특정 손님 전용 메뉴는 걸어 두면 안 된다.
+    show_on_board = models.BooleanField("메뉴판에 표시", default=True)
     is_available = models.BooleanField("판매중", default=True)
     # 재고: null=무제한. 0이면 품절 처리.
     stock = models.IntegerField("재고(빈칸=무제한)", null=True, blank=True, default=None)

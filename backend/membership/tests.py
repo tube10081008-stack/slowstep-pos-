@@ -1898,6 +1898,115 @@ class SizeUpTests(TestCase):
         self.assertIn("사이즈업", r.transaction.items.get().option_label)
 
 
+class MenuBoardEditTests(TestCase):
+    """메뉴판 수정 — 사진 넣기와 노출 켜고 끄기."""
+
+    # 1×1 투명 GIF 의 data URI (가장 짧은 진짜 이미지)
+    TINY = ("data:image/gif;base64,"
+            "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+
+    def setUp(self):
+        self.store = make_store()
+        self.amer = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000,
+            category=MenuItem.Category.COFFEE,
+        )
+        authenticate(self.client)
+
+    def _patch(self, **data):
+        return self.client.patch(
+            f"/api/v1/menu/{self.amer.id}", data=data, content_type="application/json"
+        )
+
+    def test_default_is_shown_on_board(self):
+        self.assertTrue(self.amer.show_on_board)
+
+    def test_image_saved_and_served(self):
+        self.assertEqual(self._patch(image=self.TINY).status_code, 200)
+        self.amer.refresh_from_db()
+        self.assertEqual(self.amer.image, self.TINY)
+        row = [m for m in self.client.get("/api/v1/menu").json()
+               if m["id"] == self.amer.id][0]
+        self.assertEqual(row["image"], self.TINY)
+
+    def test_blank_image_clears_it(self):
+        self._patch(image=self.TINY)
+        self._patch(image="")
+        self.amer.refresh_from_db()
+        self.assertEqual(self.amer.image, "")
+
+    def test_oversize_image_rejected(self):
+        """사진은 DB에 직접 담기므로 상한을 서버가 잡는다."""
+        huge = "data:image/jpeg;base64," + ("A" * 400_001)
+        res = self._patch(image=huge)
+        self.assertEqual(res.status_code, 400)
+        self.amer.refresh_from_db()
+        self.assertEqual(self.amer.image, "")
+
+    def test_non_image_rejected(self):
+        res = self._patch(image="data:text/html;base64,PHNjcmlwdD4=")
+        self.assertEqual(res.status_code, 400)
+
+    def test_board_toggle(self):
+        self.assertEqual(self._patch(show_on_board=False).status_code, 200)
+        self.amer.refresh_from_db()
+        self.assertFalse(self.amer.show_on_board)
+
+    def test_hidden_from_board_is_still_sold(self):
+        """메뉴판에서 내려도 POS에서는 그대로 팔려야 한다."""
+        self._patch(show_on_board=False)
+        self.amer.refresh_from_db()
+        self.assertTrue(self.amer.is_available)
+        r = checkout(
+            member=None, gross_amount=4000, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.amer.id, "quantity": 1}],
+            toss_order_id="board-1",
+        )
+        self.assertEqual(r.transaction.net_amount, 4000)
+        self.assertIn(
+            self.amer.id,
+            [m["id"] for m in self.client.get("/api/v1/menu").json()],
+        )
+
+    def test_needs_staff_token(self):
+        res = self.client_class().patch(
+            f"/api/v1/menu/{self.amer.id}",
+            data={"show_on_board": False}, content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_hide_rules_carried_over(self):
+        """코드에 박혀 있던 숨김 규칙이 DB로 그대로 옮겨져야 한다 (0028)."""
+        import importlib
+
+        from django.apps import apps as global_apps
+
+        mod = importlib.import_module("membership.migrations.0028_board_hide_carryover")
+        cake = MenuItem.objects.create(
+            store=self.store, name="치즈케이크", price=6000,
+            category=MenuItem.Category.DESSERT, temp_option=MenuItem.Temp.NONE,
+        )
+        leon = MenuItem.objects.create(
+            store=self.store, name="레온 라떼", price=7000,
+            category=MenuItem.Category.COFFEE,
+        )
+        king = MenuItem.objects.create(
+            store=self.store, name="킹 스페셜", price=8000,
+            category=MenuItem.Category.COFFEE,
+        )
+        spaced = MenuItem.objects.create(
+            store=self.store, name="레 온 세트", price=9000,
+            category=MenuItem.Category.COFFEE,
+        )
+        mod._forward(global_apps, None)
+        for m in (cake, leon, king, spaced):
+            m.refresh_from_db()
+            self.assertFalse(m.show_on_board, m.name)
+        self.amer.refresh_from_db()
+        self.assertTrue(self.amer.show_on_board)      # 평범한 메뉴는 그대로
+
+
 class MenuAdminApiTests(TestCase):
     """POS에서 메뉴 추가·수정·삭제 — 디저트가 매일 바뀐다."""
 

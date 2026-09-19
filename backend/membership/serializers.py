@@ -25,6 +25,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
         model = MenuItem
         fields = [
             "id", "name", "price", "category", "category_display", "emoji",
+            "image", "show_on_board",
             "temp_option", "decaf_available", "oatmilk_available", "shot_available",
             "size_up_price", "cost", "stock", "sold_out", "is_available", "sort_order",
             # 레시피 — POS가 제조 화면에서 쓴다(손님 화면에는 내려가지 않는다)
@@ -211,6 +212,7 @@ class MenuItemWriteSerializer(serializers.ModelSerializer):
             "name", "price", "cost", "category", "temp_option",
             "decaf_available", "oatmilk_available", "shot_available",
             "size_up_price", "stock", "is_available", "sort_order",
+            "emoji", "image", "show_on_board",
             "recipe", "recipe_hot", "topping", "recipe_note",
         ]
         extra_kwargs = {f: {"required": False} for f in fields if f not in ("name", "price")}
@@ -229,4 +231,20 @@ class MenuItemWriteSerializer(serializers.ModelSerializer):
     def validate_price(self, value):
         if value <= 0:
             raise serializers.ValidationError("가격은 0보다 커야 합니다.")
+        return value
+
+    # 사진은 DB에 직접 담기므로 상한을 서버가 잡는다. 브라우저에서 줄여
+    # 올리지만, 그 코드를 거치지 않고 부르면 몇 MB짜리가 그대로 들어온다.
+    MAX_IMAGE_CHARS = 400_000          # base64 약 300KB
+
+    def validate_image(self, value):
+        value = (value or "").strip()
+        if not value:
+            return ""                   # 빈 값 = 사진 삭제
+        if not value.startswith("data:image/"):
+            raise serializers.ValidationError("이미지 파일만 올릴 수 있습니다.")
+        if len(value) > self.MAX_IMAGE_CHARS:
+            raise serializers.ValidationError(
+                "사진 용량이 너무 큽니다. 더 작은 사진을 골라 주세요."
+            )
         return value
