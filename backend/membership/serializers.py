@@ -9,6 +9,7 @@ from .models import (
     Mission,
     OrderItem,
     PointEntry,
+    Promo,
     Store,
     Transaction,
 )
@@ -246,5 +247,27 @@ class MenuItemWriteSerializer(serializers.ModelSerializer):
         if len(value) > self.MAX_IMAGE_CHARS:
             raise serializers.ValidationError(
                 "사진 용량이 너무 큽니다. 더 작은 사진을 골라 주세요."
+            )
+        return value
+
+
+class PromoSerializer(serializers.ModelSerializer):
+    """프로모션 한 장. 읽기는 공개(고객 화면이 직접 부른다)."""
+
+    # 화면 한 장을 채우므로 메뉴 썸네일보다 큰 걸 허용한다.
+    MAX_IMAGE_CHARS = 900_000          # base64 약 675KB
+
+    class Meta:
+        model = Promo
+        fields = ["id", "title", "image", "is_active", "sort_order", "created_at"]
+        read_only_fields = ["created_at"]
+
+    def validate_image(self, value):
+        value = (value or "").strip()
+        if not value.startswith("data:image/"):
+            raise serializers.ValidationError("이미지 파일만 올릴 수 있습니다.")
+        if len(value) > self.MAX_IMAGE_CHARS:
+            raise serializers.ValidationError(
+                "이미지 용량이 너무 큽니다. 더 작은 사진을 골라 주세요."
             )
         return value

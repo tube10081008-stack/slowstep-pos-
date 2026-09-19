@@ -65,6 +65,29 @@
 
   .empty { padding:22px; text-align:center; color:var(--muted); font-size:13.5px; }
 
+  /* 프로모션 */
+  .pr-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+  .pr-head h2 { font-size:15px; margin:0; font-weight:700; }
+  .pr-head .tag { font-size:11px; color:var(--muted); font-weight:400;
+    border:1px solid var(--line); padding:2px 8px; border-radius:999px; margin-left:4px; }
+  .pr-head .add { margin-left:auto; font-family:inherit; font-size:13px; font-weight:700;
+    padding:9px 14px; border-radius:9px; border:0; background:var(--brand); color:#fff;
+    cursor:pointer; }
+  .promos { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px; }
+  .promos .p { border:1px solid var(--line); border-radius:12px; overflow:hidden;
+    background:var(--card2); }
+  .promos .p.off { opacity:.5; }
+  .promos .p img { width:100%; aspect-ratio:16/9; object-fit:cover; display:block;
+    background:#fff; }
+  .promos .p .pb { display:flex; gap:6px; padding:9px; }
+  .promos .p .pb button { flex:1; font-family:inherit; font-size:12px; font-weight:600;
+    padding:8px 6px; border-radius:8px; border:1px solid var(--line); background:#fff;
+    color:var(--txt); cursor:pointer; }
+  .promos .p .pb button.on { background:var(--brand-soft); border-color:#c7d0ff;
+    color:var(--brand-dk); }
+  .promos .p .pb button.del { color:var(--red); border-color:#f6cdcd; flex:0 0 auto; }
+  .promos .empty { grid-column:1/-1; }
+
   /* 수정 모달 */
   .bg { position:fixed; inset:0; background:rgba(16,24,40,.45); display:flex;
     align-items:center; justify-content:center; padding:18px; z-index:50; }
@@ -134,6 +157,20 @@
     </div>
   </div>
 
+  <!-- 프로모션 — 메뉴판 사이에 한 장씩 끼워 도는 광고 -->
+  <div class="card">
+    <div class="pr-head">
+      <h2>프로모션 <span class="tag">메뉴판 사이에 한 장씩</span></h2>
+      <button class="add" onclick="pickPromo()">＋ 이미지 추가</button>
+    </div>
+    <div class="hint" style="margin-bottom:12px;">
+      신메뉴 안내·휴무 공지·이벤트를 <b>그림 한 장</b>으로 띄웁니다.
+      메뉴 페이지를 다 보여준 뒤 한 장씩 돌아가고, <b>끄거나 지우면 바로 사라집니다.</b>
+      가로로 긴 사진(16:9)이 화면에 꽉 찹니다.
+    </div>
+    <div class="promos" id="promos"><div class="empty">불러오는 중…</div></div>
+  </div>
+
   <div class="card">
     <div class="cats" id="cats"></div>
     <div id="list"><div class="empty">불러오는 중…</div></div>
@@ -184,6 +221,7 @@
 </div>
 
 <input type="file" id="file" accept="image/*" style="display:none" onchange="onFile(event)" />
+<input type="file" id="promoFile" accept="image/*" style="display:none" onchange="onPromoFile(event)" />
 <div class="toast" id="toast"></div>
 
 <script src="/pin.js"></script>
@@ -222,20 +260,20 @@
      않고 부를 수 있으므로). */
   const MAX_W = 900, QUALITY = 0.72;
 
-  function shrink(file){
+  function shrink(file, maxW = MAX_W, quality = QUALITY){
     return new Promise((resolve, reject) => {
       const img = new Image();
       const url = URL.createObjectURL(file);
       img.onload = () => {
         URL.revokeObjectURL(url);
-        const scale = Math.min(1, MAX_W / img.width);
+        const scale = Math.min(1, maxW / img.width);
         const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
         const c = document.createElement("canvas");
         c.width = w; c.height = h;
         const ctx = c.getContext("2d");
         ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);   // 투명 PNG 대비
         ctx.drawImage(img, 0, 0, w, h);
-        resolve(c.toDataURL("image/jpeg", QUALITY));
+        resolve(c.toDataURL("image/jpeg", quality));
       };
       img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("사진을 읽지 못했습니다")); };
       img.src = url;
@@ -433,6 +471,70 @@
     } finally { $("eSave").disabled = false; }
   }
 
+  /* ── 프로모션 ─────────────────────────────────────────────
+     메뉴 사진보다 크게 올린다 — 화면 한 장을 채우므로 900px 로는 흐리다.
+     대신 상한이 있어 너무 큰 원본은 서버가 거절한다. */
+  const PROMO_W = 1600, PROMO_Q = 0.82;
+  let promos = [];
+
+  function renderPromos(){
+    const box = $("promos");
+    if(!promos.length){
+      box.innerHTML = '<div class="empty">등록된 프로모션이 없습니다. ＋ 이미지 추가를 눌러 올려보세요.</div>';
+      return;
+    }
+    box.innerHTML = promos.map(p => `
+      <div class="p${p.is_active ? "" : " off"}">
+        <img src="${p.image}" alt="${p.title || ""}" />
+        <div class="pb">
+          <button class="${p.is_active ? "on" : ""}" onclick="togglePromo(${p.id})">
+            ${p.is_active ? "표시중" : "숨김"}</button>
+          <button class="del" onclick="removePromo(${p.id})">삭제</button>
+        </div>
+      </div>`).join("");
+  }
+
+  function pickPromo(){ $("promoFile").value = ""; $("promoFile").click(); }
+
+  async function onPromoFile(e){
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    toast("이미지 줄이는 중…");
+    try {
+      const uri = await shrink(file, PROMO_W, PROMO_Q);
+      const saved = await api("/api/v1/promos", { method:"POST",
+        body: JSON.stringify({ image: uri, title: file.name.replace(/\.[^.]+$/, "").slice(0, 60) }) });
+      promos.push(saved); renderPromos();
+      toast(`프로모션 추가됨 (약 ${Math.round(uri.length * 0.75 / 1024)}KB)`);
+    } catch(err){ toast("❌ " + err.message); }
+  }
+
+  async function togglePromo(id){
+    const p = promos.find(x => x.id === id);
+    if(!p) return;
+    const next = !p.is_active;
+    p.is_active = next; renderPromos();
+    try {
+      await api(`/api/v1/promos/${id}`, { method:"PATCH",
+        body: JSON.stringify({ is_active: next }) });
+      toast(next ? "메뉴판에 표시합니다" : "메뉴판에서 숨겼습니다");
+    } catch(err){ p.is_active = !next; renderPromos(); toast("❌ " + err.message); }
+  }
+
+  async function removePromo(id){
+    if(!confirm("이 프로모션을 지울까요?\n메뉴판에서 바로 사라집니다.")) return;
+    try {
+      await api(`/api/v1/promos/${id}`, { method:"DELETE" });
+      promos = promos.filter(x => x.id !== id); renderPromos();
+      toast("삭제됨");
+    } catch(err){ toast("❌ " + err.message); }
+  }
+
+  async function loadPromos(){
+    try { promos = await api("/api/v1/promos"); renderPromos(); }
+    catch(err){ $("promos").innerHTML = `<div class="empty">${err.message}</div>`; }
+  }
+
   async function load(){
     try {
       all = await api("/api/v1/menu?all=1");
@@ -445,6 +547,7 @@
   (async function(){
     await StorePin.require();
     load();
+    loadPromos();
   })();
 </script>
 </body>

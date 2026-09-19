@@ -15,7 +15,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import (
-    Coupon, Member, MenuItem, Mission, OrderItem, PointEntry, Store, Transaction,
+    Coupon, Member, MenuItem, Mission, OrderItem, PointEntry, Promo, Store,
+    Transaction,
 )
 from .payments import TossError
 from .serializers import (
@@ -27,6 +28,7 @@ from .serializers import (
     MenuItemWriteSerializer,
     MissionSerializer,
     PointEntrySerializer,
+    PromoSerializer,
     QuoteRequestSerializer,
     StoreSerializer,
     TransactionSerializer,
@@ -248,6 +250,52 @@ class PointGrantView(APIView):
         except PointGrantError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response(MemberSerializer(updated).data)
+
+
+class PromoView(APIView):
+    """
+    프로모션 — `GET`(공개, 표시중인 것만) · `POST` 🔒 등록.
+
+    읽기를 공개로 둔 이유: 고객 화면(메뉴판)이 직접 부른다. 메뉴·매장 정보와
+    같은 성격이라 토큰을 요구하면 손님 화면이 먹통이 된다. 대신 **쓰기는 막는다.**
+    """
+
+    def get(self, request):
+        qs = Promo.objects.all()
+        if not request_authorized(request):      # 손님 화면엔 표시중인 것만
+            qs = qs.filter(is_active=True)
+        return Response(PromoSerializer(qs, many=True).data)
+
+    def post(self, request):
+        if not request_authorized(request):
+            return Response({"detail": "권한이 없습니다."}, status=403)
+        store = Store.objects.first()
+        if store is None:
+            return Response({"detail": "매장 설정이 없습니다."}, status=400)
+        ser = PromoSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        # 맨 뒤에 붙인다 — 새로 올린 게 기존 순서를 밀고 들어오면 곤란하다.
+        last = Promo.objects.order_by("-sort_order").first()
+        ser.save(store=store, sort_order=(last.sort_order + 1) if last else 0)
+        return Response(ser.data, status=201)
+
+
+class PromoDetailView(APIView):
+    """프로모션 수정·삭제 🔒 — 표시 켜고 끄기, 지우기."""
+
+    permission_classes = [StorePinPermission]
+
+    def patch(self, request, pk):
+        promo = get_object_or_404(Promo, pk=pk)
+        ser = PromoSerializer(promo, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(ser.data)
+
+    def delete(self, request, pk):
+        promo = get_object_or_404(Promo, pk=pk)
+        promo.delete()
+        return Response(status=204)
 
 
 class CouponGrantView(APIView):

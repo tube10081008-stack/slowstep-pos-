@@ -3598,3 +3598,94 @@ class PrepaidCancelTests(TestCase):
         self.m.refresh_from_db()
         # 사용한 3,000P 환급 − 이 거래로 적립된 분 회수
         self.assertEqual(self.m.points, before + 3000 - r.transaction.points_earned)
+
+
+class PromoTests(TestCase):
+    """프로모션 — 메뉴판 사이에 끼워 도는 광고 한 장."""
+
+    PIC = ("data:image/gif;base64,"
+           "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+
+    def setUp(self):
+        self.store = make_store()
+        authenticate(self.client)
+
+    def _add(self, **data):
+        return self.client.post(
+            "/api/v1/promos", data={"image": self.PIC, **data},
+            content_type="application/json",
+        )
+
+    def test_add_and_list(self):
+        res = self._add(title="가을 신메뉴")
+        self.assertEqual(res.status_code, 201)
+        rows = self.client.get("/api/v1/promos").json()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["title"], "가을 신메뉴")
+        self.assertTrue(rows[0]["is_active"])
+
+    def test_public_read_for_customer_display(self):
+        """고객 화면이 토큰 없이 읽어야 한다 — 막으면 메뉴판이 먹통이 된다."""
+        self._add()
+        res = self.client_class().get("/api/v1/promos")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(res.json()), 1)
+
+    def test_public_read_hides_inactive(self):
+        self._add(title="숨김", is_active=False)
+        self.assertEqual(len(self.client_class().get("/api/v1/promos").json()), 0)
+        # 점주 화면에서는 숨긴 것도 보여야 다시 켤 수 있다
+        self.assertEqual(len(self.client.get("/api/v1/promos").json()), 1)
+
+    def test_public_cannot_write(self):
+        anon = self.client_class()
+        self.assertEqual(
+            anon.post("/api/v1/promos", data={"image": self.PIC},
+                      content_type="application/json").status_code, 403
+        )
+
+    def test_toggle_off_and_on(self):
+        pid = self._add().json()["id"]
+        self.client.patch(f"/api/v1/promos/{pid}",
+                          data={"is_active": False}, content_type="application/json")
+        self.assertEqual(len(self.client_class().get("/api/v1/promos").json()), 0)
+        self.client.patch(f"/api/v1/promos/{pid}",
+                          data={"is_active": True}, content_type="application/json")
+        self.assertEqual(len(self.client_class().get("/api/v1/promos").json()), 1)
+
+    def test_delete(self):
+        pid = self._add().json()["id"]
+        self.assertEqual(self.client.delete(f"/api/v1/promos/{pid}").status_code, 204)
+        self.assertEqual(len(self.client.get("/api/v1/promos").json()), 0)
+
+    def test_public_cannot_delete(self):
+        pid = self._add().json()["id"]
+        self.assertEqual(
+            self.client_class().delete(f"/api/v1/promos/{pid}").status_code, 403
+        )
+        self.assertEqual(len(self.client.get("/api/v1/promos").json()), 1)
+
+    def test_oversize_rejected(self):
+        """화면 한 장을 채우므로 메뉴 썸네일보다 크게 허용하되, 상한은 있다."""
+        huge = "data:image/jpeg;base64," + ("A" * 900_001)
+        self.assertEqual(self._add(image=huge).status_code, 400)
+
+    def test_bigger_limit_than_menu_thumbnail(self):
+        from .serializers import MenuItemWriteSerializer, PromoSerializer
+
+        self.assertGreater(
+            PromoSerializer.MAX_IMAGE_CHARS, MenuItemWriteSerializer.MAX_IMAGE_CHARS
+        )
+
+    def test_non_image_rejected(self):
+        self.assertEqual(
+            self._add(image="data:text/html;base64,PHNjcmlwdD4=").status_code, 400
+        )
+
+    def test_new_promo_goes_last(self):
+        """새로 올린 게 기존 순서를 밀고 들어오면 곤란하다."""
+        first = self._add(title="먼저").json()
+        second = self._add(title="나중").json()
+        self.assertGreater(second["sort_order"], first["sort_order"])
+        rows = self.client.get("/api/v1/promos").json()
+        self.assertEqual([r["title"] for r in rows], ["먼저", "나중"])

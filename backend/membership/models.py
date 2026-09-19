@@ -642,3 +642,33 @@ class Coupon(models.Model):
     @property
     def discount_pct(self) -> int:
         return self.DISCOUNT_PCT.get(self.kind, 0)
+
+
+class Promo(models.Model):
+    """
+    메뉴판 사이에 끼워 도는 **프로모션 한 장**.
+
+    메뉴와 분리한 이유: 신메뉴 안내·휴무 공지·이벤트는 파는 물건이 아니라
+    **한 장짜리 그림**이다. MenuItem 에 억지로 끼워 넣으면 가격·옵션·원가가
+    딸려 오고, 메뉴판 목록에도 섞인다.
+
+    사진은 MenuItem.image 와 같이 data URI 로 담되 **상한이 다르다** —
+    메뉴 썸네일은 작게 나오지만 이건 화면 한 장을 채우므로 더 큰 걸 허용한다.
+    """
+
+    store = models.ForeignKey(
+        Store, on_delete=models.CASCADE, related_name="promos"
+    )
+    title = models.CharField("이름(관리용)", max_length=60, blank=True, default="")
+    image = models.TextField("이미지")
+    is_active = models.BooleanField("메뉴판에 표시", default=True)
+    sort_order = models.IntegerField("정렬", default=0)
+    created_at = models.DateTimeField("등록 시각", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "프로모션"
+        verbose_name_plural = "프로모션"
+        ordering = ["sort_order", "id"]
+
+    def __str__(self) -> str:
+        return self.title or f"프로모션 {self.pk}"

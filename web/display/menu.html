@@ -79,11 +79,15 @@
      일부만 찍어 올려도 목록이 들쭉날쭉해지지 않는다. */
   .it.pic { display:flex; align-items:center; gap:1vw; }
   .it.pic .tx { flex:1; min-width:0; }
-  .it .ph { width:8.4vh; height:8.4vh; flex:0 0 auto; border-radius:1.2vh;
+  /* 1920×1080 에서 8.4vh 는 90px — 붙박이 메뉴판에서는 뭘 찍었는지 안 보인다.
+     줄 높이(이름+가격 두 줄)에 맞춰 키운다. */
+  .it .ph { width:13.5vh; height:13.5vh; flex:0 0 auto; border-radius:1.6vh;
     object-fit:cover; background:var(--card2); border:1px solid var(--line); }
-  .items.dense .it .ph { width:6.6vh; height:6.6vh; }
-  .items.t1 .it .ph { width:7vh; height:7vh; }
-  .items.t2 .it .ph { width:5.6vh; height:5.6vh; }
+  .items.dense .it .ph { width:10.5vh; height:10.5vh; }
+  .items.t1 .it .ph { width:11vh; height:11vh; }
+  .items.t1.dense .it .ph { width:9vh; height:9vh; }
+  .items.t2 .it .ph { width:9vh; height:9vh; }
+  .items.t2.dense .it .ph { width:7.5vh; height:7.5vh; }
   .it.out .ph { filter:grayscale(1); opacity:.5; }
   .it .nm { font-size:3.6vh; font-weight:700; letter-spacing:-.02em; line-height:1.2;
     word-break:keep-all; }
@@ -101,6 +105,12 @@
   .tag.ice { background:var(--brand-soft); color:var(--brand-dk); }
   .tag.out { background:#fee2e2; color:var(--red); }
   .it.out .nm, .it.out .pr { color:var(--muted); text-decoration:line-through; }
+
+  /* ── 프로모션 페이지 ──
+     메뉴 목록이 아니라 그림 한 장이다. 머리말 없이 화면을 꽉 채운다. */
+  .page.promo { padding:0 6.4vw; justify-content:center; }
+  .page.promo img { width:100%; height:100%; object-fit:contain;
+    border-radius:1.6vh; display:block; }
 
   /* ── 좌우 넘김 버튼: 화면 양옆, 크게 ── */
   .arrow { position:absolute; top:50%; transform:translateY(-50%);
@@ -233,18 +243,29 @@
 
   let pages = [];
   let page = 0;
+  let promos = [];   // 표시중인 프로모션(고객 화면은 공개 조회)
+
+  let lastItems = [];
 
   function render(items){
+    lastItems = items;
     const byCat = {};
     items.filter(showOnBoard).forEach(m => (byCat[m.category] = byCat[m.category] || []).push(m));
 
     pages = PAGES.map(([ko, en, keys]) => ({
       ko, en, items: keys.flatMap(k => byCat[k] || []),
     })).filter(p => p.items.length);
+    // 프로모션은 메뉴 뒤에 한 장씩 붙는다 — 메뉴를 먼저 보여주고 광고가 따라온다.
+    // **탭 이름에 title 을 쓰지 않는다.** 그건 관리용 이름이라 파일명이 그대로
+    // 들어가 있을 수 있다("promo1" 이 손님 화면 탭에 뜨면 곤란하다).
+    promos.forEach((pr, i) => pages.push({
+      ko: promos.length > 1 ? `이벤트 ${i + 1}` : "이벤트", en: "Event", promo: pr,
+    }));
     if(!pages.length) return;
     page = Math.min(page, pages.length - 1);
 
-    $("track").innerHTML = pages.map(p => `
+    $("track").innerHTML = pages.map(p => p.promo ? `
+      <div class="page promo"><img src="${p.promo.image}" alt="${p.ko}" /></div>` : `
       <div class="page">
         <h2><span class="ko">${p.ko}</span><span class="en">${p.en}</span><span class="rule"></span></h2>
         <div class="items${p.items.length > 10 ? " dense" : ""}">
@@ -346,6 +367,22 @@
         if(Array.isArray(items) && items.length) render(items);
       }
     } catch(e){ /* 서버에 못 닿아도 내장 목록으로 계속 보여준다 */ }
+
+    try {
+      const res = await fetch(API_BASE + "/api/v1/promos");
+      if(res.ok){
+        const rows = await res.json();
+        if(Array.isArray(rows)){
+          const next = rows.filter(r => r.image);
+          // 내용이 같으면 다시 그리지 않는다 — 5분마다 새로 그리면
+          // 손님이 보고 있던 장이 튄다.
+          if(JSON.stringify(next.map(r => r.id)) !== JSON.stringify(promos.map(r => r.id))){
+            promos = next;
+            render(lastItems);
+          } else { promos = next; }
+        }
+      }
+    } catch(e){ /* 프로모션이 없어도 메뉴판은 제 역할을 한다 */ }
 
     try {
       const res = await fetch(API_BASE + "/api/v1/member-qr");
