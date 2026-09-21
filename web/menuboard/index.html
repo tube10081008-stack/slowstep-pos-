@@ -125,6 +125,7 @@
     background:var(--card2); cursor:pointer; aspect-ratio:1; overflow:hidden; }
   .samples img { width:100%; height:100%; object-fit:cover; display:block; }
 
+  .hidden { display:none; }
   .msg { font-size:12.5px; color:var(--red); margin-top:10px; min-height:16px; }
 
   .toast { position:fixed; left:50%; bottom:22px; transform:translateX(-50%);
@@ -204,6 +205,13 @@
       <button type="button" data-k="decaf_available" onclick="tgOpt(this)">디카페인</button>
       <button type="button" data-k="oatmilk_available" onclick="tgOpt(this)">오트밀크</button>
       <button type="button" data-k="shot_available" onclick="tgOpt(this)">샷 추가</button>
+    </div>
+    <!-- 디저트에만 뜬다. 음료끼리는 세트가 성립하지 않는다. -->
+    <div id="eSetWrap" class="hidden">
+      <label>세트 할인 <span style="font-weight:400">· 음료와 함께 주문하면 할인</span></label>
+      <div class="opts">
+        <button type="button" id="eSet" onclick="tgSet(this)">세트 할인 대상</button>
+      </div>
     </div>
     <label>온도</label>
     <div class="opts" id="eTemp">
@@ -340,13 +348,14 @@
   }
 
   /* ── 옵션 토글 ─────────────────────────────────────────── */
-  let optState = {}, tempState = "hotice";
+  let optState = {}, tempState = "hotice", setState = false;
 
   function tgOpt(btn){
     const k = btn.dataset.k;
     optState[k] = !optState[k];
     btn.classList.toggle("on", optState[k]);
   }
+  function tgSet(btn){ setState = !setState; btn.classList.toggle("on", setState); }
   function tgTemp(btn){
     tempState = btn.dataset.v;
     document.querySelectorAll("#eTemp button")
@@ -398,7 +407,7 @@
         </div>
         <div class="meta" onclick="openEdit(${m.id})">
           <div class="nm">${m.name}</div>
-          <div class="pr"><b>${won(m.price)}</b>${m.is_available ? "" : " · 판매중지"}</div>
+          <div class="pr"><b>${won(m.price)}</b>${m.set_eligible ? " · 세트할인 대상" : ""}${m.is_available ? "" : " · 판매중지"}</div>
         </div>
         <div class="acts">
           <button class="${m.show_on_board ? "on" : "off"}" onclick="toggleBoard(${m.id})">
@@ -440,6 +449,9 @@
     };
     document.querySelectorAll("#eOpts button")
       .forEach(b => b.classList.toggle("on", !!optState[b.dataset.k]));
+    setState = !!m.set_eligible;
+    $("eSetWrap").classList.toggle("hidden", m.category !== "dessert");
+    $("eSet").classList.toggle("on", setState);
     tempState = m.temp_option || "hotice";
     document.querySelectorAll("#eTemp button")
       .forEach(b => b.classList.toggle("on", b.dataset.v === tempState));
@@ -457,6 +469,7 @@
     if(!price || price <= 0){ $("eMsg").style.color = "var(--red)"; $("eMsg").textContent = "가격을 입력하세요."; return; }
 
     const body = { name, price, temp_option: tempState, ...optState };
+    if(editing.category === "dessert") body.set_eligible = setState;
     if(pendingImage !== null) body.image = pendingImage;   // 손댔을 때만 보낸다
     $("eSave").disabled = true;
     $("eMsg").style.color = "var(--muted)";

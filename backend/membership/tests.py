@@ -3600,6 +3600,126 @@ class PrepaidCancelTests(TestCase):
         self.assertEqual(self.m.points, before + 3000 - r.transaction.points_earned)
 
 
+class SetDiscountEligibleTests(TestCase):
+    """세트 할인은 지정한 디저트에만 — 확정 메뉴판이 '플레인 휘낭시에'로 못박았다."""
+
+    def setUp(self):
+        self.store = make_store(set_discount_amount=500, stamp_goal=99)
+        self.amer = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000,
+            category=MenuItem.Category.COFFEE,
+        )
+        self.plain = MenuItem.objects.create(
+            store=self.store, name="플레인 휘낭시에", price=2500,
+            category=MenuItem.Category.DESSERT, temp_option=MenuItem.Temp.NONE,
+            set_eligible=True,
+        )
+        self.other = MenuItem.objects.create(
+            store=self.store, name="얼그레이 마들렌", price=3000,
+            category=MenuItem.Category.DESSERT, temp_option=MenuItem.Temp.NONE,
+        )
+
+    def _buy(self, dessert, oid):
+        return checkout(
+            member=None, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.amer.id, "quantity": 1},
+                   {"menu_item_id": dessert.id, "quantity": 1}],
+            toss_order_id=oid, set_discount=True,
+        )
+
+    def test_eligible_dessert_gets_discount(self):
+        self.assertEqual(self._buy(self.plain, "s1").transaction.discount, 500)
+
+    def test_other_dessert_gets_nothing(self):
+        self.assertEqual(self._buy(self.other, "s2").transaction.discount, 0)
+
+    def test_counts_only_eligible_pairs(self):
+        """음료 2 + 플레인 1 + 마들렌 1 → 한 쌍만 깎인다."""
+        r = checkout(
+            member=None, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.amer.id, "quantity": 2},
+                   {"menu_item_id": self.plain.id, "quantity": 1},
+                   {"menu_item_id": self.other.id, "quantity": 1}],
+            toss_order_id="s3", set_discount=True,
+        )
+        self.assertEqual(r.transaction.discount, 500)
+
+    def test_falls_back_to_all_desserts_when_none_marked(self):
+        """
+        아무 메뉴도 지정하지 않으면 예전처럼 디저트 전체를 친다.
+        실수로 다 꺼 두면 세트 할인이 조용히 죽어 버린다.
+        """
+        MenuItem.objects.filter(pk=self.plain.pk).update(set_eligible=False)
+        self.assertEqual(self._buy(self.other, "s4").transaction.discount, 500)
+
+    def test_unavailable_eligible_does_not_count_as_marked(self):
+        """대상 메뉴를 판매중지하면 남은 디저트로 세트가 돌아간다."""
+        MenuItem.objects.filter(pk=self.plain.pk).update(is_available=False)
+        self.assertEqual(self._buy(self.other, "s5").transaction.discount, 500)
+
+    def test_still_off_unless_staff_presses(self):
+        r = checkout(
+            member=None, gross_amount=0, points_to_use=0,
+            payment_method=Transaction.Method.CARD,
+            items=[{"menu_item_id": self.amer.id, "quantity": 1},
+                   {"menu_item_id": self.plain.id, "quantity": 1}],
+            toss_order_id="s6",            # set_discount 안 보냄
+        )
+        self.assertEqual(r.transaction.discount, 0)
+
+    def test_migration_syncs_menu_to_poster(self):
+        """확정 메뉴판에 맞춰 추가·내림·세트대상이 한 번에 정리돼야 한다 (0031)."""
+        import importlib
+
+        from django.apps import apps as global_apps
+
+        mod = importlib.import_module("membership.migrations.0031_menu_sync_poster")
+        gone = MenuItem.objects.create(
+            store=self.store, name="레드 청포도 스파클링", price=5500,
+            category=MenuItem.Category.ADE, temp_option=MenuItem.Temp.ICE,
+        )
+        mine = MenuItem.objects.create(      # 사장님이 따로 넣은 메뉴
+            store=self.store, name="엑셀렌트라떼", price=5800,
+            category=MenuItem.Category.COFFEE,
+        )
+        MenuItem.objects.filter(pk=self.other.pk).update(set_eligible=True)
+
+        mod._forward(global_apps, None)
+
+        self.assertTrue(MenuItem.objects.filter(name="밤라떼", price=6000).exists())
+        self.assertTrue(MenuItem.objects.filter(name="대추 생강차").exists())
+        gone.refresh_from_db()
+        self.assertFalse(gone.is_available)
+        self.assertFalse(gone.show_on_board)
+        # 사장님이 따로 넣은 메뉴는 확정본에 없어도 건드리지 않는다
+        mine.refresh_from_db()
+        self.assertTrue(mine.is_available)
+        # 세트 대상은 플레인 휘낭시에 하나만 남는다
+        self.assertEqual(
+            list(MenuItem.objects.filter(set_eligible=True).values_list("name", flat=True)),
+            ["플레인 휘낭시에"],
+        )
+
+    def test_migration_keeps_existing_prices(self):
+        """사장님이 먼저 넣고 값을 바꿨으면 덮어쓰지 않는다."""
+        import importlib
+
+        from django.apps import apps as global_apps
+
+        mine = MenuItem.objects.create(
+            store=self.store, name="밤라떼", price=6500,
+            category=MenuItem.Category.NONCOFFEE,
+        )
+        importlib.import_module(
+            "membership.migrations.0031_menu_sync_poster"
+        )._forward(global_apps, None)
+        mine.refresh_from_db()
+        self.assertEqual(mine.price, 6500)
+        self.assertEqual(MenuItem.objects.filter(name="밤라떼").count(), 1)
+
+
 class PromoTests(TestCase):
     """프로모션 — 메뉴판 사이에 끼워 도는 광고 한 장."""
 

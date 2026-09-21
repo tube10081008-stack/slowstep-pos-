@@ -26,7 +26,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
         model = MenuItem
         fields = [
             "id", "name", "price", "category", "category_display", "emoji",
-            "image", "show_on_board",
+            "image", "show_on_board", "set_eligible",
             "temp_option", "decaf_available", "oatmilk_available", "shot_available",
             "size_up_price", "cost", "stock", "sold_out", "is_available", "sort_order",
             # 레시피 — POS가 제조 화면에서 쓴다(손님 화면에는 내려가지 않는다)
@@ -213,7 +213,7 @@ class MenuItemWriteSerializer(serializers.ModelSerializer):
             "name", "price", "cost", "category", "temp_option",
             "decaf_available", "oatmilk_available", "shot_available",
             "size_up_price", "stock", "is_available", "sort_order",
-            "emoji", "image", "show_on_board",
+            "emoji", "image", "show_on_board", "set_eligible",
             "recipe", "recipe_hot", "topping", "recipe_note",
         ]
         extra_kwargs = {f: {"required": False} for f in fields if f not in ("name", "price")}

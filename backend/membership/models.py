@@ -229,6 +229,10 @@ class MenuItem(models.Model):
     # 메뉴판(고객 화면)에 띄울지. 파는 것과 보여주는 것은 다르다 —
     # 디저트는 매일 바뀌고, 특정 손님 전용 메뉴는 걸어 두면 안 된다.
     show_on_board = models.BooleanField("메뉴판에 표시", default=True)
+    # 세트 할인(음료+디저트)에서 디저트 쪽으로 칠 메뉴.
+    # 표시한 메뉴가 하나도 없으면 **예전처럼 디저트 전체**를 친다 —
+    # 실수로 아무 데도 안 켜 두면 세트 할인이 조용히 죽어 버리기 때문이다.
+    set_eligible = models.BooleanField("세트 할인 대상", default=False)
     is_available = models.BooleanField("판매중", default=True)
     # 재고: null=무제한. 0이면 품절 처리.
     stock = models.IntegerField("재고(빈칸=무제한)", null=True, blank=True, default=None)

@@ -136,7 +136,7 @@ def resolve_order(
     opt = store.option_price
     opt_cost = store.option_cost
     lines: list[OrderLine] = []
-    drink_qty = dessert_qty = 0
+    drink_qty = dessert_qty = set_qty = 0
     for raw in items:
         qty = int(raw.get("quantity", 0))
         if qty <= 0:
@@ -173,6 +173,8 @@ def resolve_order(
                                unit_price, unit_cost))
         if mi.category == MenuItem.Category.DESSERT:
             dessert_qty += qty
+            if mi.set_eligible:
+                set_qty += qty
         else:
             drink_qty += qty
 
@@ -180,7 +182,13 @@ def resolve_order(
         raise CheckoutError("주문 항목이 비어 있습니다.")
 
     gross = sum(l.line_total for l in lines)
-    pairs = min(drink_qty, dessert_qty)
+    # 세트 할인 대상을 지정한 매장이면 **그 메뉴만** 디저트 쪽으로 친다
+    # (예: 플레인 휘낭시에만). 아무 메뉴도 지정하지 않았으면 디저트 전체 —
+    # 실수로 아무 데도 안 켜 두면 세트 할인이 조용히 죽는 걸 막는다.
+    has_eligible = MenuItem.objects.filter(
+        store=store, set_eligible=True, is_available=True
+    ).exists()
+    pairs = min(drink_qty, set_qty if has_eligible else dessert_qty)
     discount = pairs * store.set_discount_amount if set_discount else 0
     return ResolvedOrder(
         lines=lines, gross=gross, discount=discount, set_pairs=pairs
