@@ -107,21 +107,30 @@
   .it.out .nm, .it.out .pr { color:var(--muted); text-decoration:line-through; }
 
   /* ── 프로모션 페이지 ──
-     메뉴 목록이 아니라 그림 한 장이다. **화면을 통째로 쓴다** — 머리말·발문·
-     여백을 걷어내고 이미지만 남긴다. 그래야 포스터 글씨가 읽힌다.
-     자르지 않고(contain) 채운다 — cover 로 채우면 세로 포스터의 위아래
-     글씨가 잘려 나간다. 1920×1080 으로 맞춰 만든 이미지는 딱 들어맞는다. */
-  .page.promo { padding:0; justify-content:center; }
-  .page.promo img { width:100%; height:100%; object-fit:contain; display:block; }
+     메뉴 목록이 아니라 그림 한 장이다. **화면을 통째로 내준다.**
+
+     흰 여백이 남으면 액자에 끼운 것처럼 옹색해 보인다. 그렇다고 cover 로
+     꽉 채우면 세로 포스터의 가격이 잘려 나간다. 그래서 **같은 그림을 크게
+     흐려 뒤에 깔고** 그 위에 원본을 통째로 얹는다 — 남는 자리가 흰 띠가
+     아니라 그림의 연장이 되어, 자르지 않고도 화면이 꽉 찬다. */
+  .page.promo { padding:0; justify-content:center; position:relative;
+    overflow:hidden; background:#000; }
+  .page.promo .bg { position:absolute; inset:-8%; width:116%; height:116%;
+    object-fit:cover; filter:blur(48px) saturate(1.15) brightness(.92);
+    transform:scale(1.06); }
+  .page.promo .fg { position:relative; width:100%; height:100%;
+    object-fit:contain; display:block; }
 
   /* 프로모션 장을 보고 있는 동안만 판을 비운다. 메뉴 장으로 돌아오면
      머리말·발문이 그대로 돌아온다. */
   body.full .board { padding:0; gap:0; grid-template-rows:1fr; }
   body.full .top, body.full .foot { display:none; }
-  /* 넘김 버튼은 남긴다 — 다음 장으로 갈 길이 없으면 갇힌다.
-     그림 위에 얹히므로 조금 물러나 있게 한다. */
-  body.full .arrow { opacity:.55; }
-  body.full .arrow:hover { opacity:1; }
+  /* 넘김 버튼은 **숨겨 둔다.** 아무도 안 만지는 붙박이 화면에 동그라미 두
+     개가 그림 위에 늘 떠 있으면 그게 제일 먼저 눈에 띈다. 마우스를 움직이면
+     나타나므로 직원이 넘길 길은 남아 있고, 14초마다 알아서 넘어간다. */
+  body.full .arrow { opacity:0; pointer-events:none; transition:opacity .25s; }
+  body.full.hint .arrow { opacity:.5; pointer-events:auto; }
+  body.full.hint .arrow:hover { opacity:1; }
 
   /* ── 좌우 넘김 버튼: 화면 양옆, 크게 ── */
   .arrow { position:absolute; top:50%; transform:translateY(-50%);
@@ -276,7 +285,10 @@
     page = Math.min(page, pages.length - 1);
 
     $("track").innerHTML = pages.map(p => p.promo ? `
-      <div class="page promo"><img src="${p.promo.image}" alt="${p.ko}" /></div>` : `
+      <div class="page promo">
+        <img class="bg" src="${p.promo.image}" alt="" aria-hidden="true" />
+        <img class="fg" src="${p.promo.image}" alt="${p.ko}" />
+      </div>` : `
       <div class="page">
         <h2><span class="ko">${p.ko}</span><span class="en">${p.en}</span><span class="rule"></span></h2>
         <div class="items${p.items.length > 10 ? " dense" : ""}">
@@ -333,6 +345,16 @@
     paint();
     hold();                      // 손님이 넘겼으면 자동 넘김을 잠시 멈춘다
   }
+
+  /* 전체화면일 때 넘김 버튼은 손이 닿을 때만 나타난다. */
+  let hintTimer = null;
+  function showArrows(){
+    document.body.classList.add("hint");
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => document.body.classList.remove("hint"), 2600);
+  }
+  ["mousemove", "touchstart", "keydown"].forEach(
+    ev => addEventListener(ev, showArrows, { passive: true }));
 
   $("tabs").onclick = (e) => { const b = e.target.closest("button"); if(b) go(+b.dataset.i); };
   $("dots").onclick = (e) => { const d = e.target.closest("i"); if(d) go(+d.dataset.i); };
