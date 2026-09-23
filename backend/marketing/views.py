@@ -182,6 +182,26 @@ class DashboardView(APIView):
         return Response(dashboard_stats())
 
 
+class InsightsView(APIView):
+    """
+    손님 분석 🔒 — `GET ?days=90`.
+
+    재방문·이탈 위험·문자 효과·쿠폰 효과·요일×시간·같이 팔리는 메뉴.
+    `days` 는 요일×시간과 메뉴 짝에만 걸린다(나머지는 각자 기준 기간이 있다).
+    """
+
+    permission_classes = [StorePinPermission]
+
+    def get(self, request):
+        from .insights import build
+
+        try:
+            days = int(request.query_params.get("days", 90))
+        except (TypeError, ValueError):
+            days = 90
+        return Response(build(days=max(7, min(365, days))))
+
+
 class SegmentViewSet(viewsets.ModelViewSet):
     queryset = Segment.objects.all()
     serializer_class = SegmentSerializer

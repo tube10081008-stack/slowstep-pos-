@@ -797,3 +797,245 @@ class CampaignSendTests(TestCase):
             send_campaign(c)
         self.assertEqual(len(calls), 1)
         self.assertEqual(c.sent_count, 32)
+
+
+class InsightsTests(TestCase):
+    """
+    손님 분석. 숫자가 틀리면 사장님이 엉뚱한 손님에게 문자를 보내고 엉뚱한 세트를
+    만든다 — 경계(같은 날 두 번, 30일이 안 지난 손님, 이관 회원)를 촘촘히 본다.
+    """
+
+    TODAY = datetime(2026, 9, 21).date()   # 월요일
+
+    def setUp(self):
+        self.store = Store.objects.create(name="슬로우스텝")
+        self.n = 0
+
+    def member(self, name="손님", **kw):
+        self.n += 1
+        return Member.objects.create(
+            store=self.store, phone=f"010{self.n:08d}", name=name, **kw
+        )
+
+    def pay(self, member, day, hour=12, amount=5000, items=(), status="paid"):
+        from datetime import time as dtime
+
+        from membership.models import OrderItem, Transaction
+
+        at = timezone.make_aware(datetime.combine(day, dtime(hour, 30)))
+        tx = Transaction.objects.create(
+            store=self.store, member=member, gross_amount=amount,
+            net_amount=amount, status=status, paid_at=at,
+        )
+        for name in items:
+            OrderItem.objects.create(transaction=tx, name=name, unit_price=1000)
+        return tx
+
+    def ago(self, days):
+        from datetime import timedelta
+
+        return self.TODAY - timedelta(days=days)
+
+    # ── 방문일 ──
+    def test_same_day_twice_is_one_visit_and_canceled_ignored(self):
+        from .insights import visit_days
+
+        m = self.member()
+        self.pay(m, self.ago(3), hour=9)
+        self.pay(m, self.ago(3), hour=15)
+        self.pay(m, self.ago(1), status="canceled")
+        self.assertEqual(visit_days()[m.id], [self.ago(3)])
+
+    def test_late_night_counts_as_local_date(self):
+        """밤 11시 결제는 UTC 로 보면 같은 날 오후 2시지만, 날짜는 한국 날짜다."""
+        from .insights import heatmap, visit_days
+
+        m = self.member()
+        self.pay(m, self.TODAY, hour=23)
+        self.assertEqual(visit_days()[m.id], [self.TODAY])
+        cell = heatmap(timezone.now() - timezone.timedelta(days=3650))["cells"][0]
+        self.assertEqual((cell["wd"], cell["h"]), (1, 23))   # 월요일 23시
+
+    # ── 재방문 ──
+    def test_return_30d_counts_only_new_and_elapsed(self):
+        from .insights import retention, visit_days
+
+        back = self.member("재방문")
+        self.pay(back, self.ago(60)); self.pay(back, self.ago(50))
+        gone = self.member("안옴")
+        self.pay(gone, self.ago(60)); self.pay(gone, self.ago(10))  # 30일 넘어 옴
+        fresh = self.member("어제 첫방문")                            # 30일 안 지남 → 분모 제외
+        self.pay(fresh, self.ago(1))
+        migrated = self.member("이관", baseline_visit_count=12)       # payhere 단골 → 제외
+        self.pay(migrated, self.ago(60)); self.pay(migrated, self.ago(55))
+
+        r = retention(visit_days(), self.TODAY)["return_30d"]
+        self.assertEqual((r["eligible"], r["returned"], r["rate"]), (2, 1, 50.0))
+
+    def test_cohort_cells(self):
+        from .insights import retention, visit_days
+
+        a = self.member()
+        self.pay(a, datetime(2026, 7, 3).date()); self.pay(a, datetime(2026, 8, 20).date())
+        b = self.member()
+        self.pay(b, datetime(2026, 7, 9).date())
+        cohorts = retention(visit_days(), self.TODAY)["cohorts"]
+        july = next(c for c in cohorts if c["month"] == "2026-07")
+        self.assertEqual(july["size"], 2)
+        self.assertEqual([c["rate"] for c in july["cells"]], [50.0, 0.0])
+        self.assertTrue(july["cells"][-1]["partial"])     # 9월은 진행 중
+        self.assertEqual(cohorts[-1]["month"], "2026-09")
+        self.assertEqual(cohorts[-1]["cells"], [])
+
+    # ── 이탈 위험 ──
+    def test_churn_uses_own_rhythm(self):
+        from .insights import churn_risk, visit_days
+
+        weekly = self.member("주1회", total_spent=90000)     # 7일 간격, 25일째 안 옴 → 위험
+        for d in (46, 39, 32, 25):
+            self.pay(weekly, self.ago(d))
+        monthly = self.member("월1회")                        # 30일 간격, 25일 → 평소대로
+        for d in (85, 55, 25):
+            self.pay(monthly, self.ago(d))
+        recent = self.member("주1회 최근")                     # 7일 간격, 3일 → 괜찮음
+        for d in (17, 10, 3):
+            self.pay(recent, self.ago(d))
+        twice = self.member("두 번뿐")                         # 간격을 말할 수 없음
+        for d in (90, 60):
+            self.pay(twice, self.ago(d))
+        lost = self.member("떠남")
+        for d in (400, 390, 380):
+            self.pay(lost, self.ago(d))
+
+        r = churn_risk(visit_days(), self.TODAY)
+        self.assertEqual([m["name"] for m in r["members"]], ["주1회"])
+        row = r["members"][0]
+        self.assertEqual((row["interval_days"], row["days_since"]), (7.0, 25))
+        self.assertEqual(r["lost"], 1)
+
+    def test_churn_short_interval_needs_14_days(self):
+        """매일 오던 손님이 사흘 빠졌다고 경보를 울리지 않는다."""
+        from .insights import churn_risk, visit_days
+
+        daily = self.member()
+        for d in (13, 12, 11, 10):
+            self.pay(daily, self.ago(d))
+        self.assertEqual(churn_risk(visit_days(), self.TODAY)["count"], 0)
+
+    # ── 문자 효과 ──
+    def test_campaign_effect_window(self):
+        from datetime import timedelta
+
+        from .insights import campaign_effect
+
+        sent_at = timezone.now() - timedelta(days=10)
+        came, stayed, other = self.member(), self.member(), self.member()
+        Member.objects.update(joined_at=sent_at - timedelta(days=30))
+        camp = Campaign.objects.create(
+            name="컴백", message_template="x", status=Campaign.Status.SENT, sent_at=sent_at,
+        )
+        for m in (came, stayed):
+            MessageLog.objects.create(
+                campaign=camp, member=m, phone=m.phone,
+                rendered_message="짧은 문자", status=MessageLog.Status.SENT,
+            )
+        from membership.models import Transaction
+
+        def paid(m, at, amount):
+            Transaction.objects.create(store=self.store, member=m, gross_amount=amount,
+                                       net_amount=amount, status="paid", paid_at=at)
+        paid(came, sent_at + timedelta(days=2), 7000)
+        paid(came, sent_at + timedelta(days=9), 9000)       # 7일 밖 — 안 센다
+        paid(stayed, sent_at - timedelta(days=1), 5000)     # 발송 전 — 안 센다
+        paid(other, sent_at + timedelta(days=3), 4000)      # 비교군
+
+        row = campaign_effect(timezone.now())["campaigns"][0]
+        self.assertEqual((row["sent"], row["visited"], row["rate"]), (2, 1, 50.0))
+        self.assertEqual((row["orders"], row["revenue"]), (1, 7000))
+        self.assertEqual(row["baseline_rate"], 100.0)       # 비교군 1명 중 1명
+        self.assertTrue(row["done"])
+        self.assertEqual(row["cost"], 40)                    # SMS 2건
+
+    # ── 쿠폰 효과 ──
+    def test_coupon_effect(self):
+        from datetime import timedelta
+
+        from membership.models import Coupon
+
+        from .insights import coupon_effect, visit_days
+
+        now = timezone.now()
+        m = self.member()
+        used_at = now - timedelta(days=40)
+        tx = self.pay(m, timezone.localdate(used_at), amount=8000)
+        self.pay(m, timezone.localdate(used_at) + timedelta(days=5))     # 쓰고 다시 옴
+        c1 = Coupon.objects.create(member=m, kind="bogo", source="manual",
+                                   used_at=used_at, used_transaction=tx)
+        Coupon.objects.filter(pk=c1.pk).update(issued_at=used_at - timedelta(days=4))
+        Coupon.objects.create(member=m, kind="bogo", source="manual",
+                              expires_at=now - timedelta(days=1))          # 만료
+        Coupon.objects.create(member=m, kind="bogo", source="roulette")
+
+        rows = {r["source"]: r for r in coupon_effect(visit_days(), now)["rows"]}
+        r = rows["manual"]
+        self.assertEqual((r["issued"], r["used"], r["expired"]), (2, 1, 1))
+        self.assertEqual((r["use_rate"], r["revenue"]), (50.0, 8000))
+        self.assertEqual((r["avg_days_to_use"], r["return_rate"]), (4.0, 100.0))
+        self.assertIsNone(rows["roulette"]["return_rate"])
+
+    # ── 같이 팔리는 메뉴 ──
+    def test_pairs_lift_and_threshold(self):
+        from datetime import timedelta
+
+        from .insights import pairs
+
+        m = self.member()
+        for _ in range(3):
+            self.pay(m, self.ago(1), items=["아메리카노", "휘낭시에"])
+        for _ in range(3):
+            self.pay(m, self.ago(1), items=["아메리카노"])
+        for _ in range(2):
+            self.pay(m, self.ago(1), items=["라떼", "쿠키"])            # 2번 — 기준 미달
+        r = pairs(timezone.now() - timedelta(days=30), min_count=3)
+        self.assertEqual(r["orders"], 8)
+        self.assertEqual(r["multi_orders"], 5)
+        self.assertEqual(len(r["rows"]), 1)
+        row = r["rows"][0]
+        self.assertEqual((row["a"], row["b"], row["count"]), ("아메리카노", "휘낭시에", 3))
+        self.assertEqual((row["a_share"], row["b_share"]), (50.0, 100.0))
+        self.assertEqual(row["lift"], round(3 * 8 / (6 * 3), 2))
+
+    # ── API ──
+    def test_endpoint_needs_pin_and_returns_sections(self):
+        from membership.tests import authenticate
+
+        self.assertEqual(self.client_class().get("/api/v1/insights").status_code, 403)
+        authenticate(self.client)
+        body = self.client.get("/api/v1/insights?days=abc").json()
+        self.assertEqual(body["days"], 90)
+        for key in ("retention", "churn", "campaigns", "coupons", "heatmap", "pairs"):
+            self.assertIn(key, body)
+            self.assertNotIn("error", body[key])
+
+    def test_query_count_does_not_grow_with_members(self):
+        """회원 수만큼 도는 쿼리가 끼면 회원이 늘 때 화면이 먼저 멈춘다."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from .insights import build
+
+        def count():
+            with CaptureQueriesContext(connection) as q:
+                build()
+            return len(q)
+
+        for _ in range(3):
+            m = self.member()
+            for d in (40, 30, 20):
+                self.pay(m, self.ago(d), items=["아메리카노", "휘낭시에"])
+        few = count()
+        for _ in range(12):
+            m = self.member()
+            for d in (40, 30, 20):
+                self.pay(m, self.ago(d), items=["아메리카노", "휘낭시에"])
+        self.assertEqual(count(), few)

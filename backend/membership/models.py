@@ -354,6 +354,13 @@ class Transaction(models.Model):
                 name="uniq_paid_toss_order_id",
             ),
         ]
+        # 기간으로 자르는 집계(매출·분석)와 회원별 방문 이력이 이 둘을 탄다.
+        # 지금은 없어도 빠르지만, 몇 년 쌓인 뒤에 붙이면 큰 표에 한 번에
+        # 걸어야 한다 — 작을 때 미리 둔다.
+        indexes = [
+            models.Index(fields=["status", "paid_at"], name="tx_status_paid_idx"),
+            models.Index(fields=["member", "paid_at"], name="tx_member_paid_idx"),
+        ]
 
     def __str__(self) -> str:
         return f"거래#{self.pk} {self.net_amount}원 [{self.status}]"

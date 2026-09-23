@@ -182,6 +182,38 @@
   button:not(:disabled):active { transform:translateY(1px); }
   .chip:hover { background:#e2e8ff; }
   tbody tr:hover { background:var(--card2); }
+
+  /* ── 손님 분석 ──
+     색은 한 가지 파랑의 밝기로만 '많고 적음'을 말한다(순차 척도).
+     글씨는 칸 색이 진해지면 흰색으로 바꿔 대비 4.5:1 이상을 지킨다. */
+  .ins-sec { margin-top:22px; padding-top:18px; border-top:1px solid var(--line); }
+  .ins-sec h4 { font-size:14px; margin:0 0 4px; font-weight:700; }
+  .ins-sec .why { color:var(--muted); font-size:12px; margin:0 0 12px; line-height:1.55; }
+  .ins-empty { padding:14px; border:1px dashed var(--line); border-radius:10px;
+    color:var(--muted); font-size:13px; text-align:center; line-height:1.6; }
+  .seq-0 { background:var(--card2); color:var(--muted); }
+  .seq-1 { background:#cde2fb; color:#161a25; } .seq-2 { background:#9ec5f4; color:#161a25; }
+  .seq-3 { background:#6da7ec; color:#161a25; } .seq-4 { background:#3987e5; color:#161a25; }
+  .seq-5 { background:#256abf; color:#fff; }    .seq-6 { background:#184f95; color:#fff; }
+  .cohort td.c { text-align:center; font-weight:600; font-variant-numeric:tabular-nums;
+    border:2px solid #fff; border-radius:6px; padding:8px 4px; }
+  .cohort td.c.partial { font-style:italic; }
+  .cohort td.c.none { background:transparent; }
+  .hm { display:grid; gap:2px; font-size:10.5px; }
+  .hm .hd { color:var(--muted); text-align:center; font-variant-numeric:tabular-nums; }
+  .hm .rl { color:var(--muted); font-weight:600; display:flex; align-items:center; }
+  .hm .cell { height:24px; border-radius:4px; cursor:default; }
+  .hm .cell:hover, .cohort td.c:hover { outline:2px solid var(--txt); outline-offset:-2px; }
+  .scale { display:flex; align-items:center; gap:2px; font-size:11px; color:var(--muted); margin-top:10px; }
+  .scale i { width:18px; height:10px; border-radius:2px; display:inline-block; }
+  .tip { position:fixed; z-index:10; pointer-events:none; background:var(--txt); color:#fff;
+    font-size:12px; line-height:1.5; padding:7px 10px; border-radius:8px; display:none;
+    box-shadow:var(--shadow); white-space:nowrap; }
+  .num { font-variant-numeric:tabular-nums; text-align:right; }
+  th.num { text-align:right; }
+  .up { color:var(--green); font-weight:700; } .down { color:var(--red); font-weight:700; }
+  .tag { font-size:10.5px; font-weight:700; border-radius:5px; padding:2px 6px; white-space:nowrap;
+    background:var(--card2); border:1px solid var(--line); color:var(--muted); }
 </style>
 <script src="../pin.js"></script>
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32.png" />
@@ -293,8 +325,69 @@
     </p>
   </div>
 
+  <!-- 손님 분석 — 쌓인 거래에서 '다음에 할 일'을 뽑는다 -->
+  <div class="card" style="margin-top:14px;" id="insCard">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <h3 style="margin:0;">손님 분석 <span class="muted" style="font-weight:500">— 쌓인 거래로 다음 할 일 찾기</span></h3>
+      <select id="insDays" onchange="loadInsights()" style="width:auto;padding:7px 10px;"
+              title="요일×시간, 같이 팔리는 메뉴에 적용">
+        <option value="30">최근 30일</option>
+        <option value="90" selected>최근 90일</option>
+        <option value="365">최근 1년</option>
+      </select>
+    </div>
+    <div class="grid kpis" id="insKpis" style="margin-top:14px;"></div>
+
+    <div class="ins-sec">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:220px;">
+          <h4>요즘 안 보이는 단골</h4>
+          <p class="why">새 POS에서 3번 이상 온 손님 중, <b>자기 평소 방문 간격의 2배</b>(최소 14일)를 넘겨 안 온 분.
+            누적 결제가 큰 순서입니다 — 다 붙잡을 수 없다면 잃으면 아픈 분부터.</p>
+        </div>
+        <button class="sm" id="churnSend" onclick="useChurnRecipients()" disabled>이 분들께 문자 보내기 ↓</button>
+      </div>
+      <div id="churnBox"></div>
+    </div>
+
+    <div class="ins-sec">
+      <h4>처음 온 손님이 다시 오나</h4>
+      <p class="why">첫 방문한 달별로, 몇 달 뒤에도 한 번 이상 다시 온 비율입니다.
+        payhere에서 옮겨온 회원은 새 POS 첫 결제가 진짜 첫 방문이 아니라 뺐습니다. <i>기울임</i>은 이번 달(진행 중).</p>
+      <div id="cohortBox"></div>
+    </div>
+
+    <div class="ins-sec">
+      <h4>언제 붐비나 <span class="muted" style="font-weight:500" id="hmRange"></span></h4>
+      <p class="why">요일 × 시간대별 결제 건수. 진할수록 많습니다. 칸에 올리면(누르면) 건수·매출이 보입니다.
+        근무표·오픈 시간·해피아워를 정할 때 씁니다.</p>
+      <div id="hmBox"></div>
+    </div>
+
+    <div class="ins-sec">
+      <h4>같이 팔리는 메뉴</h4>
+      <p class="why"><b>우연보다</b>가 1배보다 크면 서로 끌어당기는 짝입니다 — 세트 구성과 "같이 드시면 좋아요" 추천의 근거.
+        같이 산 횟수만 보면 제일 잘 팔리는 메뉴가 모든 짝에 끼어 들어서 이 숫자를 같이 봅니다.</p>
+      <div id="pairBox"></div>
+    </div>
+
+    <div class="ins-sec">
+      <h4>문자 보낸 효과</h4>
+      <p class="why">문자를 받은 손님 중 <b>7일 안에</b> 다시 온 비율과 그 매출. 비교로 같은 7일 동안 문자를 안 받은 회원의 방문율을 둡니다.
+        보통 오래 안 온 분께 보내므로 받은 쪽이 불리한 비교입니다 — 그래도 높으면 효과가 있었다는 뜻입니다.</p>
+      <div id="campBox"></div>
+    </div>
+
+    <div class="ins-sec">
+      <h4>쿠폰 효과</h4>
+      <p class="why">쿠폰이 쓰였는지, <b>쓰고 나서 30일 안에 다시 왔는지</b>. 다시 오게 만드는 쿠폰이 좋은 쿠폰입니다.</p>
+      <div id="cpBox"></div>
+    </div>
+    <p class="muted" id="insNote" style="margin-top:14px;"></p>
+  </div>
+
   <!-- 마케팅 발송 -->
-  <div class="card" style="margin-top:14px;">
+  <div class="card" style="margin-top:14px;" id="smsCard">
     <h3>마케팅 문자 발송</h3>
     <div class="grid cols">
       <!-- 세그먼트 빌더 -->
@@ -466,6 +559,7 @@
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="tip" id="tip" role="tooltip"></div>
 
 <script>
   const API_BASE = location.origin.includes(":5500") ? "http://localhost:8000" : location.origin;
@@ -778,6 +872,202 @@
     finally { $("sendBtn").disabled=false; $("sendBtn").textContent="발송하기"; }
   }
 
+  // ── 손님 분석 ──
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const WD = ["", "월", "화", "수", "목", "금", "토", "일"];
+  let INS = null;
+
+  // 비율(0~100) 또는 상대값(0~1)을 6단계 파랑으로. 0 은 빈 칸 색.
+  function seqStep(v){ return v <= 0 ? 0 : Math.min(6, 1 + Math.floor(v * 6 - 1e-9)); }
+  const emptyBox = (msg) => `<div class="ins-empty">${msg}</div>`;
+
+  async function loadInsights(){
+    try {
+      INS = await api("/api/v1/insights?days=" + $("insDays").value);
+    } catch(e){
+      $("insKpis").innerHTML = ""; $("insNote").textContent = "분석을 불러오지 못했습니다: " + e.message;
+      return;
+    }
+    const sec = (key, fn) => {
+      const d = INS[key];
+      try { return d && d.error ? emptyBox("이 항목을 계산하지 못했습니다.") : fn(d); }
+      catch(e){ return emptyBox("표시 중 오류: " + esc(e.message)); }
+    };
+    renderInsKpis();
+    $("churnBox").innerHTML = sec("churn", renderChurn);
+    $("cohortBox").innerHTML = sec("retention", renderCohorts);
+    $("hmBox").innerHTML = sec("heatmap", renderHeatmap);
+    $("pairBox").innerHTML = sec("pairs", renderPairs);
+    $("campBox").innerHTML = sec("campaigns", renderCampaigns);
+    $("cpBox").innerHTML = sec("coupons", renderCoupons);
+    const hasChurn = !!(INS.churn && INS.churn.members && INS.churn.members.length);
+    $("churnSend").disabled = !hasChurn;
+    $("churnSend").style.display = hasChurn ? "" : "none";
+    $("hmRange").textContent = "· 최근 " + ($("insDays").value === "365" ? "1년" : $("insDays").value + "일");
+    $("insNote").textContent = "원본 거래에서 매번 새로 계산합니다 — 과거 데이터에도 그대로 적용됩니다.";
+  }
+
+  function renderInsKpis(){
+    const r = INS.retention || {}, c = INS.churn || {}, cp = INS.campaigns || {}, co = INS.coupons || {};
+    const r30 = r.return_30d || {};
+    const lastDone = (cp.campaigns || []).find(x => x.done);
+    const issued = (co.rows || []).reduce((a, x) => a + x.issued, 0);
+    const used = (co.rows || []).reduce((a, x) => a + x.used, 0);
+    const tiles = [
+      ["첫 방문 후 30일 재방문", r30.rate == null ? "—" : r30.rate + "%",
+        r30.eligible ? `신규 ${num(r30.eligible)}명 중 ${num(r30.returned)}명` : "첫 방문 30일 지난 신규가 아직 없어요"],
+      ["요즘 안 보이는 단골", c.count == null ? "—" : num(c.count) + "명",
+        `180일 넘게 안 온 분 ${num(c.lost || 0)}명`],
+      ["최근 문자 7일 재방문", lastDone && lastDone.rate != null ? lastDone.rate + "%" : "—",
+        lastDone ? `안 받은 회원 ${lastDone.baseline_rate == null ? "—" : lastDone.baseline_rate + "%"} · ${esc(lastDone.name)}` : "7일이 지난 발송이 아직 없어요"],
+      ["쿠폰 사용률", issued ? Math.round(used / issued * 1000) / 10 + "%" : "—",
+        issued ? `${num(issued)}장 중 ${num(used)}장 사용` : "발행된 쿠폰이 없어요"],
+    ];
+    $("insKpis").innerHTML = tiles.map(([l, v, f]) => `<div class="card kpi"><div class="label">${l}</div>
+      <div class="val">${v}</div><div class="foot">${f}</div></div>`).join("");
+  }
+
+  function renderChurn(d){
+    if(!d.members.length) return emptyBox(
+      "지금은 평소보다 오래 안 온 단골이 없습니다.<br>새 POS에서 3번 이상 온 손님이 쌓이면 여기서 먼저 알려 드립니다.");
+    const rows = d.members.map(m => `<tr>
+      <td><b>${esc(m.name)}</b> <span class="muted">${esc(m.tier_display)}</span></td>
+      <td class="num">${m.interval_days}일마다</td>
+      <td class="num"><b>${m.days_since}일째</b></td>
+      <td class="num">${won(m.total_spent)}</td>
+      <td>${!m.has_phone ? '<span class="tag">번호없음</span>' : (m.marketing_opt_in ? "동의" : '<span class="tag">광고 미동의</span>')}</td>
+    </tr>`).join("");
+    // 50명이 한 화면을 다 덮으면 아래 분석이 안 보인다 — 상자 안에서만 구른다.
+    return `<div style="max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:0 10px;">
+      <table><thead><tr><th>손님</th><th class="num">평소</th><th class="num">안 온 지</th>
+      <th class="num">누적결제</th><th>수신</th></tr></thead><tbody>${rows}</tbody></table></div>` +
+      (d.count > d.members.length ? `<p class="muted">상위 ${d.members.length}명만 보입니다(전체 ${d.count}명).</p>` : "");
+  }
+
+  function renderCohorts(d){
+    const rows = d.cohorts.filter(c => c.size > 0);
+    if(!rows.length) return emptyBox(
+      "아직 새 POS에서 처음 온 손님 기록이 없습니다.<br>한 달쯤 쌓이면 달별로 채워집니다.");
+    const maxK = Math.max(1, ...rows.map(c => c.cells.length));
+    // 재방문율은 보통 50% 아래라 0~100 으로 칠하면 전부 옅다. 표 안 최댓값 기준으로 칠한다.
+    const top = Math.max(1, ...rows.flatMap(c => c.cells.map(x => x.rate || 0)));
+    const head = Array.from({length: maxK}, (_, i) => `<th style="text-align:center">${i + 1}달 뒤</th>`).join("");
+    const body = rows.map(c => {
+      const cells = Array.from({length: maxK}, (_, i) => {
+        const x = c.cells[i];
+        if(!x) return `<td class="c none"></td>`;
+        const tip = `${c.month} 첫 방문 ${c.size}명 중 ${x.count}명이 ${x.k}달 뒤에 다시 왔습니다${x.partial ? " (이번 달 진행 중)" : ""}`;
+        return `<td class="c seq-${seqStep((x.rate || 0) / top)}${x.partial ? " partial" : ""}" data-tip="${esc(tip)}">${x.rate}%</td>`;
+      }).join("");
+      return `<tr><td><b>${c.month.slice(2).replace("-", ".")}</b></td><td class="num">${c.size}명</td>${cells}</tr>`;
+    }).join("");
+    return `<table class="cohort"><thead><tr><th>첫 방문</th><th class="num">신규</th>${head}</tr></thead>
+      <tbody>${body}</tbody></table>`;
+  }
+
+  function renderHeatmap(d){
+    if(!d.cells.length) return emptyBox("이 기간에 결제가 없습니다.");
+    const hours = d.cells.map(c => c.h);
+    const h0 = Math.min(...hours), h1 = Math.max(...hours);
+    const max = Math.max(...d.cells.map(c => c.count));
+    const at = {}; d.cells.forEach(c => at[c.wd + "-" + c.h] = c);
+    const cols = h1 - h0 + 1;
+    let g = `<div class="hm" style="grid-template-columns:22px repeat(${cols}, minmax(0,1fr))"><div></div>`;
+    for(let h = h0; h <= h1; h++) g += `<div class="hd">${(h - h0) % 2 === 0 ? h : ""}</div>`;
+    for(let wd = 1; wd <= 7; wd++){
+      g += `<div class="rl">${WD[wd]}</div>`;
+      for(let h = h0; h <= h1; h++){
+        const c = at[wd + "-" + h];
+        const tip = c ? `${WD[wd]}요일 ${h}시 · 결제 ${num(c.count)}건 · ${won(c.revenue)}` : `${WD[wd]}요일 ${h}시 · 결제 없음`;
+        g += `<div class="cell seq-${c ? seqStep(c.count / max) : 0}" data-tip="${esc(tip)}"></div>`;
+      }
+    }
+    g += `</div>`;
+    const scale = `<div class="scale">적음 ${[1,2,3,4,5,6].map(i => `<i class="seq-${i}"></i>`).join("")} 많음</div>`;
+    const p = d.peak;
+    return g + scale + (p ? `<p class="muted" style="margin:8px 0 0">가장 붐비는 때: <b>${WD[p.wd]}요일 ${p.h}시</b> — 결제 ${num(p.count)}건 · ${won(p.revenue)}</p>` : "");
+  }
+
+  function renderPairs(d){
+    if(!d.rows.length) return emptyBox(
+      d.orders ? `이 기간 주문 ${num(d.orders)}건 중 3번 이상 같이 담긴 짝이 아직 없습니다.` : "이 기간에 주문이 없습니다.");
+    const rows = d.rows.map(r => `<tr>
+      <td><b>${esc(r.a)}</b> + <b>${esc(r.b)}</b></td>
+      <td class="num">${num(r.count)}번</td>
+      <td class="num">${r.a_share}% / ${r.b_share}%</td>
+      <td class="num ${r.lift >= 1.2 ? "up" : ""}">${r.lift}배</td></tr>`).join("");
+    return `<table><thead><tr><th>짝</th><th class="num">같이 산 주문</th>
+      <th class="num">앞 메뉴 중 / 뒤 메뉴 중</th><th class="num">우연보다</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="muted" style="margin:8px 0 0">주문 ${num(d.orders)}건 중 <b>${d.multi_rate ?? 0}%</b>가 두 가지 이상 담긴 주문입니다.</p>`;
+  }
+
+  function renderCampaigns(d){
+    if(!d.campaigns.length) return emptyBox("아직 보낸 문자가 없습니다. 보내고 나면 7일 뒤 효과가 여기 뜹니다.");
+    const rows = d.campaigns.map(c => {
+      const diff = (c.rate != null && c.baseline_rate != null) ? c.rate - c.baseline_rate : null;
+      const cls = diff == null ? "" : (diff > 0 ? "up" : (diff < 0 ? "down" : ""));
+      return `<tr>
+        <td><b>${esc(c.name)}</b> <span class="muted">${c.sent_at.slice(5, 10).replace("-", ".")}</span>
+          ${c.done ? "" : '<span class="tag">7일 진행 중</span>'}</td>
+        <td class="num">${num(c.sent)}명</td>
+        <td class="num ${cls}">${c.rate == null ? "—" : c.rate + "%"} <span class="muted">(${num(c.visited)}명)</span></td>
+        <td class="num">${c.baseline_rate == null ? "—" : c.baseline_rate + "%"}</td>
+        <td class="num">${won(c.revenue)}</td>
+        <td class="num">약 ${won(c.cost)}</td></tr>`;
+    }).join("");
+    return `<table><thead><tr><th>캠페인</th><th class="num">받은 분</th><th class="num">7일 내 방문</th>
+      <th class="num">안 받은 회원</th><th class="num">그 매출</th><th class="num">문자비</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  function renderCoupons(d){
+    if(!d.rows.length) return emptyBox("아직 발행된 쿠폰이 없습니다.");
+    const rows = d.rows.map(r => `<tr>
+      <td><b>${esc(r.label)}</b></td>
+      <td class="num">${num(r.issued)}장</td>
+      <td class="num">${r.use_rate == null ? "—" : r.use_rate + "%"}</td>
+      <td class="num">${num(r.expired)}장</td>
+      <td class="num">${r.avg_days_to_use == null ? "—" : r.avg_days_to_use + "일"}</td>
+      <td class="num">${r.return_rate == null ? '<span class="muted">아직</span>' : r.return_rate + "%"}</td>
+      <td class="num">${won(r.revenue)}</td></tr>`).join("");
+    return `<table><thead><tr><th>쿠폰</th><th class="num">발행</th><th class="num">사용률</th>
+      <th class="num">만료</th><th class="num">쓰기까지</th><th class="num">쓰고 30일 재방문</th>
+      <th class="num">사용 결제 매출</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  // 분석에서 고른 '안 보이는 단골'을 문자 대상 명단으로 바로 넘긴다.
+  // 조건을 다시 만지면 원래대로 조건 기준 명단으로 돌아간다.
+  function useChurnRecipients(){
+    const list = (INS && INS.churn && INS.churn.members) || [];
+    if(!list.length) return;
+    rcpOff = new Set();
+    $("rcpFind").value = "";
+    renderRecipients(list);
+    $("previewBox").innerHTML = `요즘 안 보이는 단골 <b style="font-size:16px">${list.length}명</b>` +
+      `<div class="muted" style="margin-top:6px;">손님 분석에서 가져왔습니다. 조건을 바꾸면 조건 기준 명단으로 돌아갑니다.</div>`;
+    firstSample = list[0];
+    $("aiPurpose").value = "comeback";
+    $("campName").value = "단골 컴백"; delete $("campName").dataset.auto;
+    renderPreview();
+    $("smsCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    toast(`${list.length}명을 문자 대상으로 넣었습니다`);
+  }
+
+  // 칸 위 설명 — 올리면(폰은 누르면) 보인다. 칸마다 리스너를 달지 않고 한 곳에서 받는다.
+  (function(){
+    const tip = $("tip");
+    function show(e){
+      const el = e.target.closest && e.target.closest("[data-tip]");
+      if(!el){ tip.style.display = "none"; return; }
+      tip.textContent = el.dataset.tip; tip.style.display = "block";
+      const r = el.getBoundingClientRect(), w = tip.offsetWidth;
+      tip.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + "px";
+      tip.style.top = Math.max(8, r.top - tip.offsetHeight - 8) + "px";
+    }
+    document.addEventListener("mouseover", show);
+    document.addEventListener("click", show);
+    addEventListener("scroll", () => tip.style.display = "none", { passive: true });
+  })();
+
   // ── 원가·마진 분석 ──
   const pct = (n) => (n==null?"—":n+"%");
   function marginClass(rate){ return rate>=60?"ok":(rate>=35?"":"fail"); }
@@ -1060,7 +1350,7 @@
     checkStorage();
     // 오늘 요약·주문 내역을 먼저 그린다 — 폰으로 여는 대부분의 이유가 이 둘이다
     try { await loadDay(); } catch(e){}
-    try { await loadDashboard(); await loadMargins(); await loadSegments(); doPreview(); }
+    try { await loadDashboard(); await loadMargins(); loadInsights(); await loadSegments(); doPreview(); }
     catch(e){ $("sub").textContent = "백엔드 연결 안됨: "+e.message; }
   })();
 </script>

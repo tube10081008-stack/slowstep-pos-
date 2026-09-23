@@ -680,6 +680,46 @@ GET    /api/v1/menu?all=1  🔒  판매중지분까지(관리 목록용)
 }
 ```
 
+### `GET /api/v1/insights?days=90`  🔒
+손님 분석. 원본 거래에서 **매번 새로 계산**한다(집계를 저장하지 않으므로 과거 데이터에도
+소급된다). `days`(7~365, 기본 90)는 `heatmap`·`pairs` 에만 걸린다.
+방문은 **회원별 방문한 날**(한국 날짜) 단위 — 같은 날 두 번 결제는 한 번 방문이다.
+섹션 하나가 실패하면 그 섹션만 `{"error": "..."}` 로 오고 나머지는 정상으로 온다.
+쿼리 수는 회원 수와 무관하게 일정하다(3년치·거래 13만 건에서 약 20쿼리).
+
+```json
+200 {
+  "days": 90, "generated_at": "2026-09-23T14:00:00+09:00",
+  "retention": {                         // 신규만 — payhere 이관 회원(이관 방문수>0) 제외
+    "return_30d": { "eligible": 62, "returned": 20, "rate": 32.3 },  // 첫 방문 30~120일 전인 신규 중 30일 안 재방문
+    "cohorts": [ { "month": "2026-07", "size": 21,
+                   "cells": [ { "k": 1, "count": 10, "rate": 47.6, "partial": false }, ... ] } ],
+    "new_total": 120, "migrated_excluded": 42
+  },
+  "churn": {                             // 3회 이상 방문 & 평소 간격×2(최소 14일) 넘게 안 옴, 180일 이내
+    "count": 12, "lost": 3,              // lost = 180일 넘게 안 온 단골
+    "members": [ { "id": 7, "name": "…", "phone": "…", "tier": "SILVER", "tier_display": "실버",
+                   "visit_count": 30, "total_spent": 180000, "points": 1200, "stamps": 3,
+                   "marketing_opt_in": true, "has_phone": true,
+                   "visits": 14, "interval_days": 7.5, "days_since": 25, "last_visit": "2026-08-29" } ]
+  },                                     // 누적결제 큰 순, 최대 50명
+  "campaigns": { "window_days": 7, "campaigns": [
+    { "id": 3, "name": "컴백", "is_ad": true, "sent_at": "…", "done": true,
+      "sent": 40, "visited": 9, "rate": 22.5,
+      "baseline_rate": 14.0,             // 같은 7일 동안 문자를 안 받은 회원의 방문율
+      "orders": 11, "revenue": 71500, "cost": 800 } ] },   // cost = SMS 20원·LMS 60원 대략치
+  "coupons": { "return_days": 30, "rows": [
+    { "kind": "bogo", "source": "manual", "label": "음료 1+1 · 수기 지급",
+      "issued": 20, "used": 12, "expired": 3, "use_rate": 60.0, "revenue": 98000,
+      "avg_days_to_use": 6.5, "return_rate": 58.3, "return_eligible": 12 } ] },
+  "heatmap": { "cells": [ { "wd": 1, "h": 12, "count": 90, "revenue": 700000 } ],   // wd 월=1…일=7
+               "peak": { "wd": 3, "h": 12, "count": 246, "revenue": 1967200 } },
+  "pairs": { "orders": 10534, "multi_orders": 4700, "multi_rate": 44.6,
+             "rows": [ { "a": "아메리카노", "b": "플레인 휘낭시에", "count": 46,
+                         "a_share": 6.3, "b_share": 10.1, "lift": 1.47 } ] }   // 3회 이상, 상위 10
+}
+```
+
 ---
 
 ## 마케팅 세그먼트 (Segment)
