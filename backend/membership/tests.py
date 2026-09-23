@@ -3809,3 +3809,58 @@ class PromoTests(TestCase):
         self.assertGreater(second["sort_order"], first["sort_order"])
         rows = self.client.get("/api/v1/promos").json()
         self.assertEqual([r["title"] for r in rows], ["먼저", "나중"])
+
+
+class MenuSyncV2Tests(TestCase):
+    """확정본 2차 — 골든애플커피 복귀, 딥초코 이름 통일 (0032)."""
+
+    def setUp(self):
+        self.store = make_store()
+
+    def _run(self):
+        import importlib
+
+        from django.apps import apps as global_apps
+
+        importlib.import_module(
+            "membership.migrations.0032_menu_sync_v2"
+        )._forward(global_apps, None)
+
+    def test_golden_apple_comes_back(self):
+        """0031 에서 내린 메뉴가 확정본에 다시 들어왔다 — 내가 내렸으니 내가 되돌린다."""
+        m = MenuItem.objects.create(
+            store=self.store, name="골든애플커피", price=5200,
+            category=MenuItem.Category.COFFEE, temp_option=MenuItem.Temp.ICE,
+            is_available=False, show_on_board=False,
+        )
+        self._run()
+        m.refresh_from_db()
+        self.assertTrue(m.is_available)
+        self.assertTrue(m.show_on_board)
+        self.assertEqual(m.price, 5500)
+
+    def test_choco_renamed_in_place(self):
+        """이름만 바꾼다 — 같은 행이라 지난 주문·통계가 그대로 이어진다."""
+        m = MenuItem.objects.create(
+            store=self.store, name="딥초코멜로우 (기라델리)", price=5500,
+            category=MenuItem.Category.NONCOFFEE,
+        )
+        self._run()
+        m.refresh_from_db()
+        self.assertEqual(m.name, "딥초코 멜로우")
+        self.assertEqual(MenuItem.objects.filter(name__contains="딥초코").count(), 1)
+
+    def test_rename_skipped_when_new_name_exists(self):
+        """새 이름을 이미 따로 만들어 뒀으면 중복을 만들지 않는다."""
+        old = MenuItem.objects.create(
+            store=self.store, name="딥초코멜로우 (기라델리)", price=5500,
+            category=MenuItem.Category.NONCOFFEE,
+        )
+        MenuItem.objects.create(
+            store=self.store, name="딥초코 멜로우", price=5500,
+            category=MenuItem.Category.NONCOFFEE,
+        )
+        self._run()
+        old.refresh_from_db()
+        self.assertEqual(old.name, "딥초코멜로우 (기라델리)")
+        self.assertEqual(MenuItem.objects.filter(name="딥초코 멜로우").count(), 1)
