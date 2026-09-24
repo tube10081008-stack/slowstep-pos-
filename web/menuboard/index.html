@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>슬로우스텝 · 메뉴판 수정</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+  :root {
+    --bg:#f4f6f9; --card:#ffffff; --card2:#f8fafc; --line:#e6e9ef; --txt:#161a25;
+    --muted:#6b7280; --brand:#3b5bff; --brand-dk:#2846e6; --brand-soft:#eef2ff;
+    --green:#16a34a; --amber:#f59e0b; --red:#ef4444;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 6px 20px rgba(16,24,40,.06);
+    --sans:"Inter","Noto Sans KR",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--txt); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1000px; margin:0 auto; padding:16px 16px 48px; }
+
+  header { display:flex; align-items:center; gap:10px; padding:6px 2px 14px; flex-wrap:wrap; }
+  header h1 { font-size:19px; margin:0; font-weight:800; letter-spacing:-.01em; }
+  header .tag { font-size:11px; color:var(--muted); border:1px solid var(--line);
+    padding:3px 9px; border-radius:999px; background:#fff; }
+  header nav { margin-left:auto; display:flex; gap:8px; }
+  header nav a { font-size:12px; color:var(--muted); text-decoration:none;
+    border:1px solid var(--line); background:#fff; padding:7px 11px; border-radius:8px; }
+
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:16px; box-shadow:var(--shadow); margin-bottom:14px; }
+  .hint { font-size:12.5px; color:var(--muted); line-height:1.7; }
+  .hint b { color:var(--txt); }
+
+  .cats { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .cats button { font-family:inherit; font-size:13px; padding:9px 13px; border-radius:9px;
+    border:1px solid var(--line); background:#fff; color:var(--txt); font-weight:600;
+    cursor:pointer; }
+  .cats button.on { background:var(--brand); border-color:var(--brand); color:#fff; }
+  .cats button small { font-weight:400; opacity:.7; margin-left:4px; }
+
+  /* 메뉴 한 줄 — 태블릿에서 손가락으로 누를 수 있게 넉넉히 */
+  .row { display:flex; align-items:center; gap:12px; padding:11px 4px;
+    border-bottom:1px solid var(--line); }
+  .row:last-child { border-bottom:0; }
+  .row.off { opacity:.45; }
+
+  .thumb { width:60px; height:60px; flex:0 0 auto; border-radius:11px; cursor:pointer;
+    border:1px solid var(--line); background:var(--card2); object-fit:cover;
+    display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  /* 60px 칸에 '사진 넣기'를 넣으면 글자가 세로로 쪼개진다. 아이콘 한 자로. */
+  .thumb.empty { color:#aab0b8; font-size:22px; border-style:dashed; }
+  .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+
+  .meta { flex:1; min-width:0; }
+  .meta .nm { font-size:15px; font-weight:700; }
+  .meta .pr { font-size:13px; color:var(--muted); margin-top:3px; }
+  .meta .pr b { color:var(--txt); font-weight:600; }
+
+  .acts { display:flex; align-items:center; gap:7px; flex:0 0 auto; }
+  .acts button { font-family:inherit; font-size:12px; font-weight:600; padding:8px 11px;
+    border-radius:8px; border:1px solid var(--line); background:#fff; color:var(--txt);
+    cursor:pointer; white-space:nowrap; }
+  .acts button.on { background:var(--brand-soft); border-color:#c7d0ff; color:var(--brand-dk); }
+  .acts button.off { color:var(--muted); }
+
+  .empty { padding:22px; text-align:center; color:var(--muted); font-size:13.5px; }
+
+  /* 프로모션 */
+  .pr-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+  .pr-head h2 { font-size:15px; margin:0; font-weight:700; }
+  .pr-head .tag { font-size:11px; color:var(--muted); font-weight:400;
+    border:1px solid var(--line); padding:2px 8px; border-radius:999px; margin-left:4px; }
+  .pr-head .add { margin-left:auto; font-family:inherit; font-size:13px; font-weight:700;
+    padding:9px 14px; border-radius:9px; border:0; background:var(--brand); color:#fff;
+    cursor:pointer; }
+  .promos { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px; }
+  .promos .p { border:1px solid var(--line); border-radius:12px; overflow:hidden;
+    background:var(--card2); }
+  .promos .p.off { opacity:.5; }
+  .promos .p img { width:100%; aspect-ratio:16/9; object-fit:cover; display:block;
+    background:#fff; }
+  .promos .p .pb { display:flex; gap:6px; padding:9px; }
+  .promos .p .pb button { flex:1; font-family:inherit; font-size:12px; font-weight:600;
+    padding:8px 6px; border-radius:8px; border:1px solid var(--line); background:#fff;
+    color:var(--txt); cursor:pointer; }
+  .promos .p .pb button.on { background:var(--brand-soft); border-color:#c7d0ff;
+    color:var(--brand-dk); }
+  .promos .p .pb button.del { color:var(--red); border-color:#f6cdcd; flex:0 0 auto; }
+  .promos .empty { grid-column:1/-1; }
+
+  /* 수정 모달 */
+  .bg { position:fixed; inset:0; background:rgba(16,24,40,.45); display:flex;
+    align-items:center; justify-content:center; padding:18px; z-index:50; }
+  .bg.hidden { display:none; }
+  .modal { background:#fff; border-radius:16px; padding:18px; width:100%; max-width:420px;
+    max-height:92vh; overflow-y:auto; box-shadow:0 18px 60px rgba(16,24,40,.28); }
+  .modal h3 { margin:0 0 14px; font-size:16px; }
+  .modal label { display:block; font-size:12px; color:var(--muted); font-weight:600;
+    margin:12px 0 5px; }
+  .modal input[type=text], .modal input[type=number] {
+    width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:10px;
+    background:#fff; color:var(--txt); font-size:15px; font-family:inherit; }
+  .big { width:100%; aspect-ratio:16/10; border-radius:12px; border:1px dashed var(--line);
+    background:var(--card2); display:flex; align-items:center; justify-content:center;
+    color:var(--muted); font-size:13px; overflow:hidden; cursor:pointer; margin-top:4px; }
+  .big img { width:100%; height:100%; object-fit:cover; display:block; }
+  .brow { display:flex; gap:8px; margin-top:10px; }
+  .brow button { flex:1; font-family:inherit; font-size:13px; font-weight:600; padding:10px;
+    border-radius:9px; border:1px solid var(--line); background:#fff; color:var(--txt);
+    cursor:pointer; }
+  .brow button.danger { color:var(--red); border-color:#f6cdcd; }
+  .foot { display:flex; gap:8px; margin-top:18px; }
+  .foot button { flex:1; font-family:inherit; font-size:14px; font-weight:700; padding:12px;
+    border-radius:10px; border:0; cursor:pointer; }
+  .foot .cancel { background:#fff; border:1px solid var(--line); color:var(--txt); }
+  .foot .save { background:var(--brand); color:#fff; }
+  .opts { display:flex; gap:6px; flex-wrap:wrap; }
+  .opts button { flex:1; min-width:80px; font-family:inherit; font-size:13px; font-weight:600;
+    padding:10px 8px; border-radius:9px; border:1px solid var(--line); background:#fff;
+    color:var(--muted); cursor:pointer; }
+  .opts button.on { background:var(--brand-soft); border-color:#c7d0ff; color:var(--brand-dk); }
+
+  .samples { display:grid; grid-template-columns:repeat(4, 1fr); gap:7px; margin-top:4px; }
+  .samples button { padding:0; border:1px solid var(--line); border-radius:9px;
+    background:var(--card2); cursor:pointer; aspect-ratio:1; overflow:hidden; }
+  .samples img { width:100%; height:100%; object-fit:cover; display:block; }
+
+  .hidden { display:none; }
+  .msg { font-size:12.5px; color:var(--red); margin-top:10px; min-height:16px; }
+
+  .toast { position:fixed; left:50%; bottom:22px; transform:translateX(-50%);
+    background:var(--txt); color:#fff; padding:12px 18px; border-radius:10px;
+    font-size:14px; display:none; z-index:99; box-shadow:var(--shadow); }
+
+  @media (max-width:560px){
+    .acts button { padding:8px 9px; font-size:11.5px; }
+    .thumb { width:52px; height:52px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>메뉴판 수정</h1>
+    <span class="tag">고객 화면에 바로 반영</span>
+    <nav>
+      <a href="/display/menu.html" target="_blank">메뉴판 미리보기</a>
+      <a href="/pos/">POS</a>
+    </nav>
+  </header>
+
+  <div class="card">
+    <div class="hint">
+      사진은 <b>네모 칸을 눌러</b> 고르면 됩니다. 폰에서는 바로 카메라로 찍을 수 있고,
+      올릴 때 자동으로 줄여서 저장하니 원본 크기는 신경 쓰지 않으셔도 됩니다.<br>
+      <b>메뉴판</b> 버튼은 고객 화면 노출만 끕니다 — <b>POS에서는 그대로 팔립니다.</b>
+      (디저트처럼 매일 바뀌는 것, 레온·킹처럼 특정 손님 상품을 여기서 끕니다.)
+    </div>
+  </div>
+
+  <!-- 프로모션 — 메뉴판 사이에 한 장씩 끼워 도는 광고 -->
+  <div class="card">
+    <div class="pr-head">
+      <h2>프로모션 <span class="tag">메뉴판 사이에 한 장씩</span></h2>
+      <button class="add" onclick="pickPromo()">＋ 이미지 추가</button>
+    </div>
+    <div class="hint" style="margin-bottom:12px;">
+      신메뉴 안내·휴무 공지·이벤트를 <b>그림 한 장</b>으로 띄웁니다.
+      메뉴 페이지를 다 보여준 뒤 한 장씩 돌아가고, <b>끄거나 지우면 바로 사라집니다.</b>
+      가로로 긴 사진(16:9)이 화면에 꽉 찹니다.
+    </div>
+    <div class="promos" id="promos"><div class="empty">불러오는 중…</div></div>
+  </div>
+
+  <div class="card">
+    <div class="cats" id="cats"></div>
+    <div id="list"><div class="empty">불러오는 중…</div></div>
+  </div>
+</div>
+
+<!-- 수정 모달 -->
+<div class="bg hidden" id="edit">
+  <div class="modal">
+    <h3 id="eTitle">메뉴 수정</h3>
+
+    <label>메뉴판 사진</label>
+    <div class="big" id="ePic" onclick="pickFile()">눌러서 사진 고르기</div>
+    <div class="brow">
+      <button type="button" onclick="pickFile()">사진 고르기</button>
+      <button type="button" class="danger" onclick="dropPic()">사진 지우기</button>
+    </div>
+    <!-- 진짜 사진을 찍기 전에 메뉴판이 어떻게 보이는지 확인할 수 있게. -->
+    <label>샘플 사진으로 먼저 보기</label>
+    <div class="samples" id="eSamples"></div>
+
+    <label>메뉴 이름</label>
+    <input type="text" id="eName" />
+    <label>가격</label>
+    <input type="number" id="ePrice" inputmode="numeric" />
+
+    <!-- POS에서 메뉴를 추가하면 샷만 켜진 채 들어간다. 여기서 켜야
+         주문할 때 디카페인·오트 고르는 칸이 생긴다. -->
+    <label>주문할 때 고를 수 있는 옵션</label>
+    <div class="opts" id="eOpts">
+      <button type="button" data-k="decaf_available" onclick="tgOpt(this)">디카페인</button>
+      <button type="button" data-k="oatmilk_available" onclick="tgOpt(this)">오트밀크</button>
+      <button type="button" data-k="shot_available" onclick="tgOpt(this)">샷 추가</button>
+    </div>
+    <!-- 디저트에만 뜬다. 음료끼리는 세트가 성립하지 않는다. -->
+    <div id="eSetWrap" class="hidden">
+      <label>세트 할인 <span style="font-weight:400">· 음료와 함께 주문하면 할인</span></label>
+      <div class="opts">
+        <button type="button" id="eSet" onclick="tgSet(this)">세트 할인 대상</button>
+      </div>
+    </div>
+    <label>온도</label>
+    <div class="opts" id="eTemp">
+      <button type="button" data-v="none" onclick="tgTemp(this)">없음</button>
+      <button type="button" data-v="ice" onclick="tgTemp(this)">아이스만</button>
+      <button type="button" data-v="hotice" onclick="tgTemp(this)">핫·아이스</button>
+    </div>
+
+    <div class="msg" id="eMsg"></div>
+    <div class="foot">
+      <button class="cancel" onclick="closeEdit()">취소</button>
+      <button class="save" id="eSave" onclick="saveEdit()">저장</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="file" accept="image/*" style="display:none" onchange="onFile(event)" />
+<input type="file" id="promoFile" accept="image/*" style="display:none" onchange="onPromoFile(event)" />
+<div class="toast" id="toast"></div>
+
+<script src="/pin.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const API = location.origin.includes(":5500") ? "http://localhost:8000" : location.origin;
+  const won = (n) => "₩" + (n || 0).toLocaleString("ko-KR");
+
+  const CATS = [["coffee","커피"],["coldbrew","콜드브루"],["noncoffee","논커피"],
+                ["tea","티"],["ade","스무디·에이드"],["dessert","디저트"]];
+
+  let all = [], cat = "coffee", editing = null, pendingImage = null;
+
+  function toast(t){
+    const el = $("toast"); el.textContent = t; el.style.display = "block";
+    clearTimeout(el._t); el._t = setTimeout(()=> el.style.display = "none", 2200);
+  }
+
+  async function api(path, opt = {}){
+    const res = await fetch(API + path, {
+      ...opt,
+      headers: { "Content-Type": "application/json", ...StorePin.headers(), ...(opt.headers||{}) },
+    });
+    if(res.status === 401 || res.status === 403){ StorePin.handle401(); throw new Error("로그인이 필요합니다"); }
+    if(!res.ok){
+      let d = ""; try { d = (await res.json()).detail || ""; } catch(e){}
+      throw new Error(d || ("오류 " + res.status));
+    }
+    return res.status === 204 ? null : res.json();
+  }
+
+  /* ── 사진 줄이기 ──────────────────────────────────────────
+     폰 사진은 한 장에 3~5MB다. 그대로 보내면 요청이 거부되고 DB도 못 버틴다.
+     가로 900px·JPEG 0.72 로 줄이면 60~120KB 라 메뉴 30종이 3MB 남짓이다.
+     **브라우저에서 줄여 보내되, 서버도 상한을 따로 잡는다**(이 코드를 거치지
+     않고 부를 수 있으므로). */
+  const MAX_W = 900, QUALITY = 0.72;
+
+  function shrink(file, maxW = MAX_W, quality = QUALITY){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const scale = Math.min(1, maxW / img.width);
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);   // 투명 PNG 대비
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("사진을 읽지 못했습니다")); };
+      img.src = url;
+    });
+  }
+
+  /* ── 샘플 사진 ────────────────────────────────────────────
+     진짜 사진을 찍으러 나가기 전에 메뉴판이 어떻게 보이는지 확인용.
+     SVG 라 한 장 1KB 도 안 되고, 저장해도 DB에 부담이 없다. 넣고 빼기를
+     반복해도 남는 게 없으니 마음껏 눌러 봐도 된다. */
+  function svgPic(bg, draw){
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">` +
+      `<rect width="120" height="120" fill="${bg}"/>${draw}</svg>`;
+    return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg)));
+  }
+
+  const SAMPLES = [
+    ["아메리카노", svgPic("#e9dfd3",
+      `<circle cx="60" cy="58" r="34" fill="#fff"/><circle cx="60" cy="58" r="26" fill="#43261a"/>
+       <path d="M96 48h9a10 10 0 0 1 0 20h-9" fill="none" stroke="#fff" stroke-width="7"/>`)],
+    ["라떼", svgPic("#efe6da",
+      `<circle cx="60" cy="58" r="34" fill="#fff"/><circle cx="60" cy="58" r="26" fill="#c9a227"/>
+       <path d="M60 44c7 6 7 22 0 28-7-6-7-22 0-28z" fill="#fff8ec"/>`)],
+    ["콜드브루", svgPic("#dfe6ef",
+      `<rect x="40" y="26" width="40" height="70" rx="8" fill="#fff"/>
+       <rect x="44" y="46" width="32" height="46" rx="6" fill="#4a2c1c"/>
+       <rect x="50" y="52" width="9" height="9" rx="2" fill="#ffffff" opacity=".45"/>
+       <rect x="62" y="66" width="9" height="9" rx="2" fill="#ffffff" opacity=".35"/>`)],
+    ["에이드", svgPic("#e4f2ea",
+      `<rect x="40" y="26" width="40" height="70" rx="8" fill="#fff"/>
+       <rect x="44" y="44" width="32" height="48" rx="6" fill="#7fd1a6"/>
+       <circle cx="55" cy="60" r="5" fill="#fff" opacity=".6"/>
+       <circle cx="67" cy="74" r="4" fill="#fff" opacity=".5"/>`)],
+    ["티", svgPic("#f0ebe0",
+      `<path d="M34 46h48v22a24 24 0 0 1-48 0z" fill="#fff"/>
+       <path d="M40 52h36v16a18 18 0 0 1-36 0z" fill="#c98b3e"/>
+       <path d="M82 52h10a9 9 0 0 1 0 18h-4" fill="none" stroke="#fff" stroke-width="6"/>
+       <rect x="30" y="92" width="60" height="6" rx="3" fill="#fff"/>`)],
+    ["디저트", svgPic("#f6e7e7",
+      `<path d="M36 56h48l-6 38a6 6 0 0 1-6 5H48a6 6 0 0 1-6-5z" fill="#fff"/>
+       <path d="M36 56c0-12 11-20 24-20s24 8 24 20z" fill="#e6a4a4"/>
+       <circle cx="60" cy="32" r="5" fill="#d46a6a"/>`)],
+    ["원두", svgPic("#e6ded6",
+      `<ellipse cx="60" cy="60" rx="30" ry="22" fill="#5b3a21" transform="rotate(-25 60 60)"/>
+       <path d="M38 70c14-14 30-22 44-20" fill="none" stroke="#e6ded6" stroke-width="5"/>`)],
+    ["빈 접시", svgPic("#eceff3",
+      `<ellipse cx="60" cy="62" rx="36" ry="26" fill="#fff"/>
+       <ellipse cx="60" cy="60" rx="24" ry="17" fill="#e3e8ee"/>`)],
+  ];
+
+  function renderSamples(){
+    $("eSamples").innerHTML = SAMPLES.map((s, i) =>
+      `<button type="button" title="${s[0]}" onclick="useSample(${i})">
+         <img src="${s[1]}" alt="${s[0]}" /></button>`).join("");
+  }
+
+  function useSample(i){
+    const [label, uri] = SAMPLES[i];
+    pendingImage = uri;
+    $("ePic").innerHTML = `<img src="${uri}" alt="" />`;
+    $("eMsg").style.color = "var(--muted)";
+    $("eMsg").textContent = `샘플 '${label}' — 저장을 눌러야 반영됩니다.`;
+  }
+
+  /* ── 옵션 토글 ─────────────────────────────────────────── */
+  let optState = {}, tempState = "hotice", setState = false;
+
+  function tgOpt(btn){
+    const k = btn.dataset.k;
+    optState[k] = !optState[k];
+    btn.classList.toggle("on", optState[k]);
+  }
+  function tgSet(btn){ setState = !setState; btn.classList.toggle("on", setState); }
+  function tgTemp(btn){
+    tempState = btn.dataset.v;
+    document.querySelectorAll("#eTemp button")
+      .forEach(b => b.classList.toggle("on", b.dataset.v === tempState));
+  }
+
+  function pickFile(){ $("file").value = ""; $("file").click(); }
+
+  async function onFile(e){
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    $("eMsg").textContent = "사진 줄이는 중…";
+    try {
+      pendingImage = await shrink(file);
+      $("ePic").innerHTML = `<img src="${pendingImage}" alt="" />`;
+      const kb = Math.round(pendingImage.length * 0.75 / 1024);
+      $("eMsg").style.color = "var(--muted)";
+      $("eMsg").textContent = `사진 준비됨 (약 ${kb}KB) — 저장을 눌러야 반영됩니다.`;
+    } catch(err){
+      $("eMsg").style.color = "var(--red)";
+      $("eMsg").textContent = err.message;
+    }
+  }
+
+  function dropPic(){
+    pendingImage = "";
+    $("ePic").innerHTML = "눌러서 사진 고르기";
+    $("eMsg").style.color = "var(--muted)";
+    $("eMsg").textContent = "사진을 지웁니다 — 저장을 눌러야 반영됩니다.";
+  }
+
+  /* ── 목록 ─────────────────────────────────────────────── */
+  function renderCats(){
+    $("cats").innerHTML = CATS.map(([k, ko]) => {
+      const n = all.filter(m => m.category === k).length;
+      return `<button class="${k===cat?"on":""}" onclick="pickCat('${k}')">${ko}<small>${n}</small></button>`;
+    }).join("");
+  }
+  function pickCat(k){ cat = k; renderCats(); renderList(); }
+
+  function renderList(){
+    const rows = all.filter(m => m.category === cat)
+                    .sort((a,b) => a.sort_order - b.sort_order || a.id - b.id);
+    if(!rows.length){ $("list").innerHTML = '<div class="empty">이 분류에는 메뉴가 없습니다.</div>'; return; }
+    $("list").innerHTML = rows.map(m => `
+      <div class="row${m.show_on_board ? "" : " off"}">
+        <div class="thumb${m.image ? "" : " empty"}" onclick="openEdit(${m.id})">
+          ${m.image ? `<img src="${m.image}" alt="" />` : "＋"}
+        </div>
+        <div class="meta" onclick="openEdit(${m.id})">
+          <div class="nm">${m.name}</div>
+          <div class="pr"><b>${won(m.price)}</b>${m.set_eligible ? " · 세트할인 대상" : ""}${m.is_available ? "" : " · 판매중지"}</div>
+        </div>
+        <div class="acts">
+          <button class="${m.show_on_board ? "on" : "off"}" onclick="toggleBoard(${m.id})">
+            ${m.show_on_board ? "메뉴판 ON" : "메뉴판 OFF"}</button>
+          <button onclick="openEdit(${m.id})">수정</button>
+        </div>
+      </div>`).join("");
+  }
+
+  async function toggleBoard(id){
+    const m = all.find(x => x.id === id);
+    if(!m) return;
+    const next = !m.show_on_board;
+    m.show_on_board = next;            // 먼저 그려서 손이 기다리지 않게
+    renderList();
+    try {
+      await api(`/api/v1/menu/${id}`, { method:"PATCH",
+        body: JSON.stringify({ show_on_board: next }) });
+      toast(`${m.name} — 메뉴판 ${next ? "표시" : "숨김"}`);
+    } catch(err){
+      m.show_on_board = !next; renderList();
+      toast("❌ " + err.message);
+    }
+  }
+
+  /* ── 수정 ─────────────────────────────────────────────── */
+  function openEdit(id){
+    const m = all.find(x => x.id === id);
+    if(!m) return;
+    editing = m; pendingImage = null;          // null = 사진 안 건드림
+    $("eTitle").textContent = m.name;
+    $("eName").value = m.name;
+    $("ePrice").value = m.price;
+    $("ePic").innerHTML = m.image ? `<img src="${m.image}" alt="" />` : "눌러서 사진 고르기";
+    optState = {
+      decaf_available: !!m.decaf_available,
+      oatmilk_available: !!m.oatmilk_available,
+      shot_available: !!m.shot_available,
+    };
+    document.querySelectorAll("#eOpts button")
+      .forEach(b => b.classList.toggle("on", !!optState[b.dataset.k]));
+    setState = !!m.set_eligible;
+    $("eSetWrap").classList.toggle("hidden", m.category !== "dessert");
+    $("eSet").classList.toggle("on", setState);
+    tempState = m.temp_option || "hotice";
+    document.querySelectorAll("#eTemp button")
+      .forEach(b => b.classList.toggle("on", b.dataset.v === tempState));
+    renderSamples();
+    $("eMsg").textContent = "";
+    $("edit").classList.remove("hidden");
+  }
+  function closeEdit(){ $("edit").classList.add("hidden"); editing = null; pendingImage = null; }
+
+  async function saveEdit(){
+    if(!editing) return;
+    const name = ($("eName").value || "").trim();
+    const price = parseInt(($("ePrice").value || "").replace(/[^\d]/g, ""), 10);
+    if(!name){ $("eMsg").style.color = "var(--red)"; $("eMsg").textContent = "이름을 입력하세요."; return; }
+    if(!price || price <= 0){ $("eMsg").style.color = "var(--red)"; $("eMsg").textContent = "가격을 입력하세요."; return; }
+
+    const body = { name, price, temp_option: tempState, ...optState };
+    if(editing.category === "dessert") body.set_eligible = setState;
+    if(pendingImage !== null) body.image = pendingImage;   // 손댔을 때만 보낸다
+    $("eSave").disabled = true;
+    $("eMsg").style.color = "var(--muted)";
+    $("eMsg").textContent = "저장 중…";
+    try {
+      const saved = await api(`/api/v1/menu/${editing.id}`, { method:"PATCH", body: JSON.stringify(body) });
+      Object.assign(editing, saved);
+      renderList(); closeEdit(); toast(`${name} 저장됨`);
+    } catch(err){
+      $("eMsg").style.color = "var(--red)";
+      $("eMsg").textContent = err.message;
+    } finally { $("eSave").disabled = false; }
+  }
+
+  /* ── 프로모션 ─────────────────────────────────────────────
+     메뉴 사진보다 크게 올린다 — 화면 한 장을 채우므로 900px 로는 흐리다.
+     고객 화면이 1920 폭이라 그보다 작게 줄이면 글씨가 뭉개진다.
+     대신 상한이 있어 너무 큰 원본은 서버가 거절한다. */
+  const PROMO_W = 1920, PROMO_Q = 0.82;
+  let promos = [];
+
+  function renderPromos(){
+    const box = $("promos");
+    if(!promos.length){
+      box.innerHTML = '<div class="empty">등록된 프로모션이 없습니다. ＋ 이미지 추가를 눌러 올려보세요.</div>';
+      return;
+    }
+    box.innerHTML = promos.map(p => `
+      <div class="p${p.is_active ? "" : " off"}">
+        <img src="${p.image}" alt="${p.title || ""}" />
+        <div class="pb">
+          <button class="${p.is_active ? "on" : ""}" onclick="togglePromo(${p.id})">
+            ${p.is_active ? "표시중" : "숨김"}</button>
+          <button class="del" onclick="removePromo(${p.id})">삭제</button>
+        </div>
+      </div>`).join("");
+  }
+
+  function pickPromo(){ $("promoFile").value = ""; $("promoFile").click(); }
+
+  async function onPromoFile(e){
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    toast("이미지 줄이는 중…");
+    try {
+      const uri = await shrink(file, PROMO_W, PROMO_Q);
+      const saved = await api("/api/v1/promos", { method:"POST",
+        body: JSON.stringify({ image: uri, title: file.name.replace(/\.[^.]+$/, "").slice(0, 60) }) });
+      promos.push(saved); renderPromos();
+      toast(`프로모션 추가됨 (약 ${Math.round(uri.length * 0.75 / 1024)}KB)`);
+    } catch(err){ toast("❌ " + err.message); }
+  }
+
+  async function togglePromo(id){
+    const p = promos.find(x => x.id === id);
+    if(!p) return;
+    const next = !p.is_active;
+    p.is_active = next; renderPromos();
+    try {
+      await api(`/api/v1/promos/${id}`, { method:"PATCH",
+        body: JSON.stringify({ is_active: next }) });
+      toast(next ? "메뉴판에 표시합니다" : "메뉴판에서 숨겼습니다");
+    } catch(err){ p.is_active = !next; renderPromos(); toast("❌ " + err.message); }
+  }
+
+  async function removePromo(id){
+    if(!confirm("이 프로모션을 지울까요?\n메뉴판에서 바로 사라집니다.")) return;
+    try {
+      await api(`/api/v1/promos/${id}`, { method:"DELETE" });
+      promos = promos.filter(x => x.id !== id); renderPromos();
+      toast("삭제됨");
+    } catch(err){ toast("❌ " + err.message); }
+  }
+
+  async function loadPromos(){
+    try { promos = await api("/api/v1/promos"); renderPromos(); }
+    catch(err){ $("promos").innerHTML = `<div class="empty">${err.message}</div>`; }
+  }
+
+  async function load(){
+    try {
+      all = await api("/api/v1/menu?all=1");
+      renderCats(); renderList();
+    } catch(err){
+      $("list").innerHTML = `<div class="empty">${err.message}</div>`;
+    }
+  }
+
+  (async function(){
+    await StorePin.require();
+    load();
+    loadPromos();
+  })();
+</script>
+</body>
+</html>

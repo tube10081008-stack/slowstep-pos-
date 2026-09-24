@@ -31,10 +31,12 @@ class CampaignSerializer(serializers.ModelSerializer):
     class Meta:
         model = Campaign
         fields = [
-            "id", "name", "segment", "segment_name", "channel", "message_template",
-            "is_ad", "status", "status_display", "recipient_count", "sent_count",
-            "failed_count", "skipped_count", "created_at", "sent_at",
+            "id", "name", "segment", "segment_name", "recipients", "channel",
+            "message_template", "is_ad", "status", "status_display",
+            "recipient_count", "sent_count", "failed_count", "skipped_count",
+            "created_at", "sent_at",
         ]
+        extra_kwargs = {"recipients": {"required": False}}
         read_only_fields = [
             "status", "recipient_count", "sent_count", "failed_count",
             "skipped_count", "sent_at",

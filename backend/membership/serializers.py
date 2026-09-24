@@ -1,4 +1,5 @@
 """DRF 시리얼라이저."""
+from django.db import transaction as db_transaction
 from rest_framework import serializers
 
 from .models import (
@@ -8,6 +9,7 @@ from .models import (
     Mission,
     OrderItem,
     PointEntry,
+    Promo,
     Store,
     Transaction,
 )
@@ -24,29 +26,38 @@ class MenuItemSerializer(serializers.ModelSerializer):
         model = MenuItem
         fields = [
             "id", "name", "price", "category", "category_display", "emoji",
+            "image", "show_on_board", "set_eligible",
             "temp_option", "decaf_available", "oatmilk_available", "shot_available",
-            "stock", "sold_out",
+            "size_up_price", "cost", "stock", "sold_out", "is_available", "sort_order",
+            # 레시피 — POS가 제조 화면에서 쓴다(손님 화면에는 내려가지 않는다)
+            "recipe", "recipe_hot", "topping", "recipe_note",
         ]
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
     line_total = serializers.IntegerField(read_only=True)
     option_label = serializers.CharField(read_only=True)
+    # POS가 결제 완료 화면에서 이 id로 레시피를 찾는다(메뉴가 삭제됐으면 null)
+    menu_item_id = serializers.IntegerField(read_only=True, allow_null=True)
 
     class Meta:
         model = OrderItem
         fields = [
-            "name", "unit_price", "quantity", "line_total",
-            "temperature", "decaf", "oatmilk", "option_label",
+            "name", "menu_item_id", "unit_price", "quantity", "line_total",
+            "temperature", "decaf", "oatmilk", "shot", "size_up", "option_label",
         ]
 
 
 class StoreSerializer(serializers.ModelSerializer):
+    discount_rate_list = serializers.ListField(read_only=True)
+
     class Meta:
         model = Store
         fields = [
             "id", "name", "point_earn_rate", "stamp_goal", "stamp_reward_points",
             "set_discount_amount", "option_price", "is_open", "opened_at",
+            "happy_start", "happy_end", "happy_multiplier", "prep_notes",
+            "discount_rates", "discount_rate_list", "signup_bonus_points",
         ]
 
 
@@ -67,15 +78,36 @@ class MemberSerializer(serializers.ModelSerializer):
 
 
 class MemberCreateSerializer(serializers.ModelSerializer):
+    # 이름은 받지 않아도 된다 — 비우면 '행동 + 동물' 닉네임을 자동 부여한다.
+    # (연락처만으로 식별되므로 실명은 수집하지 않는 것이 기본)
+    name = serializers.CharField(required=False, allow_blank=True, max_length=50)
+
     class Meta:
         model = Member
         fields = ["phone", "name", "marketing_opt_in"]
 
+    @db_transaction.atomic
     def create(self, validated_data):
         store = Store.objects.first()
         if store is None:
             raise serializers.ValidationError("매장 설정이 없습니다.")
-        return Member.objects.create(store=store, **validated_data)
+        if not (validated_data.get("name") or "").strip():
+            from .nickname import generate_nickname
+
+            validated_data["name"] = generate_nickname()
+
+        # 가입 축하 포인트. 잔액만 올리지 않고 원장에도 남긴다 —
+        # 원장이 진실의 원천이라, 여기서 빠뜨리면 잔액과 내역이 어긋난다.
+        bonus = max(0, store.signup_bonus_points)
+        member = Member.objects.create(store=store, points=bonus, **validated_data)
+        if bonus:
+            PointEntry.objects.create(
+                member=member,
+                delta=bonus,
+                reason=PointEntry.Reason.SIGNUP,
+                balance_after=bonus,
+            )
+        return member
 
 
 class PointEntrySerializer(serializers.ModelSerializer):
@@ -110,12 +142,17 @@ class TransactionSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
     member_name = serializers.CharField(source="member.name", read_only=True, default=None)
     method_display = serializers.CharField(source="get_payment_method_display", read_only=True)
+    split_method_display = serializers.CharField(
+        source="get_split_method_display", read_only=True, default=""
+    )
 
     class Meta:
         model = Transaction
         fields = [
-            "id", "member_name", "gross_amount", "discount", "points_used", "net_amount",
+            "id", "member_name", "gross_amount", "discount", "manual_discount_pct",
+            "points_used", "net_amount",
             "points_earned", "payment_method", "method_display", "approval_no", "status",
+            "split_method", "split_method_display", "split_amount",
             "toss_order_id", "created_at", "paid_at", "items",
         ]
 
@@ -133,6 +170,7 @@ class OrderLineSerializer(serializers.Serializer):
     decaf = serializers.BooleanField(required=False, default=False)
     oatmilk = serializers.BooleanField(required=False, default=False)
     shot = serializers.BooleanField(required=False, default=False)
+    size_up = serializers.BooleanField(required=False, default=False)
 
 
 class CheckoutRequestSerializer(serializers.Serializer):
@@ -145,8 +183,91 @@ class CheckoutRequestSerializer(serializers.Serializer):
     approval_no = serializers.CharField(required=False, allow_blank=True, default="")
     toss_payment_key = serializers.CharField(required=False, allow_blank=True, default="")
     toss_order_id = serializers.CharField(required=False, allow_blank=True, default="")
+    coupon_id = serializers.IntegerField(required=False, allow_null=True)
+    discount_pct = serializers.IntegerField(required=False, min_value=0, max_value=100, default=0)
+    # 세트 할인은 직원이 눌렀을 때만 붙는다(자동 적용 아님).
+    set_discount = serializers.BooleanField(required=False, default=False)
+    # 분할 결제 — split_amount 를 보조 수단이 받고 나머지를 payment_method 가 받는다
+    split_method = serializers.ChoiceField(
+        choices=Transaction.Method.choices, required=False, allow_blank=True, default=""
+    )
+    split_amount = serializers.IntegerField(required=False, min_value=0, default=0)
 
     def validate(self, attrs):
         if not attrs.get("items") and not attrs.get("gross_amount"):
             raise serializers.ValidationError("items 또는 gross_amount가 필요합니다.")
         return attrs
+
+
+class MenuItemWriteSerializer(serializers.ModelSerializer):
+    """
+    POS에서 메뉴를 바로 추가·수정할 때 쓴다.
+
+    디저트가 매일 바뀌는데 그때마다 관리자 화면에 들어가는 건 현실적이지 않다.
+    store 는 서버가 붙인다(클라이언트가 다른 매장을 지정하지 못하게).
+    """
+
+    class Meta:
+        model = MenuItem
+        fields = [
+            "name", "price", "cost", "category", "temp_option",
+            "decaf_available", "oatmilk_available", "shot_available",
+            "size_up_price", "stock", "is_available", "sort_order",
+            "emoji", "image", "show_on_board", "set_eligible",
+            "recipe", "recipe_hot", "topping", "recipe_note",
+        ]
+        extra_kwargs = {f: {"required": False} for f in fields if f not in ("name", "price")}
+
+    def validate_name(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("메뉴 이름을 입력하세요.")
+        qs = MenuItem.objects.filter(name=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("같은 이름의 메뉴가 이미 있습니다.")
+        return value
+
+    def validate_price(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("가격은 0보다 커야 합니다.")
+        return value
+
+    # 사진은 DB에 직접 담기므로 상한을 서버가 잡는다. 브라우저에서 줄여
+    # 올리지만, 그 코드를 거치지 않고 부르면 몇 MB짜리가 그대로 들어온다.
+    MAX_IMAGE_CHARS = 400_000          # base64 약 300KB
+
+    def validate_image(self, value):
+        value = (value or "").strip()
+        if not value:
+            return ""                   # 빈 값 = 사진 삭제
+        if not value.startswith("data:image/"):
+            raise serializers.ValidationError("이미지 파일만 올릴 수 있습니다.")
+        if len(value) > self.MAX_IMAGE_CHARS:
+            raise serializers.ValidationError(
+                "사진 용량이 너무 큽니다. 더 작은 사진을 골라 주세요."
+            )
+        return value
+
+
+class PromoSerializer(serializers.ModelSerializer):
+    """프로모션 한 장. 읽기는 공개(고객 화면이 직접 부른다)."""
+
+    # 화면 한 장을 채우므로 메뉴 썸네일보다 큰 걸 허용한다.
+    MAX_IMAGE_CHARS = 900_000          # base64 약 675KB
+
+    class Meta:
+        model = Promo
+        fields = ["id", "title", "image", "is_active", "sort_order", "created_at"]
+        read_only_fields = ["created_at"]
+
+    def validate_image(self, value):
+        value = (value or "").strip()
+        if not value.startswith("data:image/"):
+            raise serializers.ValidationError("이미지 파일만 올릴 수 있습니다.")
+        if len(value) > self.MAX_IMAGE_CHARS:
+            raise serializers.ValidationError(
+                "이미지 용량이 너무 큽니다. 더 작은 사진을 골라 주세요."
+            )
+        return value
