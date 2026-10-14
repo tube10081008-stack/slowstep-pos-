@@ -3864,3 +3864,51 @@ class MenuSyncV2Tests(TestCase):
         old.refresh_from_db()
         self.assertEqual(old.name, "딥초코멜로우 (기라델리)")
         self.assertEqual(MenuItem.objects.filter(name="딥초코 멜로우").count(), 1)
+
+
+class DbProviderTests(TestCase):
+    """
+    /health 가 'DB가 어디 있나'를 알려 준다. 접속 문자열이 시크릿이라 화면에서
+    못 보기 때문 — 단, 로그인 없이 열리는 응답이라 **주소·비밀번호는 절대 싣지 않는다.**
+    """
+
+    def provider(self, url):
+        import dj_database_url
+
+        from .views import db_provider
+
+        return db_provider(dj_database_url.parse(url))
+
+    def test_neon(self):
+        self.assertEqual(
+            self.provider("postgresql://u:pw@ep-cool-1234-pooler.ap-southeast-1.aws.neon.tech/neondb"),
+            {"provider": "neon", "region": "ap-southeast-1"},
+        )
+
+    def test_supabase_direct_and_pooler(self):
+        self.assertEqual(
+            self.provider("postgresql://postgres:pw@db.abcdefgh.supabase.co:5432/postgres")["provider"],
+            "supabase",
+        )
+        self.assertEqual(
+            self.provider("postgresql://postgres.abc:pw@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres"),
+            {"provider": "supabase", "region": "ap-northeast-2"},
+        )
+
+    def test_other_and_sqlite(self):
+        self.assertEqual(self.provider("postgresql://u:pw@db.example.com/x")["provider"], "other")
+        self.assertEqual(self.provider("sqlite:////tmp/x.sqlite3")["provider"], "sqlite")
+
+    def test_health_never_leaks_address_or_password(self):
+        from django.db import connection
+
+        fake = dict(connection.settings_dict,
+                    ENGINE="django.db.backends.postgresql",
+                    HOST="ep-secret-99-pooler.ap-southeast-1.aws.neon.tech",
+                    PASSWORD="hunter2-very-secret", USER="owner_xyz", NAME="neondb_private")
+        with patch.object(connection, "settings_dict", fake):
+            res = self.client.get("/api/v1/health")
+        body = res.content.decode()
+        self.assertEqual(res.json()["db"]["provider"], "neon")
+        for secret in ("ep-secret-99", "hunter2", "owner_xyz", "neondb_private", "neon.tech"):
+            self.assertNotIn(secret, body)

@@ -81,6 +81,33 @@ def _resolve_member(member_id):
     return get_object_or_404(Member, pk=member_id)
 
 
+def db_provider(settings_dict: dict) -> dict:
+    """
+    DB가 **어느 서비스·어느 지역**에 있는지만 알려 준다.
+
+    접속 문자열(DATABASE_URL)은 Vercel 에 시크릿으로 저장돼 화면에서 다시 볼 수
+    없다. 그래서 'Neon 이냐 Supabase 냐'처럼 운영 판단에 필요한 사실만 서버가
+    말해 준다. **주소·계정·비밀번호·DB 이름은 내보내지 않는다** — 이 응답은
+    로그인 없이 열린다.
+    """
+    import re
+
+    engine = settings_dict.get("ENGINE", "")
+    if engine.endswith("sqlite3"):
+        return {"provider": "sqlite", "region": None}
+    host = (settings_dict.get("HOST") or "").lower()
+    if host.endswith(".neon.tech"):
+        provider = "neon"
+    elif host.endswith(".supabase.co") or host.endswith(".supabase.com"):
+        provider = "supabase"
+    elif host in ("", "localhost", "127.0.0.1") or host.startswith("/"):
+        provider = "local"
+    else:
+        provider = "other"
+    m = re.search(r"\b([a-z]{2}-[a-z]+-\d)\b", host)
+    return {"provider": provider, "region": m.group(1) if m else None}
+
+
 class HealthView(APIView):
     """
     서비스 상태 점검: DB 연결 + 저장 영속성 보고.
@@ -119,7 +146,8 @@ class HealthView(APIView):
 
         body = {
             "status": "ok" if db_ok else "degraded",
-            "db": {"ok": db_ok, "engine": engine, "persistent": persistent},
+            "db": {"ok": db_ok, "engine": engine, "persistent": persistent,
+                   **db_provider(connection.settings_dict)},
         }
         # 경고는 **모아서** 싣는다. 한 칸에 덮어쓰면 마지막 것만 남아,
         # 실제로 500을 냈던 '미적용 마이그레이션' 경고가 조용히 사라진다.
