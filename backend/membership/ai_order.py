@@ -45,6 +45,7 @@ HOT_WORDS = ("핫", "따뜻한", "따뜻하게", "뜨거운", "뜨겁게", "온"
 DECAF_WORDS = ("디카페인", "디카페", "디카", "decaf")
 OAT_WORDS = ("오트밀크", "오트", "귀리", "oat")
 SHOT_WORDS = ("샷추가", "샷 추가", "샷", "연하게말고", "shot")
+ACIDIC_WORDS = ("산미",)
 
 # ── 빼기(취소) 의도 ──
 # 직원은 "아아 하나 빼줘"처럼 말한다. 이걸 못 읽으면 빼려던 걸 한 잔 더 담는다.
@@ -89,6 +90,7 @@ def _menu_payload(items) -> list[dict]:
             "decaf": m.decaf_available,
             "oat": m.oatmilk_available,
             "shot": m.shot_available,
+            "bean": m.bean_available,       # 원두 선택(고소 기본 / 산미)
         }
         for m in items
     ]
@@ -245,6 +247,7 @@ def rule_parse(text: str, items) -> list[dict]:
                 "decaf": m.decaf_available and any(w in c for w in DECAF_WORDS),
                 "oatmilk": m.oatmilk_available and any(w in c for w in OAT_WORDS),
                 "shot": m.shot_available and any(w in c for w in SHOT_WORDS),
+                "bean": "acidic" if m.bean_available and any(w in c for w in ACIDIC_WORDS) else "",
             }
         )
     return lines
@@ -266,11 +269,12 @@ PROMPT = """당신은 한국 카페 POS의 주문 해석기입니다.
 - temperature: 메뉴 temp가 "hotice"면 "hot" 또는 "ice", "ice"면 "ice", "none"이면 ""
 - 명시가 없으면 아이스로 간주. "따뜻하게/핫/뜨거운"이면 hot
 - decaf/oat/shot은 해당 메뉴에서 허용될 때만 true
+- bean: 메뉴 bean이 true이고 "산미"라고 하면 "acidic", 아니면 "" (고소가 기본)
 - 줄임말: 아아=아이스 아메리카노, 따아/뜨아=따뜻한 아메리카노, 라떼=카페 라떼
 - 수량이 없으면 1
 
 출력 형식(다른 텍스트 없이 JSON 배열만):
-[{{"action": "add", "menu_item_id": 1, "quantity": 2, "temperature": "ice", "decaf": false, "oatmilk": false, "shot": false}}]
+[{{"action": "add", "menu_item_id": 1, "quantity": 2, "temperature": "ice", "decaf": false, "oatmilk": false, "shot": false, "bean": ""}}]
 
 주문: {text}"""
 
@@ -395,6 +399,7 @@ def _sanitize(raw_lines, items) -> list[dict]:
                 "decaf": bool(row.get("decaf")) and m.decaf_available,
                 "oatmilk": bool(row.get("oatmilk")) and m.oatmilk_available,
                 "shot": bool(row.get("shot")) and m.shot_available,
+                "bean": "acidic" if row.get("bean") == "acidic" and m.bean_available else "",
             }
         )
     return clean

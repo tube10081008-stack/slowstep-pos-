@@ -1070,6 +1070,7 @@ class GamificationTests(TestCase):
         self.assertIn("top", res.json())
 
 
+@patch("membership.quests.ENABLED", True)   # 2026-10 껐다 — 다시 켤 때를 위해 규칙은 계속 검증한다
 class QuestTests(TestCase):
     """개인 맞춤 퀘스트 — 생성·달성·1회 지급."""
 
@@ -2587,6 +2588,7 @@ class RewardTuningTests(TestCase):
         self.assertEqual(bonus, 0)
         self.assertEqual(spins, 1)
 
+    @patch("membership.quests.ENABLED", True)
     def test_collection_clear_grants_spin_on_checkout(self):
         # 커피 2종 중 1종만 마신 상태 → '정복까지 1종' 퀘스트가 생기고,
         # 나머지 한 잔을 마시면 챕터가 완주되며 룰렛 기회가 붙는다.
@@ -3096,20 +3098,23 @@ class IntegrityCheckTests(TestCase):
         r = run_all()
         self.assertTrue(r["ok"], r["checks"])
 
-    def test_catches_stale_mission_reward(self):
-        """운영에 옛 금액이 남은 미션을 잡는다(5,000P 사건)."""
+    def test_flags_mission_that_should_be_off(self):
+        """미션은 껐다(0035). 켜져 있는 미션이 남아 있으면 잡는다."""
         from .integrity import check_reward_config
 
         Mission.objects.create(
             store=self.store, title="단골 인증 10회 방문", description="10번 방문하면 500P",
             condition_type=Mission.Condition.VISIT_COUNT,
-            target_value=10, reward_points=5000,
+            target_value=10, reward_points=500, is_active=True,
+        )
+        Mission.objects.create(
+            store=self.store, title="누적 5만원", description="",
+            condition_type=Mission.Condition.TOTAL_SPENT,
+            target_value=50000, reward_points=500, is_active=False,
         )
         r = check_reward_config()
-        self.assertEqual(r["bad"], 3)                   # 금액 불일치 1 + 빠진 미션 2
-        stale = [x for x in r["sample"] if x["issue"] == "보상 금액 불일치"]
-        self.assertEqual(stale[0]["reward"], 5000)
-        self.assertEqual(stale[0]["expected"], 500)
+        self.assertEqual(r["bad"], 1)
+        self.assertEqual(r["sample"][0]["issue"], "꺼 둔 미션이 켜져 있다")
 
     def test_catches_stale_store_settings(self):
         from .integrity import check_reward_config
@@ -3912,3 +3917,138 @@ class DbProviderTests(TestCase):
         self.assertEqual(res.json()["db"]["provider"], "neon")
         for secret in ("ep-secret-99", "hunter2", "owner_xyz", "neondb_private", "neon.tech"):
             self.assertNotIn(secret, body)
+
+
+
+class MissionsOffTests(TestCase):
+    """
+    2026-10 미션 보상 전면 중단. 결제해도 미션·퀘스트 포인트가 나가지 않고,
+    기본 적립(3%)·가입 축하는 그대로다.
+    """
+
+    def setUp(self):
+        self.store = make_store()
+        self.menu = MenuItem.objects.create(store=self.store, name="아메리카노", price=4000)
+        self.m = Member.objects.create(store=self.store, phone="01077778888", name="단골")
+        # 예전 매장 미션이 켜진 채 남아 있는 상황(0035 이전)을 만들고 마이그레이션 함수를 돌린다
+        Mission.objects.create(
+            store=self.store, title="이번 시즌 5회 방문", description="",
+            condition_type=Mission.Condition.VISIT_COUNT, target_value=1, reward_points=500,
+        )
+        import importlib
+
+        from django.apps import apps as real_apps
+
+        mig = importlib.import_module("membership.migrations.0035_missions_off_bean_option")
+        mig._forward(real_apps, None)
+
+    def _pay(self, oid):
+        return checkout(
+            member=self.m, gross_amount=0, points_to_use=0, payment_method="CARD",
+            toss_order_id=oid, items=[{"menu_item_id": self.menu.id, "quantity": 1}],
+        )
+
+    def test_checkout_pays_no_mission_or_quest_points(self):
+        from .models import PointEntry
+
+        for i in range(6):
+            r = self._pay(f"mo{i}")
+            self.assertFalse([x for x in r.rewards if x.get("type", "").startswith(("mission", "quest"))],
+                             r.rewards)
+        self.assertFalse(PointEntry.objects.filter(member=self.m, reason=PointEntry.Reason.MISSION).exists())
+        self.assertTrue(PointEntry.objects.filter(member=self.m, reason=PointEntry.Reason.EARN).exists())
+
+    def test_member_screen_has_no_missions_or_quests(self):
+        from .profile import build_member_dashboard
+
+        self._pay("mo-x")
+        d = build_member_dashboard(self.m)
+        self.assertEqual(d["missions"], [])
+        self.assertIsNone(d["quests"])
+        self.assertNotIn("mission", [b["key"] for b in d["badges"]])
+
+
+class BeanOptionTests(TestCase):
+    """커피 원두 선택 — 고소(기본, +0) / 산미(+500)."""
+
+    def setUp(self):
+        self.store = make_store()
+        self.coffee = MenuItem.objects.create(store=self.store, name="아메리카노", price=4000,
+                                              category="coffee", bean_available=True)
+        self.ade = MenuItem.objects.create(store=self.store, name="레몬 에이드", price=5500,
+                                           category="ade")
+
+    def _resolve(self, *items):
+        from .services import resolve_order
+
+        return resolve_order(list(items), self.store)
+
+    def test_acidic_adds_500_nutty_is_default(self):
+        r = self._resolve(
+            {"menu_item_id": self.coffee.id, "quantity": 1, "bean": "acidic"},
+            {"menu_item_id": self.coffee.id, "quantity": 1},
+        )
+        acid, plain = r.lines
+        self.assertEqual((acid.bean, acid.unit_price), ("acidic", 4500))
+        self.assertEqual((plain.bean, plain.unit_price), ("nutty", 4000))
+        self.assertEqual(r.gross, 8500)
+
+    def test_price_follows_store_setting(self):
+        Store.objects.filter(pk=self.store.pk).update(acidic_bean_price=700)
+        self.store.refresh_from_db()
+        r = self._resolve({"menu_item_id": self.coffee.id, "quantity": 2, "bean": "acidic"})
+        self.assertEqual(r.gross, 2 * 4700)
+
+    def test_ignored_on_menu_without_bean_choice(self):
+        """원두 선택이 없는 메뉴에 산미가 와도 돈을 더 받지 않는다(위변조·실수 방어)."""
+        r = self._resolve({"menu_item_id": self.ade.id, "quantity": 1, "bean": "acidic"})
+        self.assertEqual((r.lines[0].bean, r.gross), ("", 5500))
+
+    def test_saved_on_order_and_labelled(self):
+        from .models import OrderItem
+
+        checkout(member=None, gross_amount=0, points_to_use=0, payment_method="CARD",
+                 toss_order_id="bean-1", items=[{"menu_item_id": self.coffee.id, "quantity": 1,
+                         "temperature": "hot", "bean": "acidic"},
+                        {"menu_item_id": self.coffee.id, "quantity": 1, "temperature": "ice"}])
+        rows = {oi.bean: oi for oi in OrderItem.objects.all()}
+        self.assertEqual(rows["acidic"].option_label, "HOT · 산미")
+        self.assertEqual(rows["nutty"].option_label, "ICE")     # 고소는 기본이라 표시 안 함
+        self.assertEqual(rows["acidic"].unit_price, 4500)
+
+    def test_checkout_api_accepts_bean(self):
+        from .tests import authenticate
+
+        authenticate(self.client)
+        res = self.client.post("/api/v1/transactions", data={
+            "payment_method": "CARD",
+            "items": [{"menu_item_id": self.coffee.id, "quantity": 1, "bean": "acidic"}],
+        }, content_type="application/json")
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()["gross_amount"], 4500)
+        self.assertEqual(self.client.post("/api/v1/transactions", data={
+            "payment_method": "CARD",
+            "items": [{"menu_item_id": self.coffee.id, "quantity": 1, "bean": "매운맛"}],
+        }, content_type="application/json").status_code, 400)
+
+    def test_migration_turns_on_coffee_and_retires_500won_item(self):
+        import importlib
+
+        from django.apps import apps as real_apps
+
+        latte = MenuItem.objects.create(store=self.store, name="카페 라떼", price=4500, category="coffee")
+        sanmi = MenuItem.objects.create(store=self.store, name="산미", price=500, category="coffee")
+        beans = MenuItem.objects.create(store=self.store, name="산미원두", price=14000, category="dessert")
+        importlib.import_module("membership.migrations.0035_missions_off_bean_option")._forward(real_apps, None)
+        latte.refresh_from_db(); sanmi.refresh_from_db(); beans.refresh_from_db(); self.ade.refresh_from_db()
+        self.assertTrue(latte.bean_available)
+        self.assertFalse(self.ade.bean_available)
+        self.assertFalse(sanmi.is_available)
+        self.assertTrue(beans.is_available)       # 원두 판매 메뉴는 건드리지 않는다
+
+    def test_ai_order_picks_up_sanmi(self):
+        from .ai_order import parse_order
+
+        r = parse_order("산미 아메리카노 하나")
+        line = r["items"][0]
+        self.assertEqual((line["menu_item_id"], line["bean"]), (self.coffee.id, "acidic"))

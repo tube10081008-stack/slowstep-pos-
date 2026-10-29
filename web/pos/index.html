@@ -578,6 +578,14 @@
           <div class="opt" data-temp="hot" onclick="pickTemp('hot')">HOT 따뜻하게</div>
         </div>
       </div>
+      <!-- 원두 — 고소가 기본, 산미는 추가금. 커피 메뉴에만 뜬다 -->
+      <div class="opt-sec hidden" id="optBeanSec">
+        <div class="lbl">원두</div>
+        <div class="opt-row">
+          <div class="opt on" data-bean="nutty" onclick="pickBean('nutty')">고소<small>기본</small></div>
+          <div class="opt" data-bean="acidic" onclick="pickBean('acidic')">산미<small id="optBeanAmt">+500원</small></div>
+        </div>
+      </div>
       <div class="opt-sec hidden" id="optExtraSec">
         <div class="lbl">옵션 추가</div>
         <div class="opt-row" id="optExtraRow"></div>
@@ -628,7 +636,7 @@
 
   let store=null, menu=[], cat="all", cart={}, member=null, method="CARD", earnRate=0.05;
   let justJoined=false;   // 방금 가입했는가 — 손님 화면 축하 문구용(1회성)
-  let optPrice=500, setDiscount=500, prepNotes="";
+  let optPrice=500, setDiscount=500, prepNotes="", beanPrice=500;
 
   function toast(m){ const t=$("toast"); t.textContent=m; t.style.display="block";
     clearTimeout(t._t); t._t=setTimeout(()=>t.style.display="none",2400); }
@@ -654,7 +662,7 @@
       type: "cart",
       items: Object.values(cart).map(c=>({
         name:c.item.name, qty:c.qty, total:c.unit*c.qty,
-        temp:c.temp, decaf:c.decaf, oat:c.oat, shot:c.shot,
+        temp:c.temp, decaf:c.decaf, oat:c.oat, shot:c.shot, up:c.up, bean:c.bean,
       })),
       discount: discountTotal(),
       total: finalTotal(),
@@ -740,6 +748,7 @@
       earnRate = Number(store.point_earn_rate);
       optPrice = Number(store.option_price) || 500;
       setDiscount = Number(store.set_discount_amount) || 500;
+      beanPrice = store.acidic_bean_price == null ? 500 : Number(store.acidic_bean_price);
       prepNotes = store.prep_notes || "";
       $("storeTag").textContent = store.name + " · 적립 " + Math.round(earnRate*100) + "%";
       menu = await api("/api/v1/menu");
@@ -760,10 +769,11 @@
     if(e.oatmilk||e.oat)p.push("오트밀크");
     if(e.shot)p.push("샷추가");
     if(e.size_up||e.up)p.push("사이즈업");
+    if(e.bean==="acidic")p.push("산미");      // 고소는 기본이라 적지 않는다
     return p.join(" · "); };
   const itemQty = (id)=> Object.values(cart).filter(c=>c.item.id===id).reduce((s,c)=>s+c.qty,0);
   const needsOptions = (m)=> m.temp_option==="hotice" || m.decaf_available
-    || m.oatmilk_available || m.shot_available || m.size_up_price > 0
+    || m.bean_available || m.oatmilk_available || m.shot_available || m.size_up_price > 0
     // 디저트는 옵션이 없어도 세트 할인을 고를 수 있게 모달을 띄운다
     || (m.category === "dessert" && setDiscount > 0);
 
@@ -831,14 +841,15 @@
         const m = menu.find(x=>x.id===it.menu_item_id);
         if(!m) return;
         const opt = [it.temperature==="hot"?"HOT":(it.temperature==="ice"?"ICE":""),
-                     it.decaf?"디카페인":"", it.oatmilk?"오트":"", it.shot?"샷":""].filter(Boolean).join("·");
+                     it.decaf?"디카페인":"", it.oatmilk?"오트":"", it.shot?"샷":"",
+                     it.bean==="acidic"?"산미":""].filter(Boolean).join("·");
         const label = `${it.name}${opt?`(${opt})`:""}`;
         if(it.action === "remove"){
-          const n = removeLine(m, it.temperature, it.decaf, it.oatmilk, it.shot, it.quantity);
+          const n = removeLine(m, it.temperature, it.decaf, it.oatmilk, it.shot, it.quantity, false, it.bean);
           if(n) done.push(`− ${label} ${n}`);
           else  missed.push(label);
         } else {
-          for(let i=0;i<it.quantity;i++) addLine(m, it.temperature, it.decaf, it.oatmilk, it.shot);
+          for(let i=0;i<it.quantity;i++) addLine(m, it.temperature, it.decaf, it.oatmilk, it.shot, false, it.bean);
           done.push(`+ ${label} ${it.quantity}`);
         }
       });
@@ -870,10 +881,14 @@
 
   // ── 옵션 모달 ──
   let optItem=null, optTemp="ice", optDecaf=false, optOat=false, optShot=false, optUp=false;
+  let optBean="nutty";
   let optSet=false;   // 디저트 담을 때 고른 세트 할인
   function openOpt(m){
     optItem=m; optTemp = m.temp_option==="hotice"?"ice":(m.temp_option==="ice"?"ice":"");
-    optDecaf=false; optOat=false; optShot=false; optUp=false;
+    optDecaf=false; optOat=false; optShot=false; optUp=false; optBean="nutty";
+    $("optBeanSec").classList.toggle("hidden", !m.bean_available);
+    $("optBeanAmt").textContent = "+" + won(beanPrice);
+    setBeanUI();
     // 세트 할인은 디저트를 담을 때 여기서 고른다(장바구니의 투박한 버튼 대신).
     // 이미 켜져 있으면 켠 채로 보여준다 — 담을 때마다 꺼지면 헷갈린다.
     optSet = (m.category === "dessert") ? setOn : false;
@@ -894,6 +909,8 @@
     $("optModal").classList.remove("hidden");
   }
   function pickTemp(t){ optTemp=t; setTempUI(); }
+  function pickBean(b){ optBean=b; setBeanUI(); updateOptPrice(); }
+  function setBeanUI(){ document.querySelectorAll("#optBeanSec .opt").forEach(o=>o.classList.toggle("on", o.dataset.bean===optBean)); }
   function setTempUI(){ document.querySelectorAll("#optTempSec .opt").forEach(o=>o.classList.toggle("on", o.dataset.temp===optTemp)); }
   function toggleExtra(k){
     if(k==="decaf"){ optDecaf=!optDecaf; $("optDecaf").classList.toggle("on",optDecaf); }
@@ -905,22 +922,27 @@
   }
   function updateOptPrice(){
     $("optPrice").textContent = won(optItem.price + (optDecaf?optPrice:0)
-      + (optOat?optPrice:0) + (optShot?optPrice:0) + (optUp?optItem.size_up_price:0));
+      + (optOat?optPrice:0) + (optShot?optPrice:0) + (optUp?optItem.size_up_price:0)
+      + (optItem.bean_available && optBean==="acidic" ? beanPrice : 0));
   }
   function closeOpt(){ $("optModal").classList.add("hidden"); }
   function addFromOpt(){
-    addLine(optItem, optTemp, optDecaf, optOat, optShot, optUp);
+    addLine(optItem, optTemp, optDecaf, optOat, optShot, optUp,
+            optItem.bean_available ? optBean : "");
     if(optItem && optItem.category === "dessert") setOn = optSet;   // 모달에서 고른 대로
     renderCart();
     closeOpt();
   }
 
-  const sig = (id,t,d,o,sh,up)=> id+"|"+t+"|"+(d?1:0)+"|"+(o?1:0)+"|"+(sh?1:0)+"|"+(up?1:0);
-  function addLine(m, temp, decaf, oat, shot, up){
-    const s = sig(m.id,temp,decaf,oat,shot,up);
+  // 원두를 고를 수 있는 메뉴는 기본 고소. 산미와 고소는 다른 줄이다.
+  const beanOf = (m, b)=> m.bean_available ? (b==="acidic" ? "acidic" : "nutty") : "";
+  const sig = (id,t,d,o,sh,up,bean)=> id+"|"+t+"|"+(d?1:0)+"|"+(o?1:0)+"|"+(sh?1:0)+"|"+(up?1:0)+"|"+(bean||"");
+  function addLine(m, temp, decaf, oat, shot, up, bean){
+    bean = beanOf(m, bean);
+    const s = sig(m.id,temp,decaf,oat,shot,up,bean);
     const unit = m.price + (decaf?optPrice:0) + (oat?optPrice:0) + (shot?optPrice:0)
-      + (up ? (m.size_up_price||0) : 0);
-    if(!cart[s]) cart[s] = { item:m, temp, decaf, oat, shot, up:!!up, qty:0, unit };
+      + (up ? (m.size_up_price||0) : 0) + (bean==="acidic" ? beanPrice : 0);
+    if(!cart[s]) cart[s] = { item:m, temp, decaf, oat, shot, up:!!up, bean, qty:0, unit };
     cart[s].qty++;
     renderMenu(); renderCart();
   }
@@ -929,7 +951,7 @@
    * 옵션까지 똑같은 줄을 먼저 찾고, 없으면 같은 메뉴의 다른 줄에서 뺀다.
    * ("아메리카노 빼줘"라고만 하면 핫인지 아이스인지 알 수 없다)
    */
-  function removeLine(m, temp, decaf, oat, shot, qty, up){
+  function removeLine(m, temp, decaf, oat, shot, qty, up, bean){
     let left = qty, removed = 0;
     const take = (key)=>{
       if(!cart[key] || left <= 0) return;
@@ -937,7 +959,7 @@
       cart[key].qty -= n; left -= n; removed += n;
       if(cart[key].qty <= 0) delete cart[key];
     };
-    take(sig(m.id,temp,decaf,oat,shot,up));
+    take(sig(m.id,temp,decaf,oat,shot,up,beanOf(m, bean)));
     if(left > 0){
       Object.keys(cart)
         .filter(k => cart[k].item.id === m.id)
@@ -1284,7 +1306,8 @@
     if(prepaidAmount > 0) return approvePrepaid();
     const use = member ? Math.max(0, parseInt($("usePoints").value||"0",10)) : 0;
     const items = Object.values(cart).map(c=>({ menu_item_id:c.item.id, quantity:c.qty,
-      temperature:c.temp, decaf:c.decaf, oatmilk:c.oat, shot:c.shot, size_up:!!c.up }));
+      temperature:c.temp, decaf:c.decaf, oatmilk:c.oat, shot:c.shot, size_up:!!c.up,
+      bean:c.bean||"" }));
     $("approveBtn").disabled=true; $("approveBtn").textContent="처리 중…";
     try {
       const res = await api("/api/v1/transactions", { method:"POST", body: JSON.stringify({
@@ -1452,6 +1475,7 @@
       return `<div class="mm-h">${ko} ${list.length}</div>` + list.map(m=>{
         const opt = [];
         if(m.size_up_price > 0) opt.push(`사이즈업 +${won(m.size_up_price)}`);
+        if(m.bean_available) opt.push("원두 고소/산미");
         if(!m.is_available) opt.push("판매중지");
         const t = m.temp_option || "hotice";
         return `<div class="mm-i${m.is_available?"":" off"}" data-id="${m.id}" data-cat="${k}">
@@ -1540,6 +1564,7 @@
           // 틀리면 메뉴판 수정 페이지에서 한 번 눌러 바꾸면 된다.
           shot_available: mmCat === "coffee",
           decaf_available: mmCat === "coffee",
+          bean_available: mmCat === "coffee",   // 원두 고소(기본)/산미
           oatmilk_available: /라떼|밀크|우유|크림/.test(name),
           sort_order: 99,
         })});

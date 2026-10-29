@@ -996,7 +996,9 @@ class InsightsTests(TestCase):
             self.pay(m, self.ago(1), items=["아메리카노"])
         for _ in range(2):
             self.pay(m, self.ago(1), items=["라떼", "쿠키"])            # 2번 — 기준 미달
-        r = pairs(timezone.now() - timedelta(days=30), min_count=3)
+        # 기준일(TODAY)에서 30일 — '지금'에서 재면 날짜가 지날수록 테스트가 깨진다
+        since = timezone.make_aware(datetime.combine(self.ago(30), datetime.min.time()))
+        r = pairs(since, min_count=3)
         self.assertEqual(r["orders"], 8)
         self.assertEqual(r["multi_orders"], 5)
         self.assertEqual(len(r["rows"]), 1)

@@ -28,6 +28,7 @@ class MenuItemSerializer(serializers.ModelSerializer):
             "id", "name", "price", "category", "category_display", "emoji",
             "image", "show_on_board", "set_eligible",
             "temp_option", "decaf_available", "oatmilk_available", "shot_available",
+            "bean_available",
             "size_up_price", "cost", "stock", "sold_out", "is_available", "sort_order",
             # 레시피 — POS가 제조 화면에서 쓴다(손님 화면에는 내려가지 않는다)
             "recipe", "recipe_hot", "topping", "recipe_note",
@@ -44,7 +45,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
         model = OrderItem
         fields = [
             "name", "menu_item_id", "unit_price", "quantity", "line_total",
-            "temperature", "decaf", "oatmilk", "shot", "size_up", "option_label",
+            "temperature", "decaf", "oatmilk", "shot", "size_up", "bean", "option_label",
         ]
 
 
@@ -55,7 +56,7 @@ class StoreSerializer(serializers.ModelSerializer):
         model = Store
         fields = [
             "id", "name", "point_earn_rate", "stamp_goal", "stamp_reward_points",
-            "set_discount_amount", "option_price", "is_open", "opened_at",
+            "set_discount_amount", "option_price", "acidic_bean_price", "is_open", "opened_at",
             "happy_start", "happy_end", "happy_multiplier", "prep_notes",
             "discount_rates", "discount_rate_list", "signup_bonus_points",
         ]
@@ -171,6 +172,8 @@ class OrderLineSerializer(serializers.Serializer):
     oatmilk = serializers.BooleanField(required=False, default=False)
     shot = serializers.BooleanField(required=False, default=False)
     size_up = serializers.BooleanField(required=False, default=False)
+    # 원두: nutty(고소, 기본) / acidic(산미, +추가금). 원두 선택이 없는 메뉴면 무시.
+    bean = serializers.ChoiceField(choices=["", "nutty", "acidic"], required=False, default="")
 
 
 class CheckoutRequestSerializer(serializers.Serializer):
@@ -211,7 +214,7 @@ class MenuItemWriteSerializer(serializers.ModelSerializer):
         model = MenuItem
         fields = [
             "name", "price", "cost", "category", "temp_option",
-            "decaf_available", "oatmilk_available", "shot_available",
+            "decaf_available", "oatmilk_available", "shot_available", "bean_available",
             "size_up_price", "stock", "is_available", "sort_order",
             "emoji", "image", "show_on_board", "set_eligible",
             "recipe", "recipe_hot", "topping", "recipe_note",

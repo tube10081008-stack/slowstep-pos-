@@ -38,6 +38,10 @@ class Store(models.Model):
     )
     # 디카페인·오트밀크 등 옵션 추가금
     option_price = models.IntegerField("옵션 추가금", default=500)
+    # 커피 원두 선택 — 고소(기본)는 추가금 없음, 산미는 이만큼 더 받는다.
+    # 디카페인·오트(option_price)와 따로 둔다: 원두 값이 달라 옵션가와 같이
+    # 움직일 이유가 없다.
+    acidic_bean_price = models.IntegerField("산미 원두 추가금", default=500)
     # 옵션 1개당 추가 재료원가(오트밀크·샷 등) — 마진 분석용
     option_cost = models.IntegerField("옵션 추가 원가", default=0)
     # 모든 메뉴에 공통으로 들어가는 밑작업(우유 배합·수제 크림 등).
@@ -210,6 +214,9 @@ class MenuItem(models.Model):
     decaf_available = models.BooleanField("디카페인 선택", default=False)
     oatmilk_available = models.BooleanField("오트밀크 선택", default=False)
     shot_available = models.BooleanField("샷 추가 선택", default=False)
+    # 원두 선택(고소 기본 / 산미 +추가금) — 커피 메뉴. 예전엔 '산미'를 500원짜리
+    # 메뉴로 따로 찍었는데, 그러면 어느 잔이 산미인지 주문에 남지 않는다.
+    bean_available = models.BooleanField("원두 선택(고소/산미)", default=False)
     # 사이즈업 추가금. 0이면 이 메뉴는 사이즈업을 팔지 않는다.
     # 옵션 추가금(디카페인·오트·샷)과 달리 메뉴마다 값이 달라 여기에 둔다.
     size_up_price = models.IntegerField("사이즈업 추가금", default=0)
@@ -387,6 +394,15 @@ class OrderItem(models.Model):
     shot = models.BooleanField("샷 추가", default=False)
     size_up = models.BooleanField("사이즈업", default=False)
 
+    class Bean(models.TextChoices):
+        NONE = "", "선택없음"
+        NUTTY = "nutty", "고소"
+        ACIDIC = "acidic", "산미"
+
+    # 원두 선택이 없는 메뉴는 빈 값. 고소는 기본이라 표시하지 않는다.
+    bean = models.CharField("원두", max_length=10, blank=True, default="",
+                            choices=Bean.choices)
+
     class Meta:
         verbose_name = "주문 항목"
         verbose_name_plural = "주문 항목"
@@ -414,6 +430,8 @@ class OrderItem(models.Model):
             parts.append("샷추가")
         if self.size_up:
             parts.append("사이즈업")
+        if self.bean == self.Bean.ACIDIC:
+            parts.append("산미")
         return " · ".join(parts)
 
     def __str__(self) -> str:

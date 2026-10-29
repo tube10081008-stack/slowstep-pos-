@@ -319,7 +319,8 @@
     const items = d.items || [];
     if(!items.length){ show("idle"); return; }
     $("list").innerHTML = items.map(i=>{
-      const opts = [tempLabel(i.temp), i.decaf?"디카페인":"", i.oat?"오트밀크":"", i.shot?"샷추가":""]
+      const opts = [tempLabel(i.temp), i.decaf?"디카페인":"", i.oat?"오트밀크":"", i.shot?"샷추가":"",
+                    i.up?"사이즈업":"", i.bean==="acidic"?"산미":""]
         .filter(Boolean).join(" · ");
       return `<div class="li">
         <span class="nm">${i.name}${opts?`<em>${opts}</em>`:""}</span>

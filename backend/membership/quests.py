@@ -26,6 +26,12 @@ from django.utils import timezone
 
 from .models import MenuItem, OrderItem, Transaction
 
+# 퀘스트를 켤지. **2026-10 사장님 결정으로 끈다** — 미션 보상이 기본 적립(3%)과
+# 맞먹을 만큼 나가는데(10월 5.8만P vs 6.7만P), 그만큼 다시 오게 만든다는 근거는
+# 보이지 않았다. 끄면 결제 때 보상이 나가지 않고 멤버십 화면에서도 빠진다.
+# 이미 지급된 포인트와 달성 기록(MemberQuest)은 그대로 둔다.
+ENABLED = False
+
 MAX_REWARD = 2000               # 퀘스트 1개 보상 상한
 MAX_REWARD_PER_CHECKOUT = 3000  # 결제 1건에서 나갈 수 있는 퀘스트 보상 총액
 GROUP_SIZE = 3                  # 한 그룹에 담는 퀘스트 수 상한
@@ -247,6 +253,8 @@ def active_group(member) -> dict | None:
     이미 깬 퀘스트도 목록에 남겨 둔다 — 빠지면 '2/3 달성'이 말이 안 되고,
     그룹으로 묶은 이유(완주감)가 사라진다.
     """
+    if not ENABLED:
+        return None
     buckets = _grouped(member)
     done = _done_keys(member)
     for key in GROUP_ORDER:
@@ -277,6 +285,8 @@ def evaluate_and_award(member, txn, record_point) -> list[dict]:
     """
     from .models import MemberQuest, PointEntry
 
+    if not ENABLED:
+        return []
     done = _done_keys(member)
     buckets = _grouped(member)
     awarded: list[dict] = []

@@ -205,6 +205,7 @@
       <button type="button" data-k="decaf_available" onclick="tgOpt(this)">디카페인</button>
       <button type="button" data-k="oatmilk_available" onclick="tgOpt(this)">오트밀크</button>
       <button type="button" data-k="shot_available" onclick="tgOpt(this)">샷 추가</button>
+      <button type="button" data-k="bean_available" onclick="tgOpt(this)">원두 고소/산미</button>
     </div>
     <!-- 디저트에만 뜬다. 음료끼리는 세트가 성립하지 않는다. -->
     <div id="eSetWrap" class="hidden">
@@ -446,6 +447,7 @@
       decaf_available: !!m.decaf_available,
       oatmilk_available: !!m.oatmilk_available,
       shot_available: !!m.shot_available,
+      bean_available: !!m.bean_available,
     };
     document.querySelectorAll("#eOpts button")
       .forEach(b => b.classList.toggle("on", !!optState[b.dataset.k]));

@@ -126,7 +126,7 @@ def _badges(member: Member, completed_missions: int, collection: dict,
         ("gold", "♛", "골드 등급", f"누적 {_GOLD_AT // 10000}만원",
          member.tier == Member.Tier.GOLD),
         ("bigspender", "◈", "큰손", "누적 20만원", spent >= 200_000),
-        ("mission", "✧", "미션 클리어", "미션 1개 달성", completed_missions >= 1),
+        # '미션 클리어' 배지는 뺐다 — 미션을 끈 뒤로는 아무도 딸 수 없는 배지다.
         # ── 시간대·요일 ──
         ("morning", "☀", "아침형 인간", "오전 방문 5회", flags["morning"] >= 5),
         ("evening", "☾", "저녁의 여유", "저녁 방문 5회", flags["evening"] >= 5),

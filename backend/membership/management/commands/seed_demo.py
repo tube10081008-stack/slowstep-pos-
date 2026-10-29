@@ -6,7 +6,7 @@
 """
 from django.core.management.base import BaseCommand
 
-from membership.models import Member, MenuItem, Mission, Store
+from membership.models import Member, MenuItem, Store
 
 # (이름, 가격, 재료원가, 카테고리, 온도옵션, 디카페인, 오트밀크, 이모지, 정렬)
 #   온도: hotice=핫/아이스, ice=아이스만, none=선택없음(디저트)
@@ -89,34 +89,8 @@ class Command(BaseCommand):
         store.save(update_fields=["point_earn_rate", "option_cost"])
         self.stdout.write(f"매장: {store.name} (적립 {float(store.point_earn_rate)*100:.0f}%)")
 
-        missions = [
-            {
-                "title": "이번 시즌 5회 방문",
-                "description": "5번 방문하고 500P 받기",
-                "condition_type": Mission.Condition.VISIT_COUNT,
-                "target_value": 5,
-                "reward_points": 500,
-            },
-            {
-                "title": "단골 인증 10회 방문",
-                "description": "10번 방문하면 500P",
-                "condition_type": Mission.Condition.VISIT_COUNT,
-                "target_value": 10,
-                "reward_points": 500,
-            },
-            {
-                "title": "누적 5만원 달성",
-                "description": "누적 결제 50,000원 달성 시 500P",
-                "condition_type": Mission.Condition.TOTAL_SPENT,
-                "target_value": 50000,
-                "reward_points": 500,
-            },
-        ]
-        for m in missions:
-            obj, created = Mission.objects.update_or_create(
-                store=store, title=m["title"], defaults=m
-            )
-            self.stdout.write(("생성: " if created else "갱신: ") + obj.title)
+        # 매장 미션은 **만들지 않는다**(2026-10 미션 보상 전면 중단, 0035).
+        # 이미 있는 행은 0035 가 꺼 두었고, 여기서 다시 만들면 되살아난다.
 
         # 샘플 회원은 개발용이다. 실매장 배포에서 만들면 랭킹·명예의 전당에
         # 가짜 이름이 섞이고 지표가 오염된다(--no-members).
@@ -141,6 +115,7 @@ class Command(BaseCommand):
                     "price": price, "cost": cost, "category": cat, "temp_option": temp,
                     "decaf_available": decaf, "oatmilk_available": oat,
                     "shot_available": cat == "coffee",
+                    "bean_available": cat == "coffee",   # 원두 고소/산미
                     "emoji": emoji, "sort_order": order, "is_available": True,
                 },
             )

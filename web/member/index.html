@@ -456,8 +456,8 @@
       <div class="tl" id="timeline"></div>
     </div>
 
-    <!-- 미션 -->
-    <div class="card">
+    <!-- 미션 — 매장 미션이 하나도 없으면 칸째 숨긴다 -->
+    <div class="card" id="missionCard">
       <h3>진행 중인 미션</h3>
       <div id="missions"></div>
     </div>
@@ -849,7 +849,8 @@
     }
 
     // 미션
-    if(!d.missions.length){ $("missions").innerHTML = '<p class="muted">진행 중인 미션이 없습니다.</p>'; }
+    $("missionCard").style.display = d.missions.length ? "" : "none";
+    if(!d.missions.length){ $("missions").innerHTML = ""; }
     else $("missions").innerHTML = d.missions.map(x=>{
       const pct = Math.min(100, Math.round(x.progress/x.target*100));
       return `<div class="mission ${x.is_completed?"done":""}">
