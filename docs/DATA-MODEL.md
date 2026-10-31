@@ -19,8 +19,11 @@ Store 1───* Member 1───* Transaction *───1 Store
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | `name` | Char | 매장명 (예: 슬로우스텝) |
-| `point_earn_rate` | Decimal | 적립률 (기본 0.05 = 5%) |
+| `point_earn_rate` | Decimal | 적립률 (기본 0.03 = 3%) |
 | `stamp_goal` | PositiveSmallInt | 스탬프 리워드 목표 개수 (기본 10) |
+| `option_price` | Int | 옵션(디카페인·오트밀크·샷) 1개당 추가금 |
+| `option_cost` | Int | 옵션 1개당 추가 **재료원가** (마진 분석용) |
+| `vat_rate` | Decimal | 부가세율 (기본 0.10) — 마진은 공급가=매출÷(1+vat) 기준 |
 | `created_at` | DateTime | 생성 시각 |
 
 ### Member — 회원
@@ -37,7 +40,9 @@ Store 1───* Member 1───* Transaction *───1 Store
 | `joined_at` | DateTime | 가입 시각 |
 | `marketing_opt_in` | Bool | 마케팅 수신 동의 |
 
-> **등급 규칙(기본):** 누적액 `< 50,000` → BRONZE, `< 200,000` → SILVER, 그 이상 GOLD.
+> **등급 규칙(기본):** 누적액 `< 100,000` → BRONZE, `< 300,000` → SILVER, 그 이상 GOLD.
+> 적립률은 등급과 무관하게 동일하고, **승급할 때 음료 1+1 쿠폰**이 나간다(실버 1장·골드 3장).
+> 이미 지급한 최고 등급을 `tier_rewarded`에 남겨 강등 후 재승급으로 중복 지급되는 걸 막는다.
 
 ### Transaction — 거래(결제)
 | 필드 | 타입 | 설명 |
@@ -100,3 +105,11 @@ Store 1───* Member 1───* Transaction *───1 Store
 7. **등급** 재계산.
 8. **미션** 진행값 갱신, 달성 시 보너스 PointEntry(`mission`, +).
 9. `member.points`를 원장 잔액과 동기화 후 저장.
+
+## 원가·마진 (재료비 기준)
+
+- `MenuItem.cost`(재료원가) + `Store.option_cost`(옵션당 추가원가)를 결제 시점에
+  `OrderItem.unit_cost`로 **스냅샷** → 이후 원가를 바꿔도 과거 마진 불변.
+- **기여이익 = 공급가(매출÷(1+vat)) − 재료원가 − 적립비용**. 적립비용은 포인트·스탬프·
+  미션 적립을 **적립 시점**에 인식(사용 시점엔 재차 차감 안 함 → 이중계상 방지).
+- 계산·집계는 `membership/margins.py`, 조회는 `GET /api/v1/margins/summary`.
