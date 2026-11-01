@@ -27,7 +27,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         store, _ = Store.objects.get_or_create(
             name="슬로우스텝",
-            defaults={"point_earn_rate": "0.05", "stamp_goal": 10, "stamp_reward_points": 3000},
+            defaults={"point_earn_rate": "0.05", "stamp_goal": 10, "stamp_reward_points": 0},
         )
         rng = random.Random(42)
         now = timezone.now()
