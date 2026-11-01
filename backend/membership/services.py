@@ -170,7 +170,10 @@ def resolve_order(
             temperature = ""
 
         n_opts = int(decaf) + int(oatmilk) + int(shot)
-        unit_price = (mi.price + opt * n_opts + (mi.size_up_price if size_up else 0)
+        # 디카페인·오트는 공통 옵션가, 샷은 샷 추가금(1,000원)을 따로 받는다.
+        unit_price = (mi.price + opt * (int(decaf) + int(oatmilk))
+                      + (store.shot_price if shot else 0)
+                      + (mi.size_up_price if size_up else 0)
                       + (store.acidic_bean_price if bean == "acidic" else 0))
         # 재료원가 스냅샷: 메뉴 원가 + 옵션당 추가 원가.
         # 사이즈업 원가는 아직 따로 두지 않았다 — 재료 마스터를 붙일 때 함께 정리한다.

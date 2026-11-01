@@ -4052,3 +4052,38 @@ class BeanOptionTests(TestCase):
         r = parse_order("산미 아메리카노 하나")
         line = r["items"][0]
         self.assertEqual((line["menu_item_id"], line["bean"]), (self.coffee.id, "acidic"))
+
+
+class ShotPriceTests(TestCase):
+    """
+    샷 추가는 1,000원, 디카페인·오트는 500원. 예전엔 한 값(500)을 같이 써서
+    옵션창의 샷이 500원으로 나갔다.
+    """
+
+    def setUp(self):
+        self.store = make_store()
+        self.coffee = MenuItem.objects.create(
+            store=self.store, name="아메리카노", price=4000, category="coffee",
+            decaf_available=True, oatmilk_available=True, shot_available=True,
+        )
+
+    def _gross(self, **opts):
+        from .services import resolve_order
+
+        return resolve_order([{"menu_item_id": self.coffee.id, "quantity": 1, **opts}],
+                             self.store).gross
+
+    def test_shot_is_1000_decaf_and_oat_stay_500(self):
+        self.assertEqual(self._gross(shot=True), 5000)
+        self.assertEqual(self._gross(decaf=True), 4500)
+        self.assertEqual(self._gross(oatmilk=True), 4500)
+        self.assertEqual(self._gross(decaf=True, shot=True), 5500)
+
+    def test_shot_price_is_its_own_setting(self):
+        Store.objects.filter(pk=self.store.pk).update(shot_price=1200, option_price=600)
+        self.store.refresh_from_db()
+        self.assertEqual(self._gross(shot=True), 5200)
+        self.assertEqual(self._gross(decaf=True), 4600)
+
+    def test_store_api_exposes_shot_price(self):
+        self.assertEqual(self.client.get("/api/v1/store").json()["shot_price"], 1000)

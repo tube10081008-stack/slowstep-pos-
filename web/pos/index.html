@@ -636,7 +636,7 @@
 
   let store=null, menu=[], cat="all", cart={}, member=null, method="CARD", earnRate=0.05;
   let justJoined=false;   // 방금 가입했는가 — 손님 화면 축하 문구용(1회성)
-  let optPrice=500, setDiscount=500, prepNotes="", beanPrice=500;
+  let optPrice=500, setDiscount=500, prepNotes="", beanPrice=500, shotPrice=1000;
 
   function toast(m){ const t=$("toast"); t.textContent=m; t.style.display="block";
     clearTimeout(t._t); t._t=setTimeout(()=>t.style.display="none",2400); }
@@ -747,6 +747,7 @@
       store = await api("/api/v1/store");
       earnRate = Number(store.point_earn_rate);
       optPrice = Number(store.option_price) || 500;
+      shotPrice = store.shot_price == null ? 1000 : Number(store.shot_price);   // 샷만 따로
       setDiscount = Number(store.set_discount_amount) || 500;
       beanPrice = store.acidic_bean_price == null ? 500 : Number(store.acidic_bean_price);
       prepNotes = store.prep_notes || "";
@@ -900,7 +901,7 @@
     let ex="";
     if(m.decaf_available) ex += `<div class="opt" id="optDecaf" onclick="toggleExtra('decaf')">디카페인<small>+${won(optPrice)}</small></div>`;
     if(m.oatmilk_available) ex += `<div class="opt" id="optOat" onclick="toggleExtra('oat')">오트밀크<small>+${won(optPrice)}</small></div>`;
-    if(m.shot_available) ex += `<div class="opt" id="optShot" onclick="toggleExtra('shot')">샷 추가<small>+${won(optPrice)}</small></div>`;
+    if(m.shot_available) ex += `<div class="opt" id="optShot" onclick="toggleExtra('shot')">샷 추가<small>+${won(shotPrice)}</small></div>`;
     // 사이즈업은 메뉴마다 금액이 달라 매장 공통 옵션가를 쓰지 않는다
     if(m.size_up_price > 0) ex += `<div class="opt" id="optUp" onclick="toggleExtra('up')">사이즈업<small>+${won(m.size_up_price)}</small></div>`;
     if(ex){ $("optExtraSec").classList.remove("hidden"); $("optExtraRow").innerHTML=ex; }
@@ -922,7 +923,7 @@
   }
   function updateOptPrice(){
     $("optPrice").textContent = won(optItem.price + (optDecaf?optPrice:0)
-      + (optOat?optPrice:0) + (optShot?optPrice:0) + (optUp?optItem.size_up_price:0)
+      + (optOat?optPrice:0) + (optShot?shotPrice:0) + (optUp?optItem.size_up_price:0)
       + (optItem.bean_available && optBean==="acidic" ? beanPrice : 0));
   }
   function closeOpt(){ $("optModal").classList.add("hidden"); }
@@ -940,7 +941,7 @@
   function addLine(m, temp, decaf, oat, shot, up, bean){
     bean = beanOf(m, bean);
     const s = sig(m.id,temp,decaf,oat,shot,up,bean);
-    const unit = m.price + (decaf?optPrice:0) + (oat?optPrice:0) + (shot?optPrice:0)
+    const unit = m.price + (decaf?optPrice:0) + (oat?optPrice:0) + (shot?shotPrice:0)
       + (up ? (m.size_up_price||0) : 0) + (bean==="acidic" ? beanPrice : 0);
     if(!cart[s]) cart[s] = { item:m, temp, decaf, oat, shot, up:!!up, bean, qty:0, unit };
     cart[s].qty++;

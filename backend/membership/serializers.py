@@ -56,7 +56,7 @@ class StoreSerializer(serializers.ModelSerializer):
         model = Store
         fields = [
             "id", "name", "point_earn_rate", "stamp_goal", "stamp_reward_points",
-            "set_discount_amount", "option_price", "acidic_bean_price", "is_open", "opened_at",
+            "set_discount_amount", "option_price", "shot_price", "acidic_bean_price", "is_open", "opened_at",
             "happy_start", "happy_end", "happy_multiplier", "prep_notes",
             "discount_rates", "discount_rate_list", "signup_bonus_points",
         ]

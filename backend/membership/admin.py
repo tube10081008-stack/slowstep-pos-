@@ -45,7 +45,7 @@ class MenuItemAdmin(admin.ModelAdmin):
 
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
-    list_display = ["name", "point_earn_rate", "stamp_goal", "option_price", "option_cost", "vat_rate", "happy_start", "happy_end", "happy_multiplier"]
+    list_display = ["name", "point_earn_rate", "stamp_goal", "option_price", "shot_price", "option_cost", "vat_rate", "happy_start", "happy_end", "happy_multiplier"]
 
 
 class PointAdjustForm(forms.Form):

@@ -42,6 +42,10 @@ class Store(models.Model):
     # 디카페인·오트(option_price)와 따로 둔다: 원두 값이 달라 옵션가와 같이
     # 움직일 이유가 없다.
     acidic_bean_price = models.IntegerField("산미 원두 추가금", default=500)
+    # 샷 추가금 — 디카페인·오트(option_price, 500)와 값이 달라 따로 둔다.
+    # 예전엔 한 값을 같이 써서 옵션창의 샷이 500원으로 나갔고, 1,000원을 받으려고
+    # '샷추가' 메뉴를 따로 만들어 찍는 일이 생겼다.
+    shot_price = models.IntegerField("샷 추가금", default=1000)
     # 옵션 1개당 추가 재료원가(오트밀크·샷 등) — 마진 분석용
     option_cost = models.IntegerField("옵션 추가 원가", default=0)
     # 모든 메뉴에 공통으로 들어가는 밑작업(우유 배합·수제 크림 등).
